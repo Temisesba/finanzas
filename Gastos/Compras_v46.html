@@ -1242,8 +1242,9 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--i
         <div style="display:flex;gap:8px">
           <select id="peopleSesion" style="flex:1" onchange="v29SwitchSesion(this.value)"></select>
           <button class="rt-btn" onclick="v29NewSesionUI()" title="Nueva sesión">＋ Nueva</button>
+          <button class="rt-btn" onclick="v29RenameSesionUI()" title="Renombrar sesión">✏️</button>
         </div>
-        <div style="font-size:11px;color:var(--ink-3);margin-top:4px">Elige <strong>👤 Personal (yo)</strong> para ver tu dinero fraccionado de todas tus sesiones. La contraseña de cada sesión se edita en la pestaña "Sesiones" del Sheet.</div>
+        <div style="font-size:11px;color:var(--ink-3);margin-top:4px">Elige <strong>👤 Personal (yo)</strong> para ver tu dinero fraccionado de todas tus sesiones.</div>
       </div>
       <div class="field" id="miembrosField"><label>Miembros de esta sesión</label>
         <div style="font-size:11px;color:var(--ink-3);margin-bottom:6px">Los <strong>primeros 2</strong> encabezan tarjetas e historial. El compartido se divide entre <strong>todos</strong>. ✏️ renombra también sus gastos ya registrados en esta sesión.</div>
@@ -1253,10 +1254,6 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--i
           <button class="notes-save-btn" onclick="v28AddName()">Agregar</button>
         </div>
         <div id="namesStatus" class="rt-status" style="display:block;margin-top:6px"></div>
-      </div>
-      <div class="field">
-        <button class="rt-btn" style="width:100%;padding:9px" onclick="v29MisTotales()">Σ Mis totales sumando mis sesiones desbloqueadas</button>
-        <div id="misTotales" style="font-size:12px;margin-top:8px"></div>
       </div>
     </div>
   </div>
@@ -1648,7 +1645,10 @@ function buildPersonFilters(){
   const c=document.getElementById('personFilters'); if(!c)return;
   if(personalMode){
     const me=myName();
-    c.innerHTML = me ? '<button class="ftab on" data-f="all" onclick="setFilter(\'all\',this)">👤 '+esc(me)+' (Personal)</button>' : '';
+    c.innerHTML = '<button class="ftab" data-f="Compartido" onclick="setFilter(\'Compartido\',this)">🤝 Compartido</button>'
+      +'<button class="ftab" data-f="Prestamo" onclick="setFilter(\'Prestamo\',this)">💸 Préstamo/↩️</button>'
+      +'<button class="ftab" data-f="Cotizacion" onclick="setFilter(\'Cotizacion\',this)">💬 Cotización</button>'
+      +(me?'<button class="ftab" data-f="P:'+esc(me)+'" onclick="setFilter(\'P:'+esc(me)+'\',this)">👤 Solo personales</button>':'');
     return;
   }
   c.innerHTML = PEOPLE.map(n=>{
@@ -1752,6 +1752,25 @@ async function v29NewSesionUI(){
     } else showToast('⚠ '+(r.error||'Error'));
   }catch(e){ showToast('⚠ Error de red'); }
 }
+async function v29RenameSesionUI(){
+  if(personalMode){ showToast('Personal no se renombra; cambia tu ⭐ nombre'); return; }
+  const oldName=activeSesion||''; if(!oldName)return;
+  const nuevo=prompt('Nuevo nombre para la sesión:', oldName);
+  if(!nuevo||!nuevo.trim()||nuevo.trim()===oldName) return;
+  const pass=sesionPass(oldName);
+  try{
+    const r=await postGAS({action:'renameSesion', sesion:oldName, nuevo:nuevo.trim(), pass});
+    if(r&&r.ok){
+      const oldPass=localStorage.getItem('gastos_pass_'+oldName);
+      if(oldPass!==null){ localStorage.setItem('gastos_pass_'+nuevo.trim(), oldPass); localStorage.removeItem('gastos_pass_'+oldName); }
+      activeSesion=nuevo.trim();
+      localStorage.setItem('gastos_sesion',activeSesion);
+      invalidateSesionCache();
+      await loadSesiones(); v29FillSesionSelect(); applyPeopleUI(); await loadExp(); renderAll();
+      showToast('✓ Sesión renombrada');
+    }else showToast('⚠ '+((r&&r.error)||'No se pudo renombrar'));
+  }catch(e){ showToast('⚠ Error de red'); }
+}
 function v29FillSesionSelect(){
   const sel=document.getElementById('peopleSesion'); if(sel){
     const opts=SESIONES.map(s=>'<option value="'+esc(s)+'"'+(!personalMode&&s===activeSesion?' selected':'')+'>'+esc(s)+'</option>').join('');
@@ -1763,7 +1782,7 @@ function v29FillSesionSelect(){
   }
 }
 function pSetSoy(n){ if(!n)return; localStorage.setItem('gastos_myname', n); renderNames(); v29FillSesionSelect(); showToast('⭐ Eres '+n); }
-function openPeople(){ v29FillSesionSelect(); renderNames(); document.getElementById('misTotales').innerHTML='';
+function openPeople(){ v29FillSesionSelect(); renderNames();
   const mf=document.getElementById('miembrosField'); if(mf) mf.style.display=personalMode?'none':'';
   document.getElementById('peopleOverlay').style.display='flex'; }
 function closePeople(){ document.getElementById('peopleOverlay').style.display='none'; }
@@ -4863,6 +4882,7 @@ init();
 //  Datos en el Sheet "Personal" (GAS v20). Contraseña personal propia.
 // ═══════════════════════════════════════════════════════════════
 let pItems = [];          // items personales cargados
+let pLoaded = false;
 let pPass  = '';          // contraseña personal (memoria + localStorage)
 let pOwner = '';          // = myName()
 let pSection = 'resumen';  // resumen | deudas | fijos | tarjetas | proximos | historial | msi | movs
@@ -4887,6 +4907,12 @@ function pOpenPage(){
   }
   { const gi=document.getElementById('pGateInput'); if(gi) gi.style.display=''; }
   pPass = localStorage.getItem('gastos_ppass_'+pOwner) || '';
+  if(pPass && pLoaded && pItems.length){
+    if(gate) gate.style.display='none';
+    if(body) body.style.display='block';
+    pRender();
+    return;
+  }
   if(pPass){ pAuthAndLoad(); } else { pShowGate(false); }
 }
 
@@ -4931,7 +4957,8 @@ async function pLoad(){
   try{
     const r=await postGAS({action:'personalList', owner:pOwner, pass:pPass});
     pItems = (r.ok && Array.isArray(r.items)) ? r.items : [];
-  }catch(e){ pItems=[]; }
+    pLoaded = true;
+  }catch(e){ pItems=[]; pLoaded=false; }
 }
 
 async function pSaveItem(item){
@@ -4939,13 +4966,13 @@ async function pSaveItem(item){
   if(!item.fecha_captura) item.fecha_captura=hoy;
   item.fecha_actualizacion=hoy;
   const r=await postGAS({action:'personalSave', owner:pOwner, pass:pPass, item});
-  if(r&&r.ok){ if(!item.id) item.id=r.id; await pLoad(); pRender(); return true; }
+  if(r&&r.ok){ if(!item.id) item.id=r.id; pLoaded=false; await pLoad(); pRender(); return true; }
   showToast('⚠ No se guardó: '+((r&&r.error)||'error')); return false;
 }
 async function pDelItem(id){
   if(!confirm('¿Eliminar este registro personal?')) return;
   const r=await postGAS({action:'personalDelete', owner:pOwner, pass:pPass, id});
-  if(r&&r.ok){ await pLoad(); pRender(); } else showToast('⚠ '+((r&&r.error)||'error'));
+  if(r&&r.ok){ pLoaded=false; await pLoad(); pRender(); } else showToast('⚠ '+((r&&r.error)||'error'));
 }
 
 function pSetSection(sec, el){
@@ -4953,6 +4980,13 @@ function pSetSection(sec, el){
   document.querySelectorAll('#pTabs .ftab').forEach(b=>b.classList.remove('on'));
   if(el) el.classList.add('on');
   pRender();
+}
+function pGoSection(sec){
+  const t=[...document.querySelectorAll('#pTabs .ftab')].find(b=>{
+    const txt=b.textContent||'';
+    return (sec==='fijos'&&/Pagos fijos/.test(txt))||(sec==='tarjetas'&&/Tarjetas/.test(txt))||(sec==='proximos'&&/Próximos/.test(txt))||(sec==='historial'&&/Historial/.test(txt));
+  });
+  if(t) pSetSection(sec,t); else { pSection=sec; pRender(); }
 }
 
 // ── Helpers de dinero ──
@@ -5144,13 +5178,31 @@ function pRenderResumen(){
   const meDeben=meDebenExt, debo=deboExt;
   const saldoBase=pSaldoBase();
   const saldo=saldoBase+ingresos-gastos-fijosMes-msiMes;
+  const mk=pMesKey();
+  const fijosPend=pItemsOf('fijo').filter(f=>!(f.pagos||{})[mk]).length;
+  const tarjetasPend=pItemsOf('tarjeta').filter(c=>c.ctipo==='TDC' && !(c.pagos||{})[mk]).length;
+  const estadosPend=pItemsOf('estado').filter(e=>{ const co=pConciliacionEstado(e); return (e.mes||'')===mk && (co.estado!=='conciliado'); }).length;
+  const noIdent=pItemsOf('estado').reduce((s,e)=>s+(e.movimientos||[]).filter(m=>(m.estado||'pendiente')==='no_identificado').length,0);
 
   const card=(bg,bd,col,t,v,sub)=>`<div style="background:${bg};border:1px solid ${bd};border-radius:12px;padding:13px">
     <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:${col};margin-bottom:3px">${t}</div>
     <div style="font-family:var(--mono);font-size:17px;font-weight:700;color:${col}">${v}</div>
     ${sub?'<div style="font-size:10px;color:var(--ink-3);margin-top:2px">'+sub+'</div>':''}</div>`;
 
-  return `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:16px">
+  const command=`<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:13px;margin-bottom:12px">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+      <div><div style="font-size:12px;font-weight:800">💳 Pagos y tarjetas · ${esc(mk)}</div><div style="font-size:11px;color:var(--ink-3)">Lo urgente primero: pagar, conciliar y evitar duplicados.</div></div>
+      <button class="rt-btn" style="font-weight:700;color:var(--personal);border-color:var(--personal)" onclick="pGoSection('proximos')">🔔 Ver próximos</button>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px">
+      <button class="rt-btn" style="text-align:left;padding:10px" onclick="pGoSection('fijos')"><strong>${fijosPend}</strong><br><span style="font-size:11px;color:var(--ink-3)">pagos fijos pendientes</span></button>
+      <button class="rt-btn" style="text-align:left;padding:10px" onclick="pGoSection('tarjetas')"><strong>${tarjetasPend}</strong><br><span style="font-size:11px;color:var(--ink-3)">tarjetas por pagar</span></button>
+      <button class="rt-btn" style="text-align:left;padding:10px" onclick="pGoSection('tarjetas')"><strong>${estadosPend}</strong><br><span style="font-size:11px;color:var(--ink-3)">estados por conciliar</span></button>
+      <button class="rt-btn" style="text-align:left;padding:10px" onclick="pGoSection('tarjetas')"><strong>${noIdent}</strong><br><span style="font-size:11px;color:var(--ink-3)">movimientos no identificados</span></button>
+    </div>
+  </div>`;
+
+  return command+`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:16px">
     ${card('var(--shared-bg)','var(--shared-bdr)','var(--shared)','💰 Me deben', pMoney(meDeben), 'deudas registradas')}
     ${card('var(--temis-bg)','var(--temis-bdr)','var(--temis)','⚠️ Debo', pMoney(debo), 'deudas registradas')}
     ${card('var(--lot-bg)','var(--lot-bdr)','var(--lot)','📈 Ingresos (reg.)', pMoney(ingresos), '')}
