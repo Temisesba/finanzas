@@ -975,8 +975,9 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--i
 <style>
 .pf-field{margin-bottom:12px}
 .pf-field>label{display:block;font-size:11px;font-weight:600;color:var(--ink-2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px}
-.pf-field input,.pf-field select{width:100%;border:1px solid var(--border2);border-radius:8px;padding:9px 11px;font-size:14px;font-family:var(--sans);outline:none;background:var(--bg)}
-.pf-field input:focus,.pf-field select:focus{border-color:var(--lot)}
+.pf-field input,.pf-field select,.pf-field textarea{width:100%;border:1px solid var(--border2);border-radius:8px;padding:9px 11px;font-size:14px;font-family:var(--sans);outline:none;background:var(--bg)}
+.pf-field input:focus,.pf-field select:focus,.pf-field textarea:focus{border-color:var(--lot)}
+.pf-field textarea{min-height:92px;resize:vertical;line-height:1.35}
 @media(max-width:560px){ #pFormOverlay .modal{max-width:100%;margin:8px} }
 </style>
 </head>
@@ -1142,6 +1143,8 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--i
           <button class="ptab2" onclick="pSetSection('deudas',this)">🤝 Deudas ext.</button>
           <button class="ptab2" onclick="pSetSection('fijos',this)">🔁 Pagos fijos</button>
           <button class="ptab2" onclick="pSetSection('tarjetas',this)">💳 Tarjetas</button>
+          <button class="ptab2" onclick="pSetSection('proximos',this)">🔔 Próximos</button>
+          <button class="ptab2" onclick="pSetSection('historial',this)">📅 Historial</button>
           <button class="ptab2" onclick="pSetSection('msi',this)">🗓️ MSI</button>
           <button class="ptab2" onclick="pSetSection('movs',this)">📈 Movimientos</button>
         </div>
@@ -3373,6 +3376,7 @@ sesion:activeSesion};
           return out;
         })});
     }
+    if(!ei && window.__pagoFijoPendiente){ const f=pItems.find(x=>x.id===window.__pagoFijoPendiente); if(f){ const mk=pMesKey(); f.pagos=f.pagos||{}; f.pagos[mk]={monto:parseFloat(f.monto)||0, fecha:fecha, gastoRef:body.concepto||''}; await pSaveItem(f); } window.__pagoFijoPendiente=''; }
     closeModal(true);showToast(ei?'✓ Actualizado':'✓ Guardado');await new Promise(r => setTimeout(r, 500));
 await loadExp();}else showToast('Error: '+(r.error||'desconocido'));}
   catch(e){closeModal(true);showToast(ei?'✓ Actualizado':'✓ Guardado');await new Promise(r => setTimeout(r, 500));
@@ -4716,7 +4720,7 @@ init();
 let pItems = [];          // items personales cargados
 let pPass  = '';          // contraseña personal (memoria + localStorage)
 let pOwner = '';          // = myName()
-let pSection = 'resumen';  // resumen | deudas | fijos | tarjetas | msi | movs
+let pSection = 'resumen';  // resumen | deudas | fijos | tarjetas | proximos | historial | msi | movs
 
 function pOpen(){
   // Botón 👤 de la cabecera → abre la pestaña Salud
@@ -4840,6 +4844,11 @@ function pToggleCardPago(id){
   const c=pItems.find(x=>x.id===id); if(!c)return;
   const mk=pMesKey(); c.pagos=c.pagos||{};
   if(c.pagos[mk]){ delete c.pagos[mk]; pSaveItem(c); return; }
+  const edo=pEstadoDeTarjetaMes(id,mk);
+  if(edo){
+    pVerConciliacion(edo.id);
+    if(!confirm('Este pago de tarjeta se maneja como conciliación, no como gasto completo.\n\n¿Marcar la tarjeta como pagada para '+mk+'?')) return;
+  }
   const sug=pTarjetaCargado(id);
   const monto=prompt('¿Cuánto pagaste de esta tarjeta este mes ('+mk+')?', Math.round(sug)||'');
   if(monto===null) return;
@@ -4881,6 +4890,8 @@ function pRender(){
   else if(pSection==='deudas')  el.innerHTML=pRenderDeudas();
   else if(pSection==='fijos')   el.innerHTML=pRenderFijos();
   else if(pSection==='tarjetas')el.innerHTML=pRenderTarjetas();
+  else if(pSection==='proximos')el.innerHTML=pRenderProximos();
+  else if(pSection==='historial')el.innerHTML=pRenderHistorial();
   else if(pSection==='msi')     el.innerHTML=pRenderMSI();
   else if(pSection==='movs')    el.innerHTML=pRenderMovs();
   pRenderAlarmBadge();
@@ -4902,8 +4913,51 @@ function pRenderAlarmBadge(){
   pItemsOf('msi').forEach(m=> pMSICuotas(m).forEach(q=>{ if(!q.pagada && q.dias!==null && q.dias<=5) alarmas++; }));
   pItemsOf('tarjeta').forEach(c=>{ if(c.ctipo!=='TDC') return; const pagado=(c.pagos||{})[mk]; const dias=pDiasPara(c.diaLimite);
     if(!pagado && dias!==null && dias<=5) alarmas++; });
+  pItemsOf('estado').forEach(e=>{ const co=pConciliacionEstado(e); if(e.mes===mk && (co.estado==='diferencia'||co.counts.no_identificado||co.counts.pendiente)) alarmas++; });
   const b=document.getElementById('pAlarmBadge');
   if(b){ b.textContent=alarmas?('🔔 '+alarmas):''; b.style.display=alarmas?'inline-block':'none'; }
+}
+
+function pFechaMesDia(mk,dia){ if(!dia)return ''; return mk+'-'+String(parseInt(dia)).padStart(2,'0'); }
+function pEstadoPagoMes(item,mk){
+  const reg=(item.pagos||{})[mk]; if(reg) return {txt:'✓ pagado', col:'var(--shared)'};
+  const fecha=pFechaMesDia(mk,item.diaLimite); if(!fecha) return {txt:'⏳ pendiente', col:'var(--ink-3)'};
+  const hoy=new Date().toISOString().substring(0,10);
+  if(fecha<hoy) return {txt:'🔴 vencido', col:'var(--temis)'};
+  const dias=Math.round((new Date(fecha+'T12:00:00')-new Date(hoy+'T12:00:00'))/86400000);
+  return {txt:dias<=5?'🔔 próximo':'⏳ pendiente', col:dias<=5?'var(--loan)':'var(--ink-3)'};
+}
+function pRenderProximos(){
+  const mk=pMesKey();
+  const rows=[];
+  pItemsOf('fijo').forEach(f=>{
+    const st=pEstadoPagoMes(f,mk), card=pCardById(f.tarjeta);
+    rows.push({fecha:pFechaMesDia(mk,f.diaLimite), titulo:(f.tipoPago==='tarjeta'?'💳 ':'🔁 ')+(f.concepto||'Pago fijo'), nota:(card?pCardLabel(card)+' · ':'')+(f.tipoPago==='tarjeta'?'revisar conciliación':'gasto recurrente'), st, action:`pAccionFijo('${esc(f.id)}')`});
+  });
+  pItemsOf('tarjeta').filter(c=>c.ctipo==='TDC').forEach(c=>{
+    const st=pEstadoPagoMes(c,mk), edo=pEstadoDeTarjetaMes(c.id,mk);
+    if(c.diaDisponible) rows.push({fecha:pFechaMesDia(mk,c.diaDisponible), titulo:'💳 Ya puedes pagar '+pCardLabel(c), nota:'Disponible desde día '+c.diaDisponible+(edo?' · estado cargado':' · sin estado'), st:{txt:edo?'🔎 revisar':'⏳ pendiente', col:edo?'var(--loan)':'var(--ink-3)'}, action:edo?`pVerConciliacion('${esc(edo.id)}')`:`pOpenEstado('${esc(c.id)}','')`});
+    rows.push({fecha:pFechaMesDia(mk,c.diaLimite), titulo:'💳 Límite '+pCardLabel(c), nota:edo?('estado '+pEstadoLabel(pConciliacionEstado(edo).estado)):'pendiente de estado de cuenta', st, action:edo?`pVerConciliacion('${esc(edo.id)}')`:`pOpenEstado('${esc(c.id)}','')`});
+  });
+  rows.sort((a,b)=>(a.fecha||'9999').localeCompare(b.fecha||'9999'));
+  const html=rows.map(r=>`<div style="display:flex;align-items:center;gap:10px;padding:10px;border:1px solid var(--border);border-radius:10px;margin-bottom:8px;background:var(--surface)">
+    <div style="width:78px;font-size:11px;color:var(--ink-3)">${r.fecha?fmtDate(r.fecha):'—'}</div>
+    <div style="flex:1;min-width:0"><div style="font-weight:600;font-size:13px">${esc(r.titulo)}</div><div style="font-size:11px;color:var(--ink-3)">${esc(r.nota)}</div></div>
+    <div style="font-size:11px;font-weight:600;color:${r.st.col}">${r.st.txt}</div>
+    <button class="rt-btn" onclick="${r.action}">Abrir</button>
+  </div>`).join('')||'<div style="color:var(--ink-3);font-size:13px;padding:20px;text-align:center">Sin próximos pagos este mes.</div>';
+  return `<div style="font-size:12px;color:var(--ink-3);margin-bottom:10px">Hoy · esta semana · este mes, con tarjetas como conciliación y pagos normales como gasto real.</div>${html}`;
+}
+function pRenderHistorial(){
+  const months=new Set([pMesKey()]);
+  pItemsOf('estado').forEach(e=>{ if(e.mes) months.add(e.mes); });
+  Object.values(pItemsOf('fijo').reduce((o,f)=>{ Object.keys(f.pagos||{}).forEach(k=>months.add(k)); return o; },{}));
+  const list=[...months].sort().reverse().slice(0,12);
+  return list.map(mk=>{
+    const fijos=pItemsOf('fijo').map(f=>{ const st=pEstadoPagoMes(f,mk); return '<div>• '+esc(f.concepto||'Pago fijo')+': <span style="color:'+st.col+';font-weight:600">'+st.txt+'</span></div>'; }).join('');
+    const edos=pItemsOf('estado').filter(e=>e.mes===mk).map(e=>{ const c=pCardById(e.tarjeta)||{}; const co=pConciliacionEstado(e); return '<div>• '+esc(pCardLabel(c))+': <span style="color:'+pEstadoColor(co.estado)+';font-weight:600">'+pEstadoLabel(co.estado)+'</span>'+(co.dif?(' · dif '+pMoney(Math.abs(co.dif))):'')+'</div>'; }).join('') || '<div style="color:var(--ink-3)">• Sin estados de cuenta cargados</div>';
+    return `<div style="padding:12px;border:1px solid var(--border);border-radius:10px;margin-bottom:10px;background:var(--surface)"><div style="font-weight:700;margin-bottom:6px">📅 ${esc(mk)}</div><div style="font-size:12px;line-height:1.6">${fijos}${edos}</div></div>`;
+  }).join('');
 }
 
 // ── RESUMEN ──
@@ -5004,6 +5058,7 @@ function pRenderFijos(){
         <div style="font-family:var(--mono);font-weight:700">${pMoney(f.monto)}</div>
       </div>
       <div style="display:flex;gap:6px;margin-top:8px">
+        <button class="rt-btn" style="font-weight:600" onclick="pAccionFijo('${esc(f.id)}')">${f.tipoPago==='tarjeta'?'🔎 Revisar pago':'🧾 Registrar pago'}</button>
         <button class="rt-btn" style="${pagado?'':'font-weight:600;border-color:var(--shared);color:var(--shared)'}" onclick="pToggleFijoPagado('${esc(f.id)}')">${pagado?'✓ Pagado '+(fechaPagado||'este mes')+' (deshacer)':'Marcar pagado ('+mk+')'}</button>
         <button class="rt-btn" onclick="pOpenForm('fijo','${esc(f.id)}')">✏️</button>
         <button class="shop-del" onclick="pDelItem('${esc(f.id)}')">🗑</button>
@@ -5021,6 +5076,27 @@ function pToggleFijoPagado(id){
   if(fecha===null) return;
   f.pagos[mk]={monto:parseFloat(f.monto)||0, fecha:(fecha||hoy).trim()};
   pSaveItem(f);
+}
+function pAccionFijo(id){
+  const f=pItems.find(x=>x.id===id); if(!f)return;
+  const mk=pMesKey();
+  if(f.tipoPago==='tarjeta'){
+    const edo=f.tarjeta?pEstadoDeTarjetaMes(f.tarjeta,mk):null;
+    if(edo){ pVerConciliacion(edo.id); return; }
+    if(f.tarjeta && confirm('No hay estado de cuenta para '+mk+'. ¿Crear uno para conciliar esta tarjeta?')){ pOpenEstado(f.tarjeta,''); return; }
+    showToast('Este pago de tarjeta se revisa desde Tarjetas → Estado de cuenta');
+    return;
+  }
+  if(f.generaGasto===false){ pToggleFijoPagado(id); return; }
+  openModal();
+  document.getElementById('iDate').value=new Date().toISOString().substring(0,10);
+  document.getElementById('iCosto').value=Math.round(parseFloat(f.monto)||0);
+  document.getElementById('iConc').value=f.concepto||'Pago fijo';
+  document.getElementById('iCat').value=f.categoria||'Servicios';
+  document.getElementById('iNotas').value=(f.nota?f.nota+' · ':'')+'Generado desde pago fijo '+f.id+' · '+mk;
+  if(f.formaPago==='Tarjeta'&&f.tarjeta){ const mm=document.getElementById('iMetodo'); if(mm){ mm.value='Tarjeta'; onMetodoChange(); const s=document.getElementById('iTarjetaSel'); if(s){ s.value=f.tarjeta; onTarjetaSelChange(); } } }
+  window.__pagoFijoPendiente=f.id;
+  showToast('Revisa y guarda el gasto; luego queda ligado al pago fijo');
 }
 function pEditFijo(id){
   const f = id ? pItems.find(x=>x.id===id) : {tipo:'fijo'};
@@ -5044,14 +5120,14 @@ function pRenderTarjetas(){
   const rows=items.map(c=>`<div style="display:flex;align-items:center;gap:8px;padding:11px;border:1px solid var(--border);border-radius:10px;margin-bottom:8px;background:var(--surface)">
       <div style="flex:1;min-width:0">
         <div style="font-weight:600;font-size:13px">💳 ${esc(pCardLabel(c))}</div>
-        <div style="font-size:11px;color:var(--ink-3)">${esc(c.nombre||'')}${c.diaCorte?(' · corte '+esc(c.diaCorte)):''}${c.diaLimite?(' · límite '+esc(c.diaLimite)):''}${c.nota?(' · 📝 '+esc(c.nota)):''}</div>
-        <div style="font-size:11px;color:var(--temis);font-weight:600;margin-top:2px">Estimado del ciclo: ${pMoney(pTarjetaEstimado(c))} <button class="rt-btn" style="font-size:9px;padding:2px 6px;margin-left:4px" onclick="pVerEstadoCuenta('${esc(c.id)}')">🧾 Estado de cuenta</button></div>
+        <div style="font-size:11px;color:var(--ink-3)">${esc(c.nombre||'')}${c.diaCorte?(' · corte '+esc(c.diaCorte)):''}${c.diaDisponible?(' · disponible '+esc(c.diaDisponible)):''}${c.diaLimite?(' · límite '+esc(c.diaLimite)):''}${c.nota?(' · 📝 '+esc(c.nota)):''}</div>
+        <div style="font-size:11px;color:var(--temis);font-weight:600;margin-top:2px">Estimado del ciclo: ${pMoney(pTarjetaEstimado(c))} <button class="rt-btn" style="font-size:9px;padding:2px 6px;margin-left:4px" onclick="pOpenEstado('${esc(c.id)}','')">＋ Estado</button></div>
         <div style="font-size:10px;color:var(--ink-3)">+ fijos/MSI asignados: ${pMoney(pTarjetaCargado(c.id))}</div>
       </div>
       <button class="rt-btn" onclick="pOpenForm('tarjeta','${esc(c.id)}')">✏️</button>
       <button class="shop-del" onclick="pDelItem('${esc(c.id)}')">🗑</button>
     </div>
-    ${pCardPagoRow(c)}`).join('') || '<div style="color:var(--ink-3);font-size:13px;padding:20px;text-align:center">Sin tarjetas. Agrega tus TDC/TDD para elegirlas al pagar.</div>';
+    ${pCardPagoRow(c)}${pRenderEstadosTarjeta(c)}`).join('') || '<div style="color:var(--ink-3);font-size:13px;padding:20px;text-align:center">Sin tarjetas. Agrega tus TDC/TDD para elegirlas al pagar.</div>';
   return `<button class="rt-btn" style="font-weight:600;margin-bottom:12px" onclick="pOpenForm('tarjeta','')">＋ Nueva tarjeta</button>${rows}
     <div style="font-size:11px;color:var(--ink-3);margin-top:8px">💡 Si una tarjeta es la misma física y virtual (misma al pagar), regístrala una vez y usa el campo forma solo como recordatorio.</div>`;
 }
@@ -5167,11 +5243,41 @@ const P_TIPOS = {
   deuda:    {emoji:'🤝', label:'Deuda externa'},
   fijo:     {emoji:'🔁', label:'Pago fijo'},
   tarjeta:  {emoji:'💳', label:'Tarjeta'},
+  estado:   {emoji:'🧾', label:'Estado de cuenta'},
   msi:      {emoji:'🗓️', label:'Compra a MSI'},
 };
 
 function pF(id){ return document.getElementById(id); }
 function pFval(id){ const el=pF(id); return el?el.value:''; }
+function btnBusy(txt){ const b=pF('pFormSaveBtn'); if(b){ b.disabled=true; b.textContent=txt||'Guardando…'; } }
+function btnReady(){ const b=pF('pFormSaveBtn'); if(b){ b.disabled=false; b.textContent='Guardar'; } }
+function pEstadoLabel(s){
+  return ({pendiente:'Pendiente de revisar', parcial:'Parcialmente conciliado', conciliado:'Conciliado', diferencia:'Con diferencia', identificado:'Identificado', posible:'Posible coincidencia', no_identificado:'No identificado', ignorado:'Ignorado'})[s]||s||'Pendiente';
+}
+function pMovsToText(movs){
+  return (movs||[]).map(m=>[m.fecha||'',m.descripcion||'',m.monto||'',m.categoria||'',m.estado||'pendiente',m.gastoId||''].join(' | ')).join('\n');
+}
+function pTextToMovs(txt){
+  return String(txt||'').split(/\n+/).map(line=>{
+    const p=line.split('|').map(x=>x.trim());
+    if(!p[0]&&!p[1]&&!p[2]) return null;
+    return {fecha:p[0]||'', descripcion:p[1]||'', monto:parseFloat(p[2])||0, categoria:p[3]||'', estado:p[4]||'pendiente', gastoId:p[5]||''};
+  }).filter(Boolean);
+}
+function pUploadPdf(file, mes){
+  return new Promise((resolve,reject)=>{
+    const r=new FileReader();
+    r.onload=async ev=>{
+      try{
+        const dataUrl=String(ev.target.result||'');
+        const b64=dataUrl.split(',')[1]||'';
+        resolve(await postGAS({action:'uploadEstadoPdf', filename:file.name, mimeType:file.type||'application/pdf', base64:b64, mes:mes||pMesKey(), owner:pOwner, pass:pPass}));
+      }catch(e){ reject(e); }
+    };
+    r.onerror=()=>reject(new Error('No se pudo leer el PDF'));
+    r.readAsDataURL(file);
+  });
+}
 
 // Abre el formulario para crear (id vacío) o editar (id existente)
 function pOpenForm(tipo, id){
@@ -5184,7 +5290,7 @@ function pOpenForm(tipo, id){
 }
 function pFormTieneDatos(){
   const cont=document.getElementById('pFormFields'); if(!cont) return false;
-  return [...cont.querySelectorAll('input,select')].some(el=>{ if(el.type==='checkbox') return el.checked; return el.value && String(el.value).trim()!==''; });
+  return [...cont.querySelectorAll('input,select,textarea')].some(el=>{ if(el.type==='checkbox') return el.checked; if(el.type==='file') return el.files&&el.files.length; return el.value && String(el.value).trim()!==''; });
 }
 function pCloseForm(force){
   if(!force && pFormTieneDatos() && !confirm('Tienes datos sin guardar. ¿Cerrar de todos modos?')) return;
@@ -5214,6 +5320,7 @@ function pMovTipo(t){
 function pFormFieldsHTML(tipo, it){
   it=it||{};
   const F=(label,id,val,attrs)=>`<div class="pf-field"><label>${label}</label><input id="${id}" value="${esc(val||'')}" ${attrs||''}></div>`;
+  const TA=(label,id,val,attrs)=>`<div class="pf-field"><label>${label}</label><textarea id="${id}" ${attrs||''}>${esc(val||'')}</textarea></div>`;
   const hoy=new Date().toISOString().substring(0,10);
   if(tipo==='ingreso'||tipo==='gasto'){
     return F('Concepto','pfConcepto',it.concepto,'placeholder="Ej. Sueldo, cine…" id="pFormFirst"')
@@ -5235,10 +5342,19 @@ function pFormFieldsHTML(tipo, it){
   }
   if(tipo==='fijo'){
     const fm=it.formaPago||'';
+    const gen=it.generaGasto!==false;
     return F('Concepto','pfConcepto',it.concepto,'placeholder="Renta, HSBC, Netflix…" id="pFormFirst"')
+      + `<div class="pf-field"><label>Tipo de pago</label><select id="pfTipoPago">
+          <option value="recurrente"${(it.tipoPago||'recurrente')==='recurrente'?' selected':''}>🔁 Gasto recurrente</option>
+          <option value="tarjeta"${it.tipoPago==='tarjeta'?' selected':''}>💳 Recordatorio de tarjeta</option>
+        </select></div>`
       + F('Monto (¥)','pfMonto',it.monto,'type="number" placeholder="0"')
+      + `<div class="pf-field"><label>Frecuencia</label><select id="pfFrecuencia">
+          ${['mensual','semanal','quincenal','anual','personalizada'].map(x=>'<option value="'+x+'"'+((it.frecuencia||'mensual')===x?' selected':'')+'>'+x+'</option>').join('')}
+        </select></div>`
       + F('Día límite de pago (1-31)','pfDiaLimite',it.diaLimite,'type="number" min="1" max="31" placeholder="ej. 15"')
       + F('Fecha de pago (opcional)','pfFechaPago',it.fechaPago,'type="date"')
+      + F('Categoría','pfCategoria',it.categoria,'placeholder="Servicios, suscripciones…"')
       + `<div class="pf-field"><label>Forma de pago</label>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             <select id="pfFormaPago" onchange="pfFormaPagoChange()" style="min-width:110px">
@@ -5248,6 +5364,10 @@ function pFormFieldsHTML(tipo, it){
             </select>
             <select id="pfTarjeta" style="flex:1;min-width:150px;${(fm==='Tarjeta'||it.tarjeta)?'':'display:none'}">${pCardOptions(it.tarjeta)}</select>
           </div></div>`
+      + `<div class="pf-field"><label>Genera gasto general</label><select id="pfGeneraGasto">
+          <option value="si"${gen?' selected':''}>Sí</option>
+          <option value="no"${!gen?' selected':''}>No</option>
+        </select></div>`
       + F('Nota (opcional)','pfNota',it.nota,'placeholder="Ej. pagar en el banco lejano"');
   }
   if(tipo==='tarjeta'){
@@ -5267,7 +5387,27 @@ function pFormFieldsHTML(tipo, it){
           ${F('Día de corte','pfDiaCorte',it.diaCorte,'type="number" min="1" max="31" placeholder="opc."')}
           ${F('Día límite','pfDiaLimite',it.diaLimite,'type="number" min="1" max="31" placeholder="opc."')}
         </div>`
+      + F('Pago disponible desde','pfDiaDisponible',it.diaDisponible,'type="number" min="1" max="31" placeholder="opc."')
       + F('Notas','pfNotaTarj',it.nota,'placeholder="Ej. paga en app, banco lejano…"');
+  }
+  if(tipo==='estado'){
+    const movs=pMovsToText(it.movimientos||[]);
+    return `<div class="pf-field"><label>Tarjeta</label><select id="pfTarjeta">${pCardOptions(it.tarjeta)}</select></div>`
+      + F('Mes','pfMes',it.mes||pMesKey(),'type="month"')
+      + F('Total estado de cuenta','pfTotal',it.total,'type="number" placeholder="0"')
+      + F('Pago mínimo','pfMinimo',it.minimo,'type="number" placeholder="opcional"')
+      + F('Pago para no generar intereses','pfNoIntereses',it.noIntereses,'type="number" placeholder="opcional"')
+      + `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          ${F('Fecha de corte','pfFechaCorte',it.fechaCorte,'type="date"')}
+          ${F('Fecha límite','pfFechaLimite',it.fechaLimite,'type="date"')}
+        </div>`
+      + `<div class="pf-field"><label>Estado</label><select id="pfEstado">
+          ${['pendiente','parcial','conciliado','diferencia'].map(x=>'<option value="'+x+'"'+((it.estado||'pendiente')===x?' selected':'')+'>'+pEstadoLabel(x)+'</option>').join('')}
+        </select></div>`
+      + F('PDF adjunto','pfPdfUrl',it.pdfUrl,'placeholder="URL de Drive o sube PDF abajo"')
+      + `<div class="pf-field"><label>Subir PDF</label><input type="file" id="pfPdfFile" accept="application/pdf"></div>`
+      + TA('Movimientos del estado (fecha | descripción | monto | categoría | estado)','pfMovimientos',movs,'placeholder="2026-05-01 | Netflix | 219 | Suscripciones | pendiente"')
+      + F('Nota','pfNota',it.nota,'placeholder="Detalle del periodo…"');
   }
   if(tipo==='msi'){
     return F('¿Qué compraste?','pfConcepto',it.concepto,'placeholder="Ej. Laptop" id="pFormFirst"')
@@ -5300,18 +5440,33 @@ async function pFormSave(){
   } else if(t==='fijo'){
     if(!pFval('pfConcepto').trim()){ showToast('Escribe un concepto'); return; }
     const prev=prevItem;
-    item={...base, concepto:pFval('pfConcepto').trim(), monto:parseFloat(pFval('pfMonto'))||0, diaLimite:pFval('pfDiaLimite'), fechaPago:pFval('pfFechaPago'), formaPago:pFval('pfFormaPago'), tarjeta:(pFval('pfFormaPago')==='Tarjeta'?pFval('pfTarjeta'):''), nota:pFval('pfNota').trim(), pagos:(prev&&prev.pagos)||{}};
+    const tipoPago=pFval('pfTipoPago')||'recurrente';
+    item={...base, concepto:pFval('pfConcepto').trim(), tipoPago, monto:parseFloat(pFval('pfMonto'))||0, frecuencia:pFval('pfFrecuencia')||'mensual', diaLimite:pFval('pfDiaLimite'), fechaPago:pFval('pfFechaPago'), categoria:pFval('pfCategoria').trim(), formaPago:pFval('pfFormaPago'), tarjeta:(pFval('pfFormaPago')==='Tarjeta'?pFval('pfTarjeta'):''), generaGasto:(tipoPago==='tarjeta'?false:(pFval('pfGeneraGasto')!=='no')), nota:pFval('pfNota').trim(), pagos:(prev&&prev.pagos)||{}};
   } else if(t==='tarjeta'){
     if(!pFval('pfBanco').trim() && !pFval('pfNombre').trim()){ showToast('Pon al menos alias o banco'); return; }
-    item={...base, nombre:pFval('pfNombre').trim(), titular:pFval('pfTitular').trim(), banco:pFval('pfBanco').trim(), ctipo:pFval('pfCtipo'), termFisica:pFval('pfTermFis').trim(), termVirtual:pFval('pfTermVir').trim(), diaCorte:pFval('pfDiaCorte'), diaLimite:pFval('pfDiaLimite'), nota:pFval('pfNotaTarj').trim()};
+    item={...base, nombre:pFval('pfNombre').trim(), titular:pFval('pfTitular').trim(), banco:pFval('pfBanco').trim(), ctipo:pFval('pfCtipo'), termFisica:pFval('pfTermFis').trim(), termVirtual:pFval('pfTermVir').trim(), diaCorte:pFval('pfDiaCorte'), diaDisponible:pFval('pfDiaDisponible'), diaLimite:pFval('pfDiaLimite'), nota:pFval('pfNotaTarj').trim()};
+  } else if(t==='estado'){
+    if(!pFval('pfTarjeta')){ showToast('Elige tarjeta'); return; }
+    const prev=pFormId?pItems.find(x=>x.id===pFormId):null;
+    let pdfUrl=pFval('pfPdfUrl').trim();
+    const fileEl=pF('pfPdfFile');
+    if(fileEl && fileEl.files && fileEl.files[0]){
+      try{
+        btnBusy('Subiendo PDF…');
+        const up=await pUploadPdf(fileEl.files[0], pFval('pfMes'));
+        if(up&&up.ok) pdfUrl=up.url;
+        else throw new Error((up&&up.error)||'No se pudo subir PDF');
+      }catch(e){ showToast('⚠ '+e.message); btnReady(); return; }
+    }
+    item={...base, tarjeta:pFval('pfTarjeta'), mes:pFval('pfMes')||pMesKey(), total:parseFloat(pFval('pfTotal'))||0, minimo:parseFloat(pFval('pfMinimo'))||0, noIntereses:parseFloat(pFval('pfNoIntereses'))||0, fechaCorte:pFval('pfFechaCorte'), fechaLimite:pFval('pfFechaLimite'), fechaSubida:(prev&&prev.fechaSubida)||hoy, estado:pFval('pfEstado')||'pendiente', pdfUrl, movimientos:pTextToMovs(pFval('pfMovimientos')), nota:pFval('pfNota').trim()};
   } else if(t==='msi'){
     if(!pFval('pfConcepto').trim()){ showToast('¿Qué compraste?'); return; }
     const prev=prevItem;
     item={...base, concepto:pFval('pfConcepto').trim(), monto:parseFloat(pFval('pfMonto'))||0, meses:parseInt(pFval('pfMeses'))||1, tarjeta:pFval('pfTarjeta'), inicio:pFval('pfInicio'), diaLimite:pFval('pfDiaLimite'), pagadas:(prev&&prev.pagadas)||{}};
   }
-  const btn=pF('pFormSaveBtn'); btn.disabled=true; btn.textContent='Guardando…';
+  btnBusy('Guardando…');
   const ok=await pSaveItem(item);
-  btn.disabled=false; btn.textContent='Guardar';
+  btnReady();
   if(ok){ pCloseForm(true); showToast('✓ Guardado'); }
 }
 
@@ -5340,12 +5495,84 @@ function pGastosDeTarjeta(c){
 function pTarjetaEstimado(c){
   return pGastosDeTarjeta(c).reduce((s,e)=>s+(parseFloat(e.costo)||0),0);
 }
+function pEstadoDeTarjetaMes(cardId, mk){
+  return pItemsOf('estado').find(e=>e.tarjeta===cardId && (e.mes||'')===mk);
+}
+function pGastosDeTarjetaMes(c, mk){
+  return pGastosDeTarjeta(c).filter(e=>String(e.fecha||'').substring(0,7)===mk);
+}
+function pConciliacionEstado(e){
+  const c=pCardById(e.tarjeta)||{};
+  const gs=pGastosDeTarjetaMes(c,e.mes||pMesKey());
+  const totalApp=gs.reduce((s,g)=>s+(parseFloat(g.costo)||0),0);
+  const totalReal=parseFloat(e.total)||0;
+  const dif=Math.round(totalReal-totalApp);
+  const movs=e.movimientos||[];
+  const counts={identificado:0,posible:0,no_identificado:0,ignorado:0,pendiente:0};
+  movs.forEach(m=>{ const st=m.estado||'pendiente'; counts[counts[st]!==undefined?st:'pendiente']++; });
+  let estado=e.estado||'pendiente';
+  if(Math.abs(dif)<=1 && counts.no_identificado===0 && counts.pendiente===0) estado='conciliado';
+  else if(counts.identificado>0 || counts.posible>0) estado='parcial';
+  if(Math.abs(dif)>1) estado='diferencia';
+  return {card:c,gastos:gs,totalApp,totalReal,dif,movs,counts,estado};
+}
+function pEstadoColor(st){ return st==='conciliado'?'var(--shared)':(st==='diferencia'?'var(--temis)':(st==='parcial'?'var(--loan)':'var(--ink-3)')); }
+function pOpenEstado(cardId,id){
+  pOpenForm('estado',id||'');
+  setTimeout(()=>{ const s=pF('pfTarjeta'); if(s&&cardId) s.value=cardId; },0);
+}
+function pRenderEstadosTarjeta(c){
+  const estados=pItemsOf('estado').filter(e=>e.tarjeta===c.id).sort((a,b)=>(b.mes||'').localeCompare(a.mes||''));
+  if(!estados.length) return '<div style="margin:-4px 0 8px 0;padding:8px 10px;background:var(--surface2);border-radius:8px;font-size:11.5px;color:var(--ink-3)">Sin estados de cuenta ligados a esta tarjeta.</div>';
+  return estados.map(e=>{
+    const co=pConciliacionEstado(e);
+    return `<div style="margin:-4px 0 8px 0;padding:9px 10px;background:var(--surface2);border-radius:8px;font-size:11.5px">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <strong>🧾 ${esc(e.mes||'—')}</strong>
+        <span style="color:${pEstadoColor(co.estado)};font-weight:600">${pEstadoLabel(co.estado)}</span>
+        <span>app ${pMoney(co.totalApp)}</span>
+        <span>estado ${pMoney(co.totalReal)}</span>
+        <span style="color:${co.dif?'var(--temis)':'var(--shared)'}">dif ${pMoney(Math.abs(co.dif))}</span>
+        ${e.pdfUrl?'<a class="rt-btn" style="font-size:10px;padding:3px 8px;text-decoration:none" href="'+esc(e.pdfUrl)+'" target="_blank">PDF</a>':''}
+        <button class="rt-btn" style="font-size:10px;padding:3px 8px" onclick="pVerConciliacion('${esc(e.id)}')">🔎 Conciliar</button>
+        <button class="rt-btn" style="font-size:10px;padding:3px 8px" onclick="pOpenEstado('${esc(c.id)}','${esc(e.id)}')">✏️</button>
+        <button class="shop-del" style="font-size:10px;padding:3px 8px" onclick="pDelItem('${esc(e.id)}')">🗑</button>
+      </div>
+    </div>`;
+  }).join('');
+}
 function pVerEstadoCuenta(cardId){
   const c=pItemsOf('tarjeta').find(x=>x.id===cardId); if(!c)return;
   const gs=pGastosDeTarjeta(c);
   const tot=gs.reduce((s,e)=>s+(parseFloat(e.costo)||0),0);
   const filas=gs.map(e=>'• '+String(e.fecha).substring(0,10)+'  '+(e.concepto||'')+'  '+curSym()+Math.round(parseFloat(e.costo)||0).toLocaleString()).join('\n')||'(sin gastos con esta tarjeta en la sesión activa)';
   alert('🧾 Estado de cuenta — '+pCardLabel(c)+'\n(sesión '+(activeSesion||'')+')\n\n'+filas+'\n\nTOTAL: '+curSym()+Math.round(tot).toLocaleString());
+}
+function pVerConciliacion(estadoId){
+  const e=pItems.find(x=>x.id===estadoId); if(!e)return;
+  const co=pConciliacionEstado(e);
+  const movTxt=(co.movs||[]).map(m=>'• '+(m.fecha||'—')+' '+(m.descripcion||'')+' '+pMoney(m.monto)+' · '+pEstadoLabel(m.estado||'pendiente')).join('\n')||'(sin movimientos capturados)';
+  const registrar=co.dif>1 && confirm('🔎 Conciliación — '+pCardLabel(co.card)+' · '+(e.mes||'')+
+    '\n\nRegistrado en app: '+pMoney(co.totalApp)+
+    '\nEstado de cuenta: '+pMoney(co.totalReal)+
+    '\nDiferencia: '+pMoney(Math.abs(co.dif))+
+    '\nEstado: '+pEstadoLabel(co.estado)+
+    '\n\nMovimientos:\n'+movTxt+
+    '\n\nEl pago completo de tarjeta NO se registra como gasto.\n\n¿Registrar solo la diferencia como gasto por revisar?');
+  if(registrar) pRegistrarDiferencia(estadoId);
+}
+function pRegistrarDiferencia(estadoId){
+  const e=pItems.find(x=>x.id===estadoId); if(!e)return;
+  const co=pConciliacionEstado(e);
+  if(!(co.dif>1)){ showToast('No hay diferencia positiva para registrar'); return; }
+  openModal();
+  document.getElementById('iDate').value=new Date().toISOString().substring(0,10);
+  document.getElementById('iCosto').value=Math.round(co.dif);
+  document.getElementById('iConc').value='Gasto no identificado / diferencia de estado de cuenta';
+  document.getElementById('iCat').value='Por revisar';
+  document.getElementById('iNotas').value='Diferencia estado '+(e.mes||'')+' · '+pCardLabel(co.card)+' · estadoId '+e.id;
+  const mm=document.getElementById('iMetodo'); if(mm){ mm.value='Tarjeta'; onMetodoChange(); const s=document.getElementById('iTarjetaSel'); if(s){ s.value=e.tarjeta; onTarjetaSelChange(); } }
+  showToast('Revisa y guarda solo la diferencia, no el pago completo');
 }
 
 
