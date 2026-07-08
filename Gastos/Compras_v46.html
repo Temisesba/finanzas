@@ -2481,22 +2481,28 @@ function renderVerdict(){
   // v43: en sesión personal, mostrar SOLO mi balance (sesión + deudas externas)
   if(personalMode){
     const me=myName();
-    // Desglose desde misGastosAll: a quién debo (por persona+sesión) y quién me debe (por sesión)
     const debo={}, meDeben={};
-    (misGastosAll||[]).forEach(e=>{
-      const full=parseFloat(e.costo)||0; const q=e.quien_paga; const parts=Array.isArray(e.participantes)?e.participantes:[];
-      if((e.compartido==='Compartido'||e.compartido==='Prestamo'||e.compartido==='Devolucion') && q && q!==me && (e.miParte>0)){
-        const k=q+' ('+ (e.sesion||'') +')'; debo[k]=(debo[k]||0)+(parseFloat(e.miParte)||0);
-      } else if((e.compartido==='Compartido'||e.compartido==='Prestamo') && q===me){
-        // otros me deben: total menos mi parte, agrupado por sesión
-        const otros=full-(parseFloat(e.miParte)||0);
-        if(otros>0){ const k=e.sesion||''; meDeben[k]=(meDeben[k]||0)+otros; }
-      }
-    });
+    // Mismo neto que la tarjeta superior: sesión activa + deudas externas.
+    // Evita mostrar bruto cruzado (ej. "debes 96k" y "te deben 91k").
+    try{
+      v31Simplificar().forEach(p=>{
+        const k=(p.de===me?p.a:p.de)+' ('+(activeSesion||'Sesión')+')';
+        if(p.de===me) debo[k]=(debo[k]||0)+p.monto;
+        else if(p.a===me) meDeben[k]=(meDeben[k]||0)+p.monto;
+      });
+    }catch(_){}
     // deudas externas
     (typeof pItemsOf==='function'?pItemsOf('deuda'):[]).forEach(d=>{ const a=parseFloat(d.monto)||0; if(a<=0)return;
       if(d.dir==='medeben'){ const k=(d.persona||'')+' (externa)'; meDeben[k]=(meDeben[k]||0)+a; }
       else { const k=(d.persona||'')+' (externa)'; debo[k]=(debo[k]||0)+a; } });
+    const netMap={};
+    Object.keys(debo).forEach(k=>netMap[k]=(netMap[k]||0)-debo[k]);
+    Object.keys(meDeben).forEach(k=>netMap[k]=(netMap[k]||0)+meDeben[k]);
+    Object.keys(netMap).forEach(k=>{
+      const v=Math.round(netMap[k]);
+      if(v>0) meDeben[k]=v; else delete meDeben[k];
+      if(v<0) debo[k]=-v; else delete debo[k];
+    });
     const totDebo=Object.values(debo).reduce((s,v)=>s+v,0);
     const totMe=Object.values(meDeben).reduce((s,v)=>s+v,0);
     const neto=Math.round(totMe-totDebo);
@@ -2601,7 +2607,8 @@ function pDerivedRowsHTML(){
     +'<span><span style="color:var(--ink-3);font-size:11px">—</span></span><span><span style="color:var(--ink-3);font-size:11px">—</span></span>'
     +'<span class="row-acts"><button class="ibtn" onclick="pGoSalud()" title="Editar en Salud">↗</button></span></div>';
   pItemsOf('fijo').forEach(f=>{ const card=pCardById(f.tarjeta); const pagado=(f.pagos||{})[mk];
-    rows.push({f:pFechaDia(f.diaLimite), c:f.concepto||'Pago fijo', m:parseFloat(f.monto)||0, n:(pagado?'✓ pagado':'⏳ pendiente')+(card?(' · sale de '+card.ctipo+' '+(card.banco||'')):''), i:'🔁'}); });
+    const fechaPagado=pagado&&typeof pagado==='object'?pagado.fecha:'';
+    rows.push({f:pFechaDia(f.diaLimite), c:f.concepto||'Pago fijo', m:parseFloat(f.monto)||0, n:(pagado?'✓ pagado'+(fechaPagado?' '+fechaPagado:''):'⏳ pendiente')+(card?(' · sale de '+card.ctipo+' '+(card.banco||'')):''), i:'🔁'}); });
   pItemsOf('msi').forEach(m=>{ pMSICuotas(m).forEach(q=>{ if(q.key===mk){ const card=pCardById(m.tarjeta);
     rows.push({f:pFechaDia(m.diaLimite)||(mk+'-15'), c:(m.concepto||'MSI')+' (cuota '+q.idx+')', m:q.monto, n:(q.pagada?'✓ pagada':'⏳')+(card?(' · '+card.ctipo+' '+(card.banco||'')):''), i:'🗓️'}); } }); });
   pItemsOf('deuda').forEach(d=>{ const meDeben=d.dir==='medeben';
@@ -4779,6 +4786,9 @@ async function pLoad(){
 }
 
 async function pSaveItem(item){
+  const hoy=new Date().toISOString().substring(0,10);
+  if(!item.fecha_captura) item.fecha_captura=hoy;
+  item.fecha_actualizacion=hoy;
   const r=await postGAS({action:'personalSave', owner:pOwner, pass:pPass, item});
   if(r&&r.ok){ if(!item.id) item.id=r.id; await pLoad(); pRender(); return true; }
   showToast('⚠ No se guardó: '+((r&&r.error)||'error')); return false;
@@ -4978,6 +4988,7 @@ function pRenderFijos(){
   const rows=items.map(f=>{
     const pagado=(f.pagos||{})[mk]; const dias=pDiasPara(f.diaLimite);
     const card=pCardById(f.tarjeta);
+    const fechaPagado=pagado&&typeof pagado==='object'?pagado.fecha:'';
     let alarma='';
     if(!pagado && dias!==null){
       if(dias<0) alarma='<span style="color:var(--temis);font-weight:600">🔴 vencido</span>';
@@ -4988,12 +4999,12 @@ function pRenderFijos(){
       <div style="display:flex;align-items:center;gap:8px">
         <div style="flex:1;min-width:0">
           <div style="font-weight:600;font-size:13px">${esc(f.concepto||'—')} ${alarma}</div>
-          <div style="font-size:11px;color:var(--ink-3)">día límite ${f.diaLimite||'?'}${card?(' · 💳 '+esc(pCardLabel(card))):''}${f.nota?(' · '+esc(f.nota)):''}</div>
+          <div style="font-size:11px;color:var(--ink-3)">día límite ${f.diaLimite||'?'}${f.fechaPago?(' · pago '+esc(f.fechaPago)):''}${fechaPagado?(' · pagado '+esc(fechaPagado)):''}${card?(' · 💳 '+esc(pCardLabel(card))):''}${f.nota?(' · '+esc(f.nota)):''}</div>
         </div>
         <div style="font-family:var(--mono);font-weight:700">${pMoney(f.monto)}</div>
       </div>
       <div style="display:flex;gap:6px;margin-top:8px">
-        <button class="rt-btn" style="${pagado?'':'font-weight:600;border-color:var(--shared);color:var(--shared)'}" onclick="pToggleFijoPagado('${esc(f.id)}')">${pagado?'✓ Pagado este mes (deshacer)':'Marcar pagado ('+mk+')'}</button>
+        <button class="rt-btn" style="${pagado?'':'font-weight:600;border-color:var(--shared);color:var(--shared)'}" onclick="pToggleFijoPagado('${esc(f.id)}')">${pagado?'✓ Pagado '+(fechaPagado||'este mes')+' (deshacer)':'Marcar pagado ('+mk+')'}</button>
         <button class="rt-btn" onclick="pOpenForm('fijo','${esc(f.id)}')">✏️</button>
         <button class="shop-del" onclick="pDelItem('${esc(f.id)}')">🗑</button>
       </div>
@@ -5004,7 +5015,11 @@ function pRenderFijos(){
 function pToggleFijoPagado(id){
   const f=pItems.find(x=>x.id===id); if(!f)return;
   const mk=pMesKey(); f.pagos=f.pagos||{};
-  f.pagos[mk]=!f.pagos[mk];
+  if(f.pagos[mk]){ delete f.pagos[mk]; pSaveItem(f); return; }
+  const hoy=new Date().toISOString().substring(0,10);
+  const fecha=prompt('Fecha de pago de '+(f.concepto||'este pago')+' ('+mk+'):', f.fechaPago||hoy);
+  if(fecha===null) return;
+  f.pagos[mk]={monto:parseFloat(f.monto)||0, fecha:(fecha||hoy).trim()};
   pSaveItem(f);
 }
 function pEditFijo(id){
@@ -5223,6 +5238,7 @@ function pFormFieldsHTML(tipo, it){
     return F('Concepto','pfConcepto',it.concepto,'placeholder="Renta, HSBC, Netflix…" id="pFormFirst"')
       + F('Monto (¥)','pfMonto',it.monto,'type="number" placeholder="0"')
       + F('Día límite de pago (1-31)','pfDiaLimite',it.diaLimite,'type="number" min="1" max="31" placeholder="ej. 15"')
+      + F('Fecha de pago (opcional)','pfFechaPago',it.fechaPago,'type="date"')
       + `<div class="pf-field"><label>Forma de pago</label>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             <select id="pfFormaPago" onchange="pfFormaPagoChange()" style="min-width:110px">
@@ -5270,7 +5286,10 @@ function pTarjForma(f){ pF('pfForma').value=f; pF('pfFis').className='tbtn'+(f==
 
 // Guarda leyendo el formulario según el tipo
 async function pFormSave(){
-  const t=pFormTipo; const base={id:pFormId,tipo:t};
+  const t=pFormTipo;
+  const prevItem=pFormId?pItems.find(x=>x.id===pFormId):null;
+  const hoy=new Date().toISOString().substring(0,10);
+  const base={id:pFormId,tipo:t,fecha_captura:(prevItem&&prevItem.fecha_captura)||hoy,fecha_actualizacion:hoy};
   let item;
   if(t==='ingreso'||t==='gasto'){
     if(!pFval('pfConcepto').trim()){ showToast('Escribe un concepto'); return; }
@@ -5280,14 +5299,14 @@ async function pFormSave(){
     item={...base, dir:pFval('pfDir'), persona:pFval('pfPersona').trim(), monto:parseFloat(pFval('pfMonto'))||0, fechaPago:pFval('pfFechaPago'), nota:pFval('pfNota').trim()};
   } else if(t==='fijo'){
     if(!pFval('pfConcepto').trim()){ showToast('Escribe un concepto'); return; }
-    const prev=pFormId?pItems.find(x=>x.id===pFormId):null;
-    item={...base, concepto:pFval('pfConcepto').trim(), monto:parseFloat(pFval('pfMonto'))||0, diaLimite:pFval('pfDiaLimite'), formaPago:pFval('pfFormaPago'), tarjeta:(pFval('pfFormaPago')==='Tarjeta'?pFval('pfTarjeta'):''), nota:pFval('pfNota').trim(), pagos:(prev&&prev.pagos)||{}};
+    const prev=prevItem;
+    item={...base, concepto:pFval('pfConcepto').trim(), monto:parseFloat(pFval('pfMonto'))||0, diaLimite:pFval('pfDiaLimite'), fechaPago:pFval('pfFechaPago'), formaPago:pFval('pfFormaPago'), tarjeta:(pFval('pfFormaPago')==='Tarjeta'?pFval('pfTarjeta'):''), nota:pFval('pfNota').trim(), pagos:(prev&&prev.pagos)||{}};
   } else if(t==='tarjeta'){
     if(!pFval('pfBanco').trim() && !pFval('pfNombre').trim()){ showToast('Pon al menos alias o banco'); return; }
     item={...base, nombre:pFval('pfNombre').trim(), titular:pFval('pfTitular').trim(), banco:pFval('pfBanco').trim(), ctipo:pFval('pfCtipo'), termFisica:pFval('pfTermFis').trim(), termVirtual:pFval('pfTermVir').trim(), diaCorte:pFval('pfDiaCorte'), diaLimite:pFval('pfDiaLimite'), nota:pFval('pfNotaTarj').trim()};
   } else if(t==='msi'){
     if(!pFval('pfConcepto').trim()){ showToast('¿Qué compraste?'); return; }
-    const prev=pFormId?pItems.find(x=>x.id===pFormId):null;
+    const prev=prevItem;
     item={...base, concepto:pFval('pfConcepto').trim(), monto:parseFloat(pFval('pfMonto'))||0, meses:parseInt(pFval('pfMeses'))||1, tarjeta:pFval('pfTarjeta'), inicio:pFval('pfInicio'), diaLimite:pFval('pfDiaLimite'), pagadas:(prev&&prev.pagadas)||{}};
   }
   const btn=pF('pFormSaveBtn'); btn.disabled=true; btn.textContent='Guardando…';
@@ -5406,8 +5425,9 @@ function pMiListaRows(){
   pItemsOf('fijo').forEach(f=>{
     const card=pCardById(f.tarjeta);
     const pagado=(f.pagos||{})[mk];
+    const fechaPagado=pagado&&typeof pagado==='object'?pagado.fecha:'';
     rows.push({fecha: pFechaDia(f.diaLimite), concepto:'🔁 '+(f.concepto||''), monto:parseFloat(f.monto)||0,
-      nota:(pagado?'✓ pagado · ':'⏳ pendiente · ')+(card?('sale de '+card.ctipo+' '+(card.banco||'')+(card.terminacion?' ····'+card.terminacion:'')):'sin tarjeta'), tipo:'fijo'});
+      nota:(pagado?'✓ pagado'+(fechaPagado?' '+fechaPagado:'')+' · ':'⏳ pendiente · ')+(card?('sale de '+card.ctipo+' '+(card.banco||'')+(card.terminacion?' ····'+card.terminacion:'')):'sin tarjeta'), tipo:'fijo'});
   });
   // 3) Cuotas MSI de este mes
   pItemsOf('msi').forEach(m=>{
