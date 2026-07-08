@@ -516,11 +516,11 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--i
 
 /* ── Table ─────────────────────────────────────────────── */
 .table-wrap{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
-.erow{display:grid;grid-template-columns:72px minmax(140px,1fr) 94px 100px 60px 140px 96px 36px 52px;align-items:center;gap:6px;padding:9px 12px;border-bottom:1px solid var(--border);transition:background .1s}
+.erow{display:grid;grid-template-columns:72px minmax(220px,1fr) 108px 96px 60px 128px 150px 42px 56px;align-items:center;gap:6px;padding:9px 12px;border-bottom:1px solid var(--border);transition:background .1s}
 .erow:last-child{border-bottom:none}
 .erow:hover{background:var(--surface2)}
 /* Header row uses same grid */
-.hrow{font-size:0;padding:8px 12px;background:var(--surface2);border-bottom:1px solid var(--border);display:grid;grid-template-columns:72px minmax(140px,1fr) 94px 100px 60px 140px 96px 36px 52px;gap:6px;align-items:center}
+.hrow{font-size:0;padding:8px 12px;background:var(--surface2);border-bottom:1px solid var(--border);display:grid;grid-template-columns:72px minmax(220px,1fr) 108px 96px 60px 128px 150px 42px 56px;gap:6px;align-items:center}
 .hcell{display:flex;align-items:center;gap:4px;position:relative}
 .col-sort{font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-3);cursor:pointer;user-select:none;white-space:nowrap}
 .col-sort:hover{color:var(--ink)}
@@ -939,7 +939,7 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--i
 
   /* Ancho mínimo cómodo: obliga a que aparezca el carril horizontal.
      El contenido interno se pinta a tamaño legible, no comprimido. */
-  .table-wrap .hrow, .table-wrap #expList{ min-width:860px !important; }
+  .table-wrap .hrow, .table-wrap #expList{ min-width:1020px !important; }
   .shop-table  .shop-hrow, .shop-table #shopRows{ min-width:560px !important; }
   .shop-table  .inv-hrow,  .shop-table #invRows{ min-width:860px !important; }
 
@@ -954,7 +954,7 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--i
 
   /* La sub-tabla de productos (desplegable 🧾) también respira dentro
      del carril: ocupa el ancho mínimo para verse completa. */
-  .prod-sub{ min-width:660px !important; }
+  .prod-sub{ min-width:700px !important; }
 
   /* Pista visual: un “desliza →” sutil la primera vez.
      (puramente estético, no molesta al usarlo) */
@@ -997,7 +997,7 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--i
       <span class="sub"><span id="sesionBadge"></span></span>
     </div>
 <div class="header-right">
-      <button class="hdr-btn" onclick="openPeople()" title="Sesiones y nombres">👥</button>
+      <button class="hdr-btn" id="peopleHdrBtn" onclick="openPeople()" title="Sesiones y nombres">👥</button>
 
       <button class="hdr-btn" onclick="openSettings()" title="Moneda">⚙️</button>
       <button class="hdr-btn" style="opacity:0.4;" onclick="toggleNotes()" title="Notas">📝</button>
@@ -1645,10 +1645,16 @@ function applyPeopleUI(){
   buildPayerButtons(); buildPersonFilters();
   const sb=document.getElementById('sesionBadge');
   if(sb){
-    const miembrosTxt=PEOPLE.join(' & ');
-    const mismo=normTxt(miembrosTxt).replace(/\s|&|y/g,'')===normTxt(activeSesion||'').replace(/\s|&|y/g,'');
-    sb.textContent=(activeSesion?('sesión '+activeSesion):'')+(mismo||!activeSesion?'':' · '+miembrosTxt);
+    if(personalMode){
+      sb.textContent='sesión personal · '+(myName()||'')+' · todas tus sesiones';
+    }else{
+      const miembrosTxt=PEOPLE.join(' & ');
+      const mismo=normTxt(miembrosTxt).replace(/\s|&|y/g,'')===normTxt(activeSesion||'').replace(/\s|&|y/g,'');
+      sb.textContent=(activeSesion?('sesión '+activeSesion):'')+(mismo||!activeSesion?'':' · '+miembrosTxt);
+    }
   }
+  const hb=document.getElementById('peopleHdrBtn');
+  if(hb) hb.textContent=personalMode?'👤':'👥';
 }
 function sesionPass(s){ return localStorage.getItem('gastos_pass_'+s) || ''; }
 async function loadSesiones(){
@@ -2408,7 +2414,7 @@ function renderCards(data){
     ['s-total','s-lot','s-temis','s-count'].forEach((id,i)=>document.getElementById(id).textContent=[v0,v1,v2,v3][i]);
     return;
   }
-  if(activeF==='Compartido'){l0='Total compartido';l1=e1+' '+P1()+' pagó';l2=e2+' '+P2()+' pagó';l3='Diferencia';v3=fy(Math.abs(tot/2-lotT));}
+  if(activeF==='Compartido'){l0='Total compartido';l1=e1+' '+P1()+' pagó';l2=e2+' '+P2()+' pagó';l3='Registros';v3=data.length+'';}
   else if(activeF==='Prestamo'){
     let lP=0,tP=0;data.forEach(e=>{const a=parseFloat(e.costo)||0;if(e.compartido==='Prestamo'){if(e.quien_paga===P1())lP+=a;else if(e.quien_paga===P2())tP+=a;}});
     l0='Total préstamos';l1=e1+' '+P1()+' prestó';l2=e2+' '+P2()+' prestó';v0=fy(lP+tP);v1=fy(lP);v2=fy(tP);l3='Registros';
@@ -2573,7 +2579,9 @@ const proy=e.proyecto?'<div class="prod" title="Vinculado desde itinerario">🧳
     const hijos=prodsDe(e.gastoId);
     const prodBadge=hijos.length?'<span class="prod-badge" onclick="v30ToggleSub(\''+esc(e.gastoId)+'\')" title="Ver productos">🧾 '+hijos.length+'</span> ':'';
     const subRows = (hijos.length && expandedRows[e.gastoId]) ? v30SubTable(hijos) : '';
-    return '<div class="erow"><span class="dc">'+fmtDate(e.fecha)+'</span><span class="cc">'+prodBadge+esc(e.concepto||'—')+prod+proy+note+'</span><span class="ac" style="text-align:right">'+amtStr+convStr+'</span><span>'+pc+'</span><span>'+tc2+'</span><span>'+cc2+'</span><span>'+pagoCel+'</span><span>'+foto+'</span><span class="row-acts">'+(esMio?'<button class="ibtn" onclick="openExpView('+e.rowIndex+')" title="Ver todo (solo lectura)">🔒</button>':((personalMode?'<button class="ibtn" onclick="pViewOriginal('+e.rowIndex+')" title="Ver original y sesión">👁</button>':'')+'<button class="ibtn" onclick="editExp('+e.rowIndex+')" title="Editar">✏️</button><button class="ibtn" onclick="delExp('+e.rowIndex+')" title="Eliminar">🗑</button>'))+'</span></div>'+subRows;
+    const sesArg=String(e.sesion||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+    const myActs='<button class="ibtn" onclick="openExpView('+e.rowIndex+')" title="Ver todo">👁</button><button class="ibtn" onclick="pEditPersonal('+e.rowIndex+',\''+sesArg+'\')" title="Editar en su sesión">✏️</button>';
+    return '<div class="erow"><span class="dc">'+fmtDate(e.fecha)+'</span><span class="cc">'+prodBadge+esc(e.concepto||'—')+prod+proy+note+'</span><span class="ac" style="text-align:right">'+amtStr+convStr+'</span><span>'+pc+'</span><span>'+tc2+'</span><span>'+cc2+'</span><span>'+pagoCel+'</span><span>'+foto+'</span><span class="row-acts">'+(esMio?myActs:((personalMode?'<button class="ibtn" onclick="pViewOriginal('+e.rowIndex+')" title="Ver original y sesión">👁</button>':'')+'<button class="ibtn" onclick="editExp('+e.rowIndex+')" title="Editar">✏️</button><button class="ibtn" onclick="delExp('+e.rowIndex+')" title="Eliminar">🗑</button>'))+'</span></div>'+subRows;
   }).join('');
 }
 // v38: filas de solo lectura de MIS items personales (pagos fijos, cuotas MSI, deudas) del mes
@@ -2601,6 +2609,24 @@ function pGoSalud(){ const t=document.getElementById('tabSalud'); if(t){ t.style
 // v40: ver el gasto ORIGINAL completo (abre el editor con el dato real) + sesión
 function pInfoMio(sesion){ /* compat */ }
 function pViewOriginal(rowIndex){ openExpView(rowIndex); }
+async function pEditPersonal(rowIndex, sesion){
+  const src=(misGastosAll||[]).find(x=>String(x.rowIndex)===String(rowIndex))||{};
+  const target=sesion||src.sesion||activeSesion;
+  if(target && target!==activeSesion){
+    const chk=await v29CheckSesion(target, sesionPass(target));
+    if(!chk.ok){ showToast('Abre la sesión '+target+' para editar'); return; }
+    personalMode=false;
+    const tabSalud=document.getElementById('tabSalud'); if(tabSalud) tabSalud.style.display='none';
+    activeSesion=target; PEOPLE=chk.miembros||PEOPLE;
+    localStorage.setItem('gastos_sesion',target);
+    applyPeopleUI(); renderNames(); await loadExp(); renderAll();
+  }else if(personalMode){
+    personalMode=false;
+    pUpdatePersonalBanner();
+    applyPeopleUI();
+  }
+  editExp(rowIndex);
+}
 // v46: visor de solo lectura con TODAS las variables
 function openExpView(rowIndex){
   const src = personalMode ? misGastosAll : allExp;
@@ -2653,12 +2679,13 @@ function v30SubTable(hijos){
     // v21: foto (clic = grande) + marca + ✏️ editar la fila completa
     const thumb=p.fotoProducto?'<img src="'+esc(p.fotoProducto)+'" style="width:20px;height:20px;object-fit:cover;border-radius:4px;border:1px solid var(--border);cursor:pointer;vertical-align:middle;flex-shrink:0" onclick="openLightbox(\''+esc(p.fotoProducto)+'\')" title="Ver foto">':'';
     const marca=p.marca?'<div style="font-size:9.5px;color:var(--ink-3);font-weight:600">'+esc(p.marca)+'</div>':'';
-    const nom='<div style="display:flex;gap:5px;align-items:flex-start">'+thumb+'<div style="min-width:0">'+esc(p.concepto)+marca+'</div></div>';
+    const cat=p.categoria?'<div style="font-size:9.5px;color:var(--personal);font-weight:600">'+esc(p.categoria)+'</div>':'';
+    const nom='<div style="display:flex;gap:5px;align-items:flex-start">'+thumb+'<div style="min-width:0">'+esc(p.concepto)+marca+cat+'</div></div>';
     const invSI=(p.inventario||'SI')!=='NA';
     const inv='<button class="inv-toggle '+(invSI?'si':'')+'" onclick="v31ToggleInv('+p.rowIndex+')" title="Cambiar inventario">'+(invSI?'📦 SI':'NA')+'</button>';
-    return '<tr><td>'+nom+'</td><td>'+(p.piezas||'')+'</td><td style="text-align:center">'+inv+'</td><td>'+(p.cantidad?esc(p.cantidad)+' '+esc(p.unidad||''):'—')+'</td><td>'+(p.precioInd?curSym()+esc(p.precioInd):'—')+'</td><td><button class="shop-del" onclick="v35EditProd('+p.rowIndex+')" title="Editar producto (foto, marca, código…)">✏️</button></td></tr>';
+    return '<tr><td style="text-align:center">'+inv+'</td><td>'+nom+'</td><td>'+(p.piezas||'')+'</td><td>'+(p.cantidad?esc(p.cantidad)+' '+esc(p.unidad||''):'—')+'</td><td>'+(p.precioInd?curSym()+esc(p.precioInd):'—')+'</td><td><button class="shop-del" onclick="v35EditProd('+p.rowIndex+')" title="Editar producto (foto, marca, código…)">✏️</button></td></tr>';
   };
-  return '<div class="prod-sub"><table><tr><th>Producto</th><th>Pzas</th><th title="¿Va a inventario?">📦</th><th>Cant.</th><th>Precio</th><th></th></tr>'+hijos.map(fila).join('')+'</table></div>';
+  return '<div class="prod-sub"><table><tr><th title="¿Va a inventario?">📦</th><th>Producto</th><th>Pzas</th><th>Cant.</th><th>Precio</th><th></th></tr>'+hijos.map(fila).join('')+'</table></div>';
 }
 
 function fmtDate(r){if(!r)return '—';try{const s=String(r).substring(0,10);const[y,m,d]=s.split('-');return d+'/'+(m||'?')+'/'+(y||'').substring(2);}catch{return String(r).substring(0,8);}}
@@ -3285,6 +3312,7 @@ function fillAI(res){
     prodDraft = res.productos.map(p=>({
       concepto: String(p.producto||p.nombre||'').trim(),
       marca:    String(p.marca||'').trim(),
+      categoria:String(p.categoria_producto||p.categoria||res.categoria||'').trim(),
       notas:    String(p.notas||'').trim(),
       piezas:   p.piezas!=null?String(p.piezas):'1',
       cantidad: p.cantidad!=null?String(p.cantidad):'',
@@ -3308,6 +3336,7 @@ function v30RenderProdDraft(){
         <span style="display:flex;flex-direction:column;gap:2px;min-width:0;flex:1">
         <input type="text" value="${esc(p.concepto)}" placeholder="Producto" onchange="prodDraft[${i}].concepto=this.value">
         <input type="text" value="${esc(p.marca||'')}" placeholder="marca…" style="font-size:10px;opacity:.85;font-weight:600" onchange="prodDraft[${i}].marca=this.value">
+        <input type="text" value="${esc(p.categoria||'')}" placeholder="categoría / ubicación…" list="list-inv-cats" style="font-size:10px;opacity:.9;font-weight:600;color:var(--personal)" onchange="prodDraft[${i}].categoria=this.value">
         <input type="text" value="${esc(p.notas||'')}" placeholder="notas…" style="font-size:10px;opacity:.8" onchange="prodDraft[${i}].notas=this.value">
         </span>
       </span>
@@ -3830,6 +3859,8 @@ function v31ToggleInv(rowIndex){
   const p=allProds.find(x=>x.rowIndex===rowIndex); if(!p)return;
   const nuevo=((p.inventario||'SI')!=='NA')?'NA':'SI';
   p.inventario=nuevo;
+  renderAll();
+  if(currentPage==='inventario') v30RenderInv();
   v30SaveField(rowIndex,'inventario',nuevo);
   v30RenderInv();
 }
@@ -5662,9 +5693,10 @@ function pUpdatePersonalBanner(){
   if(!b){ b=document.createElement('div'); b.id='personalBanner'; b.style.cssText='display:none;background:var(--lot);color:#fff;padding:7px 14px;border-radius:8px;margin:0 0 10px 0;font-size:13px;font-weight:600;align-items:center;justify-content:space-between';
     const host=document.getElementById('gastosView'); if(host) host.insertBefore(b, host.firstChild); }
   if(b){
-    b.style.display = personalMode ? 'flex' : 'none';
-    b.innerHTML='<span>👤 SESIÓN PERSONAL — '+esc(myName()||'')+' · tu parte de todas tus sesiones</span><button onclick="pExitPersonal()" style="background:rgba(255,255,255,.25);border:none;color:#fff;border-radius:6px;padding:4px 12px;cursor:pointer;font-weight:600">Salir ✕</button>';
+    b.style.display = 'none';
+    b.innerHTML='';
   }
+  applyPeopleUI();
 }
 // compat: por si algo aún llama pToggleMode
 function pToggleMode(){ if(personalMode) pExitPersonal(); else pEnterPersonal(); }
