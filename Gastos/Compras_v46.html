@@ -769,7 +769,7 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--i
 .name-me{font-size:10px;background:var(--loan-bg);color:var(--loan);border:1px solid var(--loan-bdr);border-radius:20px;padding:1px 8px}
 @media(max-width:560px){.shop-hrow,.shop-row{grid-template-columns:28px 1.4fr 1fr .8fr .9fr 24px;gap:3px}}
 /* ── v12: inventario ── */
-.inv-hrow,.inv-row{display:grid;grid-template-columns:1.7fr 1fr .9fr 1fr .6fr .7fr .95fr 1.05fr 76px;gap:6px;align-items:center;padding:6px 8px}
+.inv-hrow,.inv-row{display:grid;grid-template-columns:1.7fr .9fr .85fr .95fr 1fr .6fr .7fr .9fr 1.05fr 76px;gap:6px;align-items:center;padding:6px 8px}
 .inv-hrow{background:var(--surface2);border-bottom:1px solid var(--border)}
 .inv-row{border-bottom:1px solid var(--border);font-size:12px}
 .inv-row:last-child{border-bottom:none}
@@ -1035,6 +1035,11 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--i
       <span style="color:var(--ink-3);font-size:12px">→</span>
       <input type="date" id="fTo" onchange="renderAll()">
       <button class="btn-clr" onclick="clearDates()">✕ Fechas</button>
+      <button class="btn-clr" onclick="setDatePreset('today')">Hoy</button>
+      <button class="btn-clr" onclick="setDatePreset('week')">Semana</button>
+      <button class="btn-clr" onclick="setDatePreset('month')">Mes</button>
+      <button class="btn-clr" onclick="setDatePreset('year')">Año</button>
+      <button class="btn-clr" onclick="setDatePreset('all')">Todo</button>
       <div class="sep-line"></div>
       <label>Cat:</label>
       <select id="catSelect" onchange="renderAll()" style="min-width:140px"><option value="">Todas</option></select>
@@ -1171,14 +1176,17 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--i
         <button class="ftab" id="invF-all" onclick="v30SetInvFilter('todos',this)">Todos los productos</button>
         <button class="ftab" id="invF-cot" onclick="v30SetInvFilter('cotizacion',this)">💬 Cotizaciones</button>
         <button class="ftab" id="invF-star" onclick="v30SetInvFilter('prioritarios',this)">⭐ Prioritarios</button>
+        <button class="ftab" onclick="v30ToggleCols()">Columnas</button>
         <button class="rt-btn" style="padding:7px 14px;font-size:13px" onclick="v31ProdForm({target:'sheet'})">＋ Producto a inventario</button>
       </div>
+      <div id="invColPanel" style="display:none;gap:8px;flex-wrap:wrap;margin:-2px 0 10px 0;font-size:11px"></div>
       <div id="invResumen" style="display:none;margin-bottom:10px"></div>
       <div class="shop-table">
         <div class="inv-hrow">
           <span class="shop-h" onclick="v30InvSort('producto')">Producto<span id="ih-producto"></span></span>
           <span class="shop-h" onclick="v30InvSort('tienda')">Tienda<span id="ih-tienda"></span></span>
           <span class="shop-h" onclick="v30InvSort('categoria')">Categoría<span id="ih-categoria"></span></span>
+          <span class="shop-h" onclick="v30InvSort('ubicacion')">Lugar<span id="ih-ubicacion"></span></span>
           <span class="shop-h" onclick="v30InvSort('cantidad')">Cant.<span id="ih-cantidad"></span></span>
           <span class="shop-h" onclick="v30InvSort('precioInd')">Precio<span id="ih-precioInd"></span></span>
           <span class="shop-h" onclick="v30InvSort('precioComp')" title="Precio por unidad base — para comparar">Precio base<span id="ih-precioComp"></span></span>
@@ -1270,6 +1278,7 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--i
     <div class="mbody">
       <datalist id="list-productos"></datalist>
       <datalist id="list-inv-cats"></datalist>
+      <datalist id="list-inv-lugares"></datalist>
       <div id="pfCompraInfo" style="display:none;background:var(--lot-bg);border:1px solid var(--lot-bdr);border-radius:8px;padding:8px 10px;margin-bottom:10px;font-size:12px;color:var(--ink-2);align-items:center;gap:8px;justify-content:space-between"></div>
       <div class="field"><label>Foto del producto</label>
         <input type="file" accept="image/*" id="pfFotoInput" style="display:none" onchange="v33FotoFile(event,'form')">
@@ -1289,7 +1298,8 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--i
         <div class="field"><label>Marca</label><input type="text" id="pfMarca" placeholder="Ej. Coca-Cola Plus"></div>
         <div class="field"><label>Notas</label><input type="text" id="pfNotas" placeholder="Sabor, detalles…"></div>
       </div>
-      <div class="field"><label>Categoría / ubicación</label><input type="text" id="pfCatInv" list="list-inv-cats" placeholder="Ej. Embutidos cajón 1"></div>
+      <div class="field"><label>Categoría</label><input type="text" id="pfCatInv" list="list-inv-cats" placeholder="Ej. Embutidos"></div>
+      <div class="field"><label>Lugar donde se guarda</label><input type="text" id="pfUbicacion" list="list-inv-lugares" placeholder="Ej. Refri, vitrina roja, cajón 3"></div>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
         <div class="field"><label>Piezas</label><input type="number" id="pfPiezas" value="1" min="0"></div>
         <div class="field"><label>Cantidad</label><input type="number" id="pfCantidad" placeholder="500"></div>
@@ -1636,6 +1646,11 @@ function buildPayerButtons(){
 }
 function buildPersonFilters(){
   const c=document.getElementById('personFilters'); if(!c)return;
+  if(personalMode){
+    const me=myName();
+    c.innerHTML = me ? '<button class="ftab on" data-f="all" onclick="setFilter(\'all\',this)">👤 '+esc(me)+' (Personal)</button>' : '';
+    return;
+  }
   c.innerHTML = PEOPLE.map(n=>{
     const col=pColor(n);
     return '<button class="ftab" data-f="P:'+esc(n)+'" style="color:'+col.col+'" onclick="setFilter(\'P:'+esc(n)+'\',this)">'+pEmoji(n)+' '+esc(n)+' (Personal)</button>';
@@ -1802,6 +1817,7 @@ let currentPeriod='month';
 let currentPage='gastos';
 let statsOnlyCurrentMonth=true;
 let appSettings={ moneda_local:'JPY', moneda_conv:'MXN' };
+const sesionCache={};
 function curSym(code){ const m={JPY:'¥',MXN:'$',USD:'$',EUR:'€',GBP:'£',CAD:'$',KRW:'₩',CNY:'¥'}; const k=code||appSettings.moneda_local; return m[k]!==undefined?m[k]:(k+' '); }
 function personalSesionName(name){ return 'Personal-'+String(name||myName()||'').trim(); }
 function currentSaveSesion(){ return personalMode ? personalSesionName() : activeSesion; }
@@ -2103,6 +2119,7 @@ async function init(){
   const s=localStorage.getItem('gastos_v8_settings');
   if(s) appSettings={...appSettings,...JSON.parse(s)};
   buildCurrencySelects();
+  setDatePreset('week', true);
 
   // Mostrar mensaje de carga
   document.getElementById('expList').innerHTML='<div class="load-st"><span class="spin"></span> Conectando con Sheets...</div>';
@@ -2137,16 +2154,33 @@ async function loadSesionCards(){
 async function loadExp(){
   try{
     loadSesionCards();
+    const cacheKey=activeSesion+'|'+sesionPass(activeSesion);
+    const cached=sesionCache[cacheKey];
+    if(cached && Date.now()-cached.t<5*60*1000){
+      applyRowsFromGAS(cached.d);
+      return;
+    }
     const r=await fetch(GAS_URL+'?action=getGastos&sesion='+encodeURIComponent(activeSesion)+'&pass='+encodeURIComponent(sesionPass(activeSesion))+'&t='+Date.now());
     if(!r.ok) throw new Error('HTTP '+r.status);
     const d=await r.json();
     if(d.error==='PASSWORD'){ localStorage.removeItem('gastos_pass_'+activeSesion); v29ShowGate(); return; }
     if(d.error) throw new Error(d.error);
+    sesionCache[cacheKey]={t:Date.now(), d};
+    applyRowsFromGAS(d);
+  }catch(e){
+    document.getElementById('expList').innerHTML='<div class="empty-st">⚠️ Error: '+esc(e.message)+'</div>';
+  }
+}
+function invalidateSesionCache(sesion){
+  Object.keys(sesionCache).forEach(k=>{ if(!sesion || k.startsWith(sesion+'|')) delete sesionCache[k]; });
+}
+function applyRowsFromGAS(d){
     if(d.miembros && d.miembros.length){ PEOPLE=d.miembros; applyPeopleUI(); }
 const _rows=(d.gastos||[]).map(e=>({
   ...e,
   tienda: e.tienda || e.producto || '',
   producto: e.producto || e.tienda || '',
+  ubicacion: e.ubicacion || e.Ubicacion || '',
   moneda_pago:e.moneda_pago||appSettings.moneda_local,
   costo_conv: e.costo_conv || e.otra_moneda || '',
   moneda_conv:e.moneda_conv||e.moneda||''
@@ -2159,9 +2193,6 @@ const _rows=(d.gastos||[]).map(e=>({
     renderAll();
     if(currentPage==='stats')  renderStats();
     if(currentPage==='budget') renderBudget();
-  }catch(e){
-    document.getElementById('expList').innerHTML='<div class="empty-st">⚠️ Error: '+esc(e.message)+'</div>';
-  }
 }
 
 function populateCatSelect(){
@@ -2178,6 +2209,9 @@ function refreshTiendasDatalist(){
   const invBaseCats=(typeof DEPTOS!=='undefined' && DEPTOS.length ? DEPTOS : (typeof DEPTOS_DEFAULT!=='undefined' ? DEPTOS_DEFAULT : []));
   const invCats=[...new Set([...invBaseCats,...allProds.map(p=>p.categoria)].filter(Boolean))].sort();
   const invDl=document.getElementById('list-inv-cats'); if(invDl) invDl.innerHTML=invCats.map(t=>'<option value="'+esc(t)+'">').join('');
+  const lugaresBase=['Refri','Congelador','Alacena','Vitrina roja','Vitrina azul','Cajón 1','Cajón 2','Cajón 3','Baño','Bodega'];
+  const lugares=[...new Set([...lugaresBase,...allProds.map(p=>p.ubicacion)].filter(Boolean))].sort();
+  const lugDl=document.getElementById('list-inv-lugares'); if(lugDl) lugDl.innerHTML=lugares.map(t=>'<option value="'+esc(t)+'">').join('');
   refreshConceptosDatalist();
 }
 
@@ -2374,7 +2408,25 @@ function getFiltered(){
   if(colFilters.tienda!==null)     data=data.filter(e=>colFilters.tienda.includes(e.tienda||''));
   return data;
 }
-function clearDates(){ document.getElementById('fFrom').value=''; document.getElementById('fTo').value=''; renderAll(); }
+function isoDate(d){ return d.toISOString().substring(0,10); }
+function setDatePreset(kind, silent){
+  const from=document.getElementById('fFrom'), to=document.getElementById('fTo');
+  if(!from||!to) return;
+  const now=new Date(); let a='', b='';
+  if(kind==='today'){ a=b=isoDate(now); }
+  else if(kind==='week'){
+    const d=new Date(now), day=d.getDay()||7; d.setDate(d.getDate()-day+1);
+    const e=new Date(d); e.setDate(d.getDate()+6); a=isoDate(d); b=isoDate(e);
+  }else if(kind==='month'){
+    a=now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0')+'-01';
+    b=isoDate(new Date(now.getFullYear(),now.getMonth()+1,0));
+  }else if(kind==='year'){
+    a=now.getFullYear()+'-01-01'; b=now.getFullYear()+'-12-31';
+  }
+  from.value=a; to.value=b;
+  if(!silent) renderAll();
+}
+function clearDates(){ setDatePreset('all'); }
 function setFilter(f,el){ activeF=f; document.querySelectorAll('.ftab').forEach(b=>b.classList.remove('on')); el.classList.add('on'); renderAll(); }
 
 // ── Cards (filtered) + Verdict (global) ──────────────────
@@ -3346,6 +3398,7 @@ function fillAI(res){
       concepto: String(p.producto||p.nombre||'').trim(),
       marca:    String(p.marca||'').trim(),
       categoria:String(p.categoria_producto||p.categoria||res.categoria||'').trim(),
+      ubicacion:String(p.ubicacion||'').trim(),
       notas:    String(p.notas||'').trim(),
       piezas:   p.piezas!=null?String(p.piezas):'1',
       cantidad: p.cantidad!=null?String(p.cantidad):'',
@@ -3369,7 +3422,8 @@ function v30RenderProdDraft(){
         <span style="display:flex;flex-direction:column;gap:2px;min-width:0;flex:1">
         <input type="text" value="${esc(p.concepto)}" placeholder="Producto" onchange="prodDraft[${i}].concepto=this.value">
         <input type="text" value="${esc(p.marca||'')}" placeholder="marca…" style="font-size:10px;opacity:.85;font-weight:600" onchange="prodDraft[${i}].marca=this.value">
-        <input type="text" value="${esc(p.categoria||'')}" placeholder="categoría / ubicación…" list="list-inv-cats" style="font-size:10px;opacity:.9;font-weight:600;color:var(--personal)" onchange="prodDraft[${i}].categoria=this.value">
+        <input type="text" value="${esc(p.categoria||'')}" placeholder="categoría…" list="list-inv-cats" style="font-size:10px;opacity:.9;font-weight:600;color:var(--personal)" onchange="prodDraft[${i}].categoria=this.value">
+        <input type="text" value="${esc(p.ubicacion||'')}" placeholder="lugar…" list="list-inv-lugares" style="font-size:10px;opacity:.9" onchange="prodDraft[${i}].ubicacion=this.value">
         <input type="text" value="${esc(p.notas||'')}" placeholder="notas…" style="font-size:10px;opacity:.8" onchange="prodDraft[${i}].notas=this.value">
         </span>
       </span>
@@ -3383,7 +3437,7 @@ function v30RenderProdDraft(){
     </div>`).join('');
 }
 function v30ProdAdd(){
-  prodDraft.push({concepto:'',piezas:'1',cantidad:'',unidad:'unidad',precioInd:'',caducidad:'',inventario:true});
+  prodDraft.push({concepto:'',piezas:'1',cantidad:'',unidad:'unidad',precioInd:'',caducidad:'',inventario:true,ubicacion:''});
   v30RenderProdDraft();
 }
 
@@ -3411,7 +3465,7 @@ sesion:saveSesion};
         tienda:body.tienda, fecha:body.fecha, quien:currentPayer,
         productos: prodsLimpios.map(p=>{
           const c=v34Catalogo()[normTxt(p.concepto)];
-          const out={concepto:p.concepto.trim(),marca:p.marca||'',notas:p.notas||'',categoria:p.categoria||'',piezas:p.piezas,cantidad:p.cantidad,unidad:p.unidad,precioInd:p.precioInd,caducidad:p.caducidad,inventario:p.inventario?'SI':'NA',codigo:p.codigo||'',queda:p.queda??''};
+          const out={concepto:p.concepto.trim(),marca:p.marca||'',notas:p.notas||'',categoria:p.categoria||'',ubicacion:p.ubicacion||'',piezas:p.piezas,cantidad:p.cantidad,unidad:p.unidad,precioInd:p.precioInd,caducidad:p.caducidad,inventario:p.inventario?'SI':'NA',codigo:p.codigo||'',queda:p.queda??''};
           if(p.fotoBase64){ out.fotoBase64=p.fotoBase64; out.fotoMime=p.fotoMime; }
           else if(p.fotoUrl){ out.fotoUrl=p.fotoUrl; }
           else if(c&&c.foto){ out.fotoUrl=c.foto; } // hereda del catálogo solo si no eligió una propia
@@ -3419,6 +3473,7 @@ sesion:saveSesion};
         })});
     }
     if(!ei && window.__pagoFijoPendiente){ const f=pItems.find(x=>x.id===window.__pagoFijoPendiente); if(f){ const mk=pMesKey(); f.pagos=f.pagos||{}; f.pagos[mk]={monto:parseFloat(f.monto)||0, fecha:fecha, gastoRef:body.concepto||''}; await pSaveItem(f); } window.__pagoFijoPendiente=''; }
+    invalidateSesionCache(saveSesion);
     closeModal(true);showToast(ei?'✓ Actualizado':'✓ Guardado');await new Promise(r => setTimeout(r, 350));
 if(personalMode){ await pReloadMisGastos(); renderAll(); } else await loadExp();}else showToast('Error: '+(r.error||'desconocido'));}
   catch(e){closeModal(true);showToast(ei?'✓ Actualizado':'✓ Guardado');await new Promise(r => setTimeout(r, 500));
@@ -3473,7 +3528,7 @@ function editExp(rowIndex){
 
   // v12: cargar productos hijos al editor
   prodDraft = prodsDe(e.gastoId).map(p=>({
-    concepto:p.concepto||'', marca:p.marca||'', notas:p.notas||'', categoria:p.categoria||'', piezas:String(p.piezas||''), cantidad:String(p.cantidad||''),
+    concepto:p.concepto||'', marca:p.marca||'', notas:p.notas||'', categoria:p.categoria||'', ubicacion:p.ubicacion||'', piezas:String(p.piezas||''), cantidad:String(p.cantidad||''),
     unidad:p.unidad||'unidad', precioInd:String(p.precioInd||''), caducidad:String(p.caducidad||'').substring(0,10),
     inventario:(p.inventario||'SI')!=='NA',
     codigo:String(p.codigo||''), fotoUrl:p.fotoProducto||'',   // v20: la foto existente viaja explícita
@@ -3519,7 +3574,7 @@ if(btnGem){
 
 async function delExp(rowIndex){
   if(!confirm('¿Eliminar?'))return;
-  try{const r=await postGAS({action:'deleteGasto',rowIndex});if(r.ok){allExp=allExp.filter(e=>e.rowIndex!==rowIndex);renderAll();showToast('Eliminado');}else showToast('Error: '+(r.error||''));}
+  try{const r=await postGAS({action:'deleteGasto',rowIndex});if(r.ok){invalidateSesionCache(activeSesion);allExp=allExp.filter(e=>e.rowIndex!==rowIndex);renderAll();showToast('Eliminado');}else showToast('Error: '+(r.error||''));}
   catch(e){showToast('Error de red');}
 }
 
@@ -3753,7 +3808,8 @@ function v30InvData(){
 }
 function v30RenderInv(){
   const c=document.getElementById('invRows'); if(!c)return;
-  ['producto','tienda','categoria','cantidad','precioInd','precioComp','caducidad','queda'].forEach(col=>{
+  v30RenderColPanel();
+  ['producto','tienda','categoria','ubicacion','cantidad','precioInd','precioComp','caducidad','queda'].forEach(col=>{
     const el=document.getElementById('ih-'+col);
     if(el) el.textContent=invSort.col===col?(invSort.dir===1?' ▲':' ▼'):'';
   });
@@ -3794,6 +3850,7 @@ ${p.fotoProducto
       </span>
       <span><input type="text" class="inv-in" list="list-tiendas" value="${esc(p.tienda||'')}" placeholder="Tienda" onchange="v30SaveField(${r},'tienda',this.value)"></span>
       <span><input type="text" class="inv-in" list="list-inv-cats" value="${esc(p.categoria||'')}" placeholder="Categoría" onchange="v30SaveField(${r},'categoria',this.value)"></span>
+      <span><input type="text" class="inv-in" list="list-inv-lugares" value="${esc(p.ubicacion||'')}" placeholder="Lugar" onchange="v30SaveField(${r},'ubicacion',this.value)"></span>
       <span style="display:flex;gap:2px">
         <input type="text" class="inv-in" style="width:44px" value="${esc(p.cantidad||'')}" placeholder="500" onchange="v30SaveField(${r},'cantidad',this.value)">
         <select class="inv-in" onchange="v30SaveField(${r},'unidad',this.value)">${UNIDADES.map(u=>'<option'+(u===(p.unidad||'unidad')?' selected':'')+'>'+u+'</option>').join('')}</select>
@@ -3810,6 +3867,33 @@ ${p.fotoProducto
       <span style="display:flex;gap:2px"><button class="shop-del" style="color:var(--personal)" onclick="v31PriceHist('${esc(p.concepto).replace(/'/g,"\\'")}')" title="Historial de precio">📈</button><button class="shop-del" onclick="v33Duplicar(${r})" title="Duplicar (p.ej. cotizar en otra tienda)">⧉</button><button class="shop-del" onclick="v35EditProd(${r})" title="Editar producto (foto, código, catálogo…)">✏️</button><button class="shop-del" onclick="v30DelProd(${r})" title="Eliminar producto">🗑</button></span>
     </div>`;
   }).join('');
+  v30ApplyInvCols();
+}
+const INV_COLS=['producto','tienda','categoria','ubicacion','cantidad','precio','base','caduca','queda','acciones'];
+const INV_COL_LABELS={producto:'Producto',tienda:'Tienda',categoria:'Categoría',ubicacion:'Lugar',cantidad:'Cant.',precio:'Precio',base:'Precio base',caduca:'Caduca',queda:'Queda',acciones:'Acciones'};
+function invHiddenCols(){ try{return JSON.parse(localStorage.getItem('gastos_inv_hidden_cols')||'[]');}catch(_){return [];} }
+function v30ToggleCols(){
+  const p=document.getElementById('invColPanel'); if(!p)return;
+  p.style.display=p.style.display==='none'?'flex':'none';
+  v30RenderColPanel();
+}
+function v30RenderColPanel(){
+  const p=document.getElementById('invColPanel'); if(!p)return;
+  const hidden=invHiddenCols();
+  p.innerHTML=INV_COLS.filter(c=>c!=='producto').map(c=>'<label style="display:inline-flex;gap:4px;align-items:center;background:var(--surface);border:1px solid var(--border);border-radius:999px;padding:5px 8px"><input type="checkbox" '+(!hidden.includes(c)?'checked':'')+' onchange="v30SetColVisible(\''+c+'\',this.checked)"> '+INV_COL_LABELS[c]+'</label>').join('');
+  v30ApplyInvCols();
+}
+function v30SetColVisible(col,on){
+  let hidden=invHiddenCols();
+  hidden=on?hidden.filter(c=>c!==col):[...new Set([...hidden,col])];
+  localStorage.setItem('gastos_inv_hidden_cols',JSON.stringify(hidden));
+  v30ApplyInvCols();
+}
+function v30ApplyInvCols(){
+  const hidden=invHiddenCols();
+  document.querySelectorAll('.inv-hrow,.inv-row').forEach(row=>{
+    [...row.children].forEach((ch,i)=>{ const col=INV_COLS[i]; ch.style.display=hidden.includes(col)?'none':''; });
+  });
 }
 // Guardado universal de un campo de producto — con confirmación visible
 async function v30SaveField(rowIndex, campo, valor){
@@ -3821,10 +3905,10 @@ async function v30SaveField(rowIndex, campo, valor){
   body[campo]=valor;
   try{
     const r=await postGAS(body);
-    if(r&&r.ok){ const h=new Date().toTimeString().substring(0,5); st.textContent='✓ Guardado '+h; st.classList.add('ok'); setTimeout(()=>{st.textContent='';st.classList.remove('ok');},2500); }
+    if(r&&r.ok){ invalidateSesionCache(activeSesion); const h=new Date().toTimeString().substring(0,5); st.textContent='✓ Guardado '+h; st.classList.add('ok'); setTimeout(()=>{st.textContent='';st.classList.remove('ok');},2500); }
     else { st.classList.remove('ok'); st.textContent='⚠ NO se guardó: '+((r&&r.error)||'error'); }
   }catch(e){ st.classList.remove('ok'); st.textContent='⚠ NO se guardó (red) — reintenta'; }
-  if(campo==='concepto'||campo==='cantidad'||campo==='unidad'||campo==='precioInd') v30RenderInv();
+  if(campo==='concepto'||campo==='cantidad'||campo==='unidad'||campo==='precioInd'||campo==='categoria'||campo==='ubicacion') { refreshTiendasDatalist(); v30RenderInv(); }
 }
 // ⧉ duplicar producto (para cotizar la misma cosa en otra tienda)
 function v33Duplicar(rowIndex){
@@ -3835,6 +3919,7 @@ function v33Duplicar(rowIndex){
   const esCot=p.compartido==='Cotizacion'||(padreCot&&p.compartido!=='Comprado');
   v31ProdForm({target:'sheet',
     nombre:p.concepto, marca:p.marca||'', notas:p.notas||'', categoria:p.categoria||'',
+    ubicacion:p.ubicacion||'',
     piezas:p.piezas||'1', cantidad:p.cantidad||'', unidad:p.unidad||'unidad',
     precio:p.precioInd||'', caducidad:String(p.caducidad||'').substring(0,10),
     tienda:p.tienda||'', codigo:p.codigo||'', esCot:esCot, inventario:(p.inventario||'SI')!=='NA'
@@ -3851,6 +3936,7 @@ function v35EditProd(rowIndex){
   const compraInfo = padre ? {gastoId:padre.gastoId, concepto:padre.concepto, fecha:fmtDate(padre.fecha)} : null;
   v31ProdForm({target:'edit', editRow:rowIndex, compraInfo:compraInfo,
     nombre:p.concepto, marca:p.marca||'', notas:p.notas||'', categoria:p.categoria||'',
+    ubicacion:p.ubicacion||'',
     piezas:p.piezas||'1', cantidad:p.cantidad||'', unidad:p.unidad||'unidad',
     precio:p.precioInd||'', caducidad:String(p.caducidad||'').substring(0,10),
     tienda:p.tienda||'', codigo:p.codigo||'',
@@ -3868,6 +3954,7 @@ function v35EditDraft(i){
   v31ProdForm({target:'draftEdit', draftIndex:i,
     tienda:(document.getElementById('iTienda')||{}).value||'',
     nombre:d.concepto||'', marca:d.marca||'', notas:d.notas||'', categoria:d.categoria||'',
+    ubicacion:d.ubicacion||'',
     piezas:d.piezas||'1', cantidad:d.cantidad||'', unidad:d.unidad||'unidad',
     precio:d.precioInd||'', caducidad:d.caducidad||'',
     codigo:d.codigo||'', inventario:d.inventario!==false, queda:d.queda,
@@ -3929,7 +4016,7 @@ async function v30SetQueda(rowIndex, val){
 }
 async function v30DelProd(rowIndex){
   if(!confirm('¿Eliminar este producto?'))return;
-  try{ await postGAS({action:'deleteGasto', rowIndex, soloFila:true}); await loadExp(); v30RenderInv(); showToast('Eliminado'); }
+  try{ await postGAS({action:'deleteGasto', rowIndex, soloFila:true}); invalidateSesionCache(activeSesion); await loadExp(); v30RenderInv(); showToast('Eliminado'); }
   catch(e){ showToast('⚠ Error'); }
 }
 // ── v14: Formulario único de producto ──
@@ -3946,6 +4033,7 @@ function v31ProdForm(cfg){
   document.getElementById('pfMarca').value=cfg.marca||'';
   document.getElementById('pfNotas').value=cfg.notas||'';
   document.getElementById('pfCatInv').value=cfg.categoria||'';
+  document.getElementById('pfUbicacion').value=cfg.ubicacion||'';
   document.getElementById('pfCot').checked=!!cfg.esCot;
   document.getElementById('pfPiezas').value=cfg.piezas||'1';
   document.getElementById('pfCantidad').value=cfg.cantidad||'';
@@ -3996,6 +4084,7 @@ async function v31ProdFormSubmit(){
     marca:document.getElementById('pfMarca').value.trim(),
     notas:document.getElementById('pfNotas').value.trim(),
     categoria:document.getElementById('pfCatInv').value.trim(),
+    ubicacion:document.getElementById('pfUbicacion').value.trim(),
     esCot:esCot,
     piezas:document.getElementById('pfPiezas').value||'1',
     cantidad:document.getElementById('pfCantidad').value||'',
@@ -4016,7 +4105,7 @@ async function v31ProdFormSubmit(){
     if(st){ st.classList.remove('ok'); st.textContent='● Guardando cambios…'; }
     const body={action:'updateGasto', rowIndex:pfEditRow,
       concepto:prod.concepto, marca:prod.marca, notas:prod.notas,
-      categoria:prod.categoria,
+      categoria:prod.categoria, ubicacion:prod.ubicacion,
       piezas:prod.piezas, cantidad:prod.cantidad, unidad:prod.unidad,
       precioInd:prod.precioInd, caducidad:prod.caducidad,
       tienda:document.getElementById('pfTienda').value.trim(),
@@ -4043,7 +4132,7 @@ async function v31ProdFormSubmit(){
       if(pAct){
         Object.assign(pAct,{concepto:prod.concepto, marca:prod.marca, notas:prod.notas,
           piezas:prod.piezas, cantidad:prod.cantidad, unidad:prod.unidad,
-          precioInd:prod.precioInd, caducidad:prod.caducidad, tienda:body.tienda, categoria:prod.categoria,
+          precioInd:prod.precioInd, caducidad:prod.caducidad, tienda:body.tienda, categoria:prod.categoria, ubicacion:prod.ubicacion,
           codigo:prod.codigo, inventario:prod.inventario, queda:prod.queda, prioritario:prod.prioritario});
         if(body.compartido!==undefined) pAct.compartido=body.compartido;
         if(body.fotoProducto!==undefined) pAct.fotoProducto=body.fotoProducto;
@@ -4064,7 +4153,7 @@ async function v31ProdFormSubmit(){
   if(pfTarget==='draftEdit' && pfDraftIdx!=null && prodDraft[pfDraftIdx]){
     const d=prodDraft[pfDraftIdx];
     Object.assign(d,{concepto:prod.concepto, marca:prod.marca, notas:prod.notas,
-      categoria:prod.categoria,
+      categoria:prod.categoria, ubicacion:prod.ubicacion,
       piezas:prod.piezas, cantidad:prod.cantidad, unidad:prod.unidad,
       precioInd:prod.precioInd, caducidad:prod.caducidad,
       inventario:prod.inventario!=='NA', codigo:prod.codigo, queda:prod.queda});
@@ -4079,7 +4168,7 @@ async function v31ProdFormSubmit(){
 
   document.getElementById('prodFormOverlay').style.display='none';
   if(pfTarget==='draft'){
-    prodDraft.push({concepto:prod.concepto,marca:prod.marca,notas:prod.notas,categoria:prod.categoria,piezas:prod.piezas,cantidad:prod.cantidad,unidad:prod.unidad,precioInd:prod.precioInd,caducidad:prod.caducidad,inventario:prod.inventario!=='NA',codigo:prod.codigo||'',queda:prod.queda||'',fotoBase64:prod.fotoBase64||'',fotoMime:prod.fotoMime||'',fotoUrl:prod.fotoUrl||''});
+    prodDraft.push({concepto:prod.concepto,marca:prod.marca,notas:prod.notas,categoria:prod.categoria,ubicacion:prod.ubicacion,piezas:prod.piezas,cantidad:prod.cantidad,unidad:prod.unidad,precioInd:prod.precioInd,caducidad:prod.caducidad,inventario:prod.inventario!=='NA',codigo:prod.codigo||'',queda:prod.queda||'',fotoBase64:prod.fotoBase64||'',fotoMime:prod.fotoMime||'',fotoUrl:prod.fotoUrl||''});
     v30RenderProdDraft();
     showToast('＋ '+nombre+' agregado al ticket');
     return;
@@ -4091,6 +4180,7 @@ async function v31ProdFormSubmit(){
     const r=await postGAS({action:'saveProductos', sesion:saveSesion, compraId:'', replace:false,
       tienda:prod.tienda||document.getElementById('pfTienda').value.trim(), fecha:new Date().toISOString().split('T')[0], quien:myName(),
       productos:[prod]});
+    invalidateSesionCache(saveSesion);
     if(personalMode){ await pReloadMisGastos(); } else await loadExp();
     v30RenderInv();
     if(r&&r.fotoError){ showToast('⚠ Producto guardado pero la FOTO no: '+r.fotoError); }
@@ -5714,6 +5804,7 @@ async function pEnterPersonal(){
     }catch(e){ showToast('⚠ Error de red'); return; }
   }
   personalMode = true;
+  activeF='all';
   const tabSalud=document.getElementById('tabSalud'); if(tabSalud) tabSalud.style.display='';
   try{ await pLoad(); }catch(e){}
   // Traer mis gastos de TODAS las sesiones
