@@ -2150,7 +2150,8 @@ function populateCatSelect(){
 function refreshTiendasDatalist(){
   const tiendas=[...new Set(allExp.map(e=>e.tienda).filter(Boolean))].sort();
   document.getElementById('list-tiendas').innerHTML=tiendas.map(t=>'<option value="'+esc(t)+'">').join('');
-  const invCats=[...new Set([...deptos,...allProds.map(p=>p.categoria)].filter(Boolean))].sort();
+  const invBaseCats=(typeof DEPTOS!=='undefined' && DEPTOS.length ? DEPTOS : (typeof DEPTOS_DEFAULT!=='undefined' ? DEPTOS_DEFAULT : []));
+  const invCats=[...new Set([...invBaseCats,...allProds.map(p=>p.categoria)].filter(Boolean))].sort();
   const invDl=document.getElementById('list-inv-cats'); if(invDl) invDl.innerHTML=invCats.map(t=>'<option value="'+esc(t)+'">').join('');
   refreshConceptosDatalist();
 }
