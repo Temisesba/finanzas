@@ -769,7 +769,7 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--i
 .name-me{font-size:10px;background:var(--loan-bg);color:var(--loan);border:1px solid var(--loan-bdr);border-radius:20px;padding:1px 8px}
 @media(max-width:560px){.shop-hrow,.shop-row{grid-template-columns:28px 1.4fr 1fr .8fr .9fr 24px;gap:3px}}
 /* ── v12: inventario ── */
-.inv-hrow,.inv-row{display:grid;grid-template-columns:1.7fr 1fr 1fr .6fr .7fr .95fr 1.05fr 76px;gap:6px;align-items:center;padding:6px 8px}
+.inv-hrow,.inv-row{display:grid;grid-template-columns:1.7fr 1fr .9fr 1fr .6fr .7fr .95fr 1.05fr 76px;gap:6px;align-items:center;padding:6px 8px}
 .inv-hrow{background:var(--surface2);border-bottom:1px solid var(--border)}
 .inv-row{border-bottom:1px solid var(--border);font-size:12px}
 .inv-row:last-child{border-bottom:none}
@@ -941,7 +941,7 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--i
      El contenido interno se pinta a tamaño legible, no comprimido. */
   .table-wrap .hrow, .table-wrap #expList{ min-width:860px !important; }
   .shop-table  .shop-hrow, .shop-table #shopRows{ min-width:560px !important; }
-  .shop-table  .inv-hrow,  .shop-table #invRows{ min-width:760px !important; }
+  .shop-table  .inv-hrow,  .shop-table #invRows{ min-width:860px !important; }
 
   /* Los grids conservan su plantilla de columnas de escritorio
      (definidas arriba en .hrow/.erow/.shop-row/.inv-row): NO las
@@ -978,6 +978,9 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--i
 .pf-field input,.pf-field select,.pf-field textarea{width:100%;border:1px solid var(--border2);border-radius:8px;padding:9px 11px;font-size:14px;font-family:var(--sans);outline:none;background:var(--bg)}
 .pf-field input:focus,.pf-field select:focus,.pf-field textarea:focus{border-color:var(--lot)}
 .pf-field textarea{min-height:92px;resize:vertical;line-height:1.35}
+.mov-grid{display:grid;grid-template-columns:110px minmax(150px,1fr) 90px 120px 135px 30px;gap:5px;align-items:center;margin-bottom:5px}
+.mov-grid input,.mov-grid select{border:1px solid var(--border2);border-radius:7px;padding:7px 8px;font-size:12px;background:var(--bg);min-width:0}
+.mov-grid.head{font-size:10px;color:var(--ink-3);font-weight:600;text-transform:uppercase;letter-spacing:.05em}
 @media(max-width:560px){ #pFormOverlay .modal{max-width:100%;margin:8px} }
 </style>
 </head>
@@ -1140,7 +1143,7 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--i
       <div id="pBody" style="display:none">
         <div id="pTabs" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">
           <button class="ptab2 on" onclick="pSetSection('resumen',this)">📊 Resumen</button>
-          <button class="ptab2" onclick="pSetSection('deudas',this)">🤝 Deudas ext.</button>
+          <button class="ptab2" onclick="pSetSection('deudas',this)">🤝 Deudas</button>
           <button class="ptab2" onclick="pSetSection('fijos',this)">🔁 Pagos fijos</button>
           <button class="ptab2" onclick="pSetSection('tarjetas',this)">💳 Tarjetas</button>
           <button class="ptab2" onclick="pSetSection('proximos',this)">🔔 Próximos</button>
@@ -1175,6 +1178,7 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--i
         <div class="inv-hrow">
           <span class="shop-h" onclick="v30InvSort('producto')">Producto<span id="ih-producto"></span></span>
           <span class="shop-h" onclick="v30InvSort('tienda')">Tienda<span id="ih-tienda"></span></span>
+          <span class="shop-h" onclick="v30InvSort('categoria')">Categoría<span id="ih-categoria"></span></span>
           <span class="shop-h" onclick="v30InvSort('cantidad')">Cant.<span id="ih-cantidad"></span></span>
           <span class="shop-h" onclick="v30InvSort('precioInd')">Precio<span id="ih-precioInd"></span></span>
           <span class="shop-h" onclick="v30InvSort('precioComp')" title="Precio por unidad base — para comparar">Precio base<span id="ih-precioComp"></span></span>
@@ -1265,6 +1269,7 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--i
     <div class="mhdr"><h2 id="pfTitle">＋ Producto a inventario</h2><button class="mclose" onclick="document.getElementById('prodFormOverlay').style.display='none'">✕</button></div>
     <div class="mbody">
       <datalist id="list-productos"></datalist>
+      <datalist id="list-inv-cats"></datalist>
       <div id="pfCompraInfo" style="display:none;background:var(--lot-bg);border:1px solid var(--lot-bdr);border-radius:8px;padding:8px 10px;margin-bottom:10px;font-size:12px;color:var(--ink-2);align-items:center;gap:8px;justify-content:space-between"></div>
       <div class="field"><label>Foto del producto</label>
         <input type="file" accept="image/*" id="pfFotoInput" style="display:none" onchange="v33FotoFile(event,'form')">
@@ -1284,6 +1289,7 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--i
         <div class="field"><label>Marca</label><input type="text" id="pfMarca" placeholder="Ej. Coca-Cola Plus"></div>
         <div class="field"><label>Notas</label><input type="text" id="pfNotas" placeholder="Sabor, detalles…"></div>
       </div>
+      <div class="field"><label>Categoría / ubicación</label><input type="text" id="pfCatInv" list="list-inv-cats" placeholder="Ej. Embutidos cajón 1"></div>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
         <div class="field"><label>Piezas</label><input type="number" id="pfPiezas" value="1" min="0"></div>
         <div class="field"><label>Cantidad</label><input type="number" id="pfCantidad" placeholder="500"></div>
@@ -2144,6 +2150,8 @@ function populateCatSelect(){
 function refreshTiendasDatalist(){
   const tiendas=[...new Set(allExp.map(e=>e.tienda).filter(Boolean))].sort();
   document.getElementById('list-tiendas').innerHTML=tiendas.map(t=>'<option value="'+esc(t)+'">').join('');
+  const invCats=[...new Set([...deptos,...allProds.map(p=>p.categoria)].filter(Boolean))].sort();
+  const invDl=document.getElementById('list-inv-cats'); if(invDl) invDl.innerHTML=invCats.map(t=>'<option value="'+esc(t)+'">').join('');
   refreshConceptosDatalist();
 }
 
@@ -2483,39 +2491,8 @@ function renderVerdict(){
   const vbox=document.getElementById('vbox');vbox.style.display='flex';
   // v43: en sesión personal, mostrar SOLO mi balance (sesión + deudas externas)
   if(personalMode){
-    const me=myName();
-    const debo={}, meDeben={};
-    // Mismo neto que la tarjeta superior: sesión activa + deudas externas.
-    // Evita mostrar bruto cruzado (ej. "debes 96k" y "te deben 91k").
-    try{
-      v31Simplificar().forEach(p=>{
-        const k=(p.de===me?p.a:p.de)+' ('+(activeSesion||'Sesión')+')';
-        if(p.de===me) debo[k]=(debo[k]||0)+p.monto;
-        else if(p.a===me) meDeben[k]=(meDeben[k]||0)+p.monto;
-      });
-    }catch(_){}
-    // deudas externas
-    (typeof pItemsOf==='function'?pItemsOf('deuda'):[]).forEach(d=>{ const a=parseFloat(d.monto)||0; if(a<=0)return;
-      if(d.dir==='medeben'){ const k=(d.persona||'')+' (externa)'; meDeben[k]=(meDeben[k]||0)+a; }
-      else { const k=(d.persona||'')+' (externa)'; debo[k]=(debo[k]||0)+a; } });
-    const netMap={};
-    Object.keys(debo).forEach(k=>netMap[k]=(netMap[k]||0)-debo[k]);
-    Object.keys(meDeben).forEach(k=>netMap[k]=(netMap[k]||0)+meDeben[k]);
-    Object.keys(netMap).forEach(k=>{
-      const v=Math.round(netMap[k]);
-      if(v>0) meDeben[k]=v; else delete meDeben[k];
-      if(v<0) debo[k]=-v; else delete debo[k];
-    });
-    const totDebo=Object.values(debo).reduce((s,v)=>s+v,0);
-    const totMe=Object.values(meDeben).reduce((s,v)=>s+v,0);
-    const neto=Math.round(totMe-totDebo);
-    let html='';
-    const li=(txt,val,col)=>'<div style="font-size:12px;margin-top:2px">'+txt+' <strong style="color:'+col+'">'+curSym()+Math.round(val).toLocaleString()+'</strong></div>';
-    if(totDebo>0){ html+='<div style="font-weight:600">⚠️ Debes '+curSym()+Math.round(totDebo).toLocaleString()+'</div>'; Object.keys(debo).sort((a,b)=>debo[b]-debo[a]).slice(0,6).forEach(k=>{ html+=li('→ a '+esc(k), debo[k], 'var(--temis)'); }); }
-    if(totMe>0){ html+='<div style="font-weight:600;margin-top:6px">💰 Te deben '+curSym()+Math.round(totMe).toLocaleString()+'</div>'; Object.keys(meDeben).sort((a,b)=>meDeben[b]-meDeben[a]).slice(0,6).forEach(k=>{ html+=li('← '+esc(k), meDeben[k], 'var(--shared)'); }); }
-    if(!html) html='<strong>Al día</strong> — sin deudas.';
-    document.getElementById('vico').textContent = neto>0?'💰':(neto<0?'⚠️':'✅');
-    document.getElementById('vtxt').innerHTML = html;
+    document.getElementById('vico').textContent = '🔔';
+    document.getElementById('vtxt').innerHTML = pProximosMiniHTML();
     return;
   }
   const pagos=v31Simplificar(); // v31: pagos mínimos para saldar todo
@@ -2676,10 +2653,11 @@ function v30SubTable(hijos){
     const thumb=p.fotoProducto?'<img src="'+esc(p.fotoProducto)+'" style="width:20px;height:20px;object-fit:cover;border-radius:4px;border:1px solid var(--border);cursor:pointer;vertical-align:middle;flex-shrink:0" onclick="openLightbox(\''+esc(p.fotoProducto)+'\')" title="Ver foto">':'';
     const marca=p.marca?'<div style="font-size:9.5px;color:var(--ink-3);font-weight:600">'+esc(p.marca)+'</div>':'';
     const nom='<div style="display:flex;gap:5px;align-items:flex-start">'+thumb+'<div style="min-width:0">'+esc(p.concepto)+marca+'</div></div>';
-    const inv=(p.inventario||'SI')!=='NA' ? '📦' : '—';
-    return '<tr><td>'+nom+'</td><td>'+(p.piezas||'')+'</td><td>'+(p.cantidad?esc(p.cantidad)+' '+esc(p.unidad||''):'—')+'</td><td>'+(p.precioInd?curSym()+esc(p.precioInd):'—')+'</td><td style="text-align:center" title="'+(inv==='📦'?'Va a inventario':'No va a inventario')+'">'+inv+'</td><td><button class="shop-del" onclick="v35EditProd('+p.rowIndex+')" title="Editar producto (foto, marca, código…)">✏️</button></td></tr>';
+    const invSI=(p.inventario||'SI')!=='NA';
+    const inv='<button class="inv-toggle '+(invSI?'si':'')+'" onclick="v31ToggleInv('+p.rowIndex+')" title="Cambiar inventario">'+(invSI?'📦 SI':'NA')+'</button>';
+    return '<tr><td>'+nom+'</td><td>'+(p.piezas||'')+'</td><td style="text-align:center">'+inv+'</td><td>'+(p.cantidad?esc(p.cantidad)+' '+esc(p.unidad||''):'—')+'</td><td>'+(p.precioInd?curSym()+esc(p.precioInd):'—')+'</td><td><button class="shop-del" onclick="v35EditProd('+p.rowIndex+')" title="Editar producto (foto, marca, código…)">✏️</button></td></tr>';
   };
-  return '<div class="prod-sub"><table><tr><th>Producto</th><th>Pzas</th><th>Cant.</th><th>Precio</th><th title="¿Va a inventario?">📦</th><th></th></tr>'+hijos.map(fila).join('')+'</table></div>';
+  return '<div class="prod-sub"><table><tr><th>Producto</th><th>Pzas</th><th title="¿Va a inventario?">📦</th><th>Cant.</th><th>Precio</th><th></th></tr>'+hijos.map(fila).join('')+'</table></div>';
 }
 
 function fmtDate(r){if(!r)return '—';try{const s=String(r).substring(0,10);const[y,m,d]=s.split('-');return d+'/'+(m||'?')+'/'+(y||'').substring(2);}catch{return String(r).substring(0,8);}}
@@ -3369,7 +3347,7 @@ sesion:activeSesion};
         tienda:body.tienda, fecha:body.fecha, quien:currentPayer,
         productos: prodsLimpios.map(p=>{
           const c=v34Catalogo()[normTxt(p.concepto)];
-          const out={concepto:p.concepto.trim(),marca:p.marca||'',notas:p.notas||'',piezas:p.piezas,cantidad:p.cantidad,unidad:p.unidad,precioInd:p.precioInd,caducidad:p.caducidad,inventario:p.inventario?'SI':'NA',codigo:p.codigo||'',queda:p.queda??''};
+          const out={concepto:p.concepto.trim(),marca:p.marca||'',notas:p.notas||'',categoria:p.categoria||'',piezas:p.piezas,cantidad:p.cantidad,unidad:p.unidad,precioInd:p.precioInd,caducidad:p.caducidad,inventario:p.inventario?'SI':'NA',codigo:p.codigo||'',queda:p.queda??''};
           if(p.fotoBase64){ out.fotoBase64=p.fotoBase64; out.fotoMime=p.fotoMime; }
           else if(p.fotoUrl){ out.fotoUrl=p.fotoUrl; }
           else if(c&&c.foto){ out.fotoUrl=c.foto; } // hereda del catálogo solo si no eligió una propia
@@ -3431,7 +3409,7 @@ function editExp(rowIndex){
 
   // v12: cargar productos hijos al editor
   prodDraft = prodsDe(e.gastoId).map(p=>({
-    concepto:p.concepto||'', marca:p.marca||'', notas:p.notas||'', piezas:String(p.piezas||''), cantidad:String(p.cantidad||''),
+    concepto:p.concepto||'', marca:p.marca||'', notas:p.notas||'', categoria:p.categoria||'', piezas:String(p.piezas||''), cantidad:String(p.cantidad||''),
     unidad:p.unidad||'unidad', precioInd:String(p.precioInd||''), caducidad:String(p.caducidad||'').substring(0,10),
     inventario:(p.inventario||'SI')!=='NA',
     codigo:String(p.codigo||''), fotoUrl:p.fotoProducto||'',   // v20: la foto existente viaja explícita
@@ -3686,6 +3664,7 @@ function v30InvData(){
     return {...p,
       esCot,
       tienda: p.tienda || (padre?(padre.tienda||padre.producto||''):''),
+      categoria: p.categoria || (padre?(padre.categoria||''):''),
       precioComp: precioComp(p.precioInd,p.cantidad,p.unidad)
     };
   });
@@ -3694,7 +3673,7 @@ function v30InvData(){
   else if(invFilter==='prioritarios'){ const st=v31StarredNames(); list=list.filter(p=>st.has(normTxt(p.concepto))); }
   if(q) list=list.filter(p=>{
     // v21: busca en TODAS las columnas del producto
-    const pajar=[p.concepto,p.marca,p.notas,p.tienda,p.codigo,p.cantidad,p.unidad,p.precioInd,p.precioComp,p.piezas,String(p.caducidad||'').substring(0,10),p.queda]
+    const pajar=[p.concepto,p.marca,p.notas,p.categoria,p.tienda,p.codigo,p.cantidad,p.unidad,p.precioInd,p.precioComp,p.piezas,String(p.caducidad||'').substring(0,10),p.queda]
       .map(v=>String(v??'').toLowerCase()).join(' | ');
     return pajar.includes(q);
   });
@@ -3710,7 +3689,7 @@ function v30InvData(){
 }
 function v30RenderInv(){
   const c=document.getElementById('invRows'); if(!c)return;
-  ['producto','tienda','cantidad','precioInd','precioComp','caducidad','queda'].forEach(col=>{
+  ['producto','tienda','categoria','cantidad','precioInd','precioComp','caducidad','queda'].forEach(col=>{
     const el=document.getElementById('ih-'+col);
     if(el) el.textContent=invSort.col===col?(invSort.dir===1?' ▲':' ▼'):'';
   });
@@ -3750,6 +3729,7 @@ ${p.fotoProducto
         </span>
       </span>
       <span><input type="text" class="inv-in" list="list-tiendas" value="${esc(p.tienda||'')}" placeholder="Tienda" onchange="v30SaveField(${r},'tienda',this.value)"></span>
+      <span><input type="text" class="inv-in" list="list-inv-cats" value="${esc(p.categoria||'')}" placeholder="Categoría" onchange="v30SaveField(${r},'categoria',this.value)"></span>
       <span style="display:flex;gap:2px">
         <input type="text" class="inv-in" style="width:44px" value="${esc(p.cantidad||'')}" placeholder="500" onchange="v30SaveField(${r},'cantidad',this.value)">
         <select class="inv-in" onchange="v30SaveField(${r},'unidad',this.value)">${UNIDADES.map(u=>'<option'+(u===(p.unidad||'unidad')?' selected':'')+'>'+u+'</option>').join('')}</select>
@@ -3790,7 +3770,7 @@ function v33Duplicar(rowIndex){
   const padreCot=!!(padre&&(padre.compartido==='Cotizacion'||padre.quien_paga==='Cotizacion'));
   const esCot=p.compartido==='Cotizacion'||(padreCot&&p.compartido!=='Comprado');
   v31ProdForm({target:'sheet',
-    nombre:p.concepto, marca:p.marca||'', notas:p.notas||'',
+    nombre:p.concepto, marca:p.marca||'', notas:p.notas||'', categoria:p.categoria||'',
     piezas:p.piezas||'1', cantidad:p.cantidad||'', unidad:p.unidad||'unidad',
     precio:p.precioInd||'', caducidad:String(p.caducidad||'').substring(0,10),
     tienda:p.tienda||'', codigo:p.codigo||'', esCot:esCot, inventario:(p.inventario||'SI')!=='NA'
@@ -3806,7 +3786,7 @@ function v35EditProd(rowIndex){
   const padre=compraDe[p.compraId];
   const compraInfo = padre ? {gastoId:padre.gastoId, concepto:padre.concepto, fecha:fmtDate(padre.fecha)} : null;
   v31ProdForm({target:'edit', editRow:rowIndex, compraInfo:compraInfo,
-    nombre:p.concepto, marca:p.marca||'', notas:p.notas||'',
+    nombre:p.concepto, marca:p.marca||'', notas:p.notas||'', categoria:p.categoria||'',
     piezas:p.piezas||'1', cantidad:p.cantidad||'', unidad:p.unidad||'unidad',
     precio:p.precioInd||'', caducidad:String(p.caducidad||'').substring(0,10),
     tienda:p.tienda||'', codigo:p.codigo||'',
@@ -3823,7 +3803,7 @@ function v35EditDraft(i){
   const c=v34Catalogo()[normTxt(d.concepto||'')]||{};
   v31ProdForm({target:'draftEdit', draftIndex:i,
     tienda:(document.getElementById('iTienda')||{}).value||'',
-    nombre:d.concepto||'', marca:d.marca||'', notas:d.notas||'',
+    nombre:d.concepto||'', marca:d.marca||'', notas:d.notas||'', categoria:d.categoria||'',
     piezas:d.piezas||'1', cantidad:d.cantidad||'', unidad:d.unidad||'unidad',
     precio:d.precioInd||'', caducidad:d.caducidad||'',
     codigo:d.codigo||'', inventario:d.inventario!==false, queda:d.queda,
@@ -3899,6 +3879,7 @@ function v31ProdForm(cfg){
   document.getElementById('pfNombre').value=cfg.nombre||'';
   document.getElementById('pfMarca').value=cfg.marca||'';
   document.getElementById('pfNotas').value=cfg.notas||'';
+  document.getElementById('pfCatInv').value=cfg.categoria||'';
   document.getElementById('pfCot').checked=!!cfg.esCot;
   document.getElementById('pfPiezas').value=cfg.piezas||'1';
   document.getElementById('pfCantidad').value=cfg.cantidad||'';
@@ -3948,6 +3929,7 @@ async function v31ProdFormSubmit(){
     concepto:nombre,
     marca:document.getElementById('pfMarca').value.trim(),
     notas:document.getElementById('pfNotas').value.trim(),
+    categoria:document.getElementById('pfCatInv').value.trim(),
     esCot:esCot,
     piezas:document.getElementById('pfPiezas').value||'1',
     cantidad:document.getElementById('pfCantidad').value||'',
@@ -3968,6 +3950,7 @@ async function v31ProdFormSubmit(){
     if(st){ st.classList.remove('ok'); st.textContent='● Guardando cambios…'; }
     const body={action:'updateGasto', rowIndex:pfEditRow,
       concepto:prod.concepto, marca:prod.marca, notas:prod.notas,
+      categoria:prod.categoria,
       piezas:prod.piezas, cantidad:prod.cantidad, unidad:prod.unidad,
       precioInd:prod.precioInd, caducidad:prod.caducidad,
       tienda:document.getElementById('pfTienda').value.trim(),
@@ -3994,7 +3977,7 @@ async function v31ProdFormSubmit(){
       if(pAct){
         Object.assign(pAct,{concepto:prod.concepto, marca:prod.marca, notas:prod.notas,
           piezas:prod.piezas, cantidad:prod.cantidad, unidad:prod.unidad,
-          precioInd:prod.precioInd, caducidad:prod.caducidad, tienda:body.tienda,
+          precioInd:prod.precioInd, caducidad:prod.caducidad, tienda:body.tienda, categoria:prod.categoria,
           codigo:prod.codigo, inventario:prod.inventario, queda:prod.queda, prioritario:prod.prioritario});
         if(body.compartido!==undefined) pAct.compartido=body.compartido;
         if(body.fotoProducto!==undefined) pAct.fotoProducto=body.fotoProducto;
@@ -4015,6 +3998,7 @@ async function v31ProdFormSubmit(){
   if(pfTarget==='draftEdit' && pfDraftIdx!=null && prodDraft[pfDraftIdx]){
     const d=prodDraft[pfDraftIdx];
     Object.assign(d,{concepto:prod.concepto, marca:prod.marca, notas:prod.notas,
+      categoria:prod.categoria,
       piezas:prod.piezas, cantidad:prod.cantidad, unidad:prod.unidad,
       precioInd:prod.precioInd, caducidad:prod.caducidad,
       inventario:prod.inventario!=='NA', codigo:prod.codigo, queda:prod.queda});
@@ -4029,7 +4013,7 @@ async function v31ProdFormSubmit(){
 
   document.getElementById('prodFormOverlay').style.display='none';
   if(pfTarget==='draft'){
-    prodDraft.push({concepto:prod.concepto,marca:prod.marca,notas:prod.notas,piezas:prod.piezas,cantidad:prod.cantidad,unidad:prod.unidad,precioInd:prod.precioInd,caducidad:prod.caducidad,inventario:prod.inventario!=='NA',codigo:prod.codigo||'',queda:prod.queda||'',fotoBase64:prod.fotoBase64||'',fotoMime:prod.fotoMime||'',fotoUrl:prod.fotoUrl||''});
+    prodDraft.push({concepto:prod.concepto,marca:prod.marca,notas:prod.notas,categoria:prod.categoria,piezas:prod.piezas,cantidad:prod.cantidad,unidad:prod.unidad,precioInd:prod.precioInd,caducidad:prod.caducidad,inventario:prod.inventario!=='NA',codigo:prod.codigo||'',queda:prod.queda||'',fotoBase64:prod.fotoBase64||'',fotoMime:prod.fotoMime||'',fotoUrl:prod.fotoUrl||''});
     v30RenderProdDraft();
     showToast('＋ '+nombre+' agregado al ticket');
     return;
@@ -4948,6 +4932,14 @@ function pRenderProximos(){
   </div>`).join('')||'<div style="color:var(--ink-3);font-size:13px;padding:20px;text-align:center">Sin próximos pagos este mes.</div>';
   return `<div style="font-size:12px;color:var(--ink-3);margin-bottom:10px">Hoy · esta semana · este mes, con tarjetas como conciliación y pagos normales como gasto real.</div>${html}`;
 }
+function pProximosMiniHTML(){
+  if(typeof pItemsOf!=='function' || !pItems.length) return '<strong>Próximos pagos</strong><div style="font-size:12px;color:var(--ink-3)">Abre Finanzas para cargar tus pagos.</div>';
+  const mk=pMesKey(), rows=[];
+  pItemsOf('fijo').forEach(f=>{ if((f.pagos||{})[mk]) return; rows.push({fecha:pFechaMesDia(mk,f.diaLimite), txt:(f.tipoPago==='tarjeta'?'💳 ':'🔁 ')+(f.concepto||'Pago fijo')}); });
+  pItemsOf('tarjeta').filter(c=>c.ctipo==='TDC' && !(c.pagos||{})[mk]).forEach(c=>rows.push({fecha:pFechaMesDia(mk,c.diaLimite), txt:'💳 '+pCardLabel(c)}));
+  rows.sort((a,b)=>(a.fecha||'9999').localeCompare(b.fecha||'9999'));
+  return '<strong>Próximos pagos</strong>'+(rows.slice(0,4).map(r=>'<div style="font-size:12px;margin-top:2px">'+(r.fecha?fmtDate(r.fecha):'—')+' · '+esc(r.txt)+'</div>').join('')||'<div style="font-size:12px;color:var(--shared);margin-top:2px">Sin pendientes este mes.</div>');
+}
 function pRenderHistorial(){
   const months=new Set([pMesKey()]);
   pItemsOf('estado').forEach(e=>{ if(e.mes) months.add(e.mes); });
@@ -4962,6 +4954,16 @@ function pRenderHistorial(){
 
 // ── RESUMEN ──
 function pSaldoBase(){ return parseFloat(localStorage.getItem('gastos_saldobase_'+(pOwner||myName()))||'0')||0; }
+function pStatsDesde(){ return localStorage.getItem('gastos_stats_desde_'+(pOwner||myName()))||''; }
+function pInStatsRange(i){ const d=pStatsDesde(); return !d || !i.fecha || String(i.fecha).substring(0,10)>=d; }
+function pSetStatsDesde(){
+  const cur=pStatsDesde();
+  const v=prompt('Calcular Finanzas desde esta fecha (vacío = todo):', cur||new Date().toISOString().substring(0,10));
+  if(v===null) return;
+  if(v.trim()) localStorage.setItem('gastos_stats_desde_'+(pOwner||myName()), v.trim());
+  else localStorage.removeItem('gastos_stats_desde_'+(pOwner||myName()));
+  pRender();
+}
 function pSetSaldoBase(){
   const cur=pSaldoBase();
   const v=prompt('Saldo inicial (con cuánto empiezas a contar tu dinero):', cur||'');
@@ -4970,17 +4972,15 @@ function pSetSaldoBase(){
   pRender();
 }
 function pRenderResumen(){
-  const ingresos=pItemsOf('ingreso').reduce((s,i)=>s+(parseFloat(i.monto)||0),0);
-  const gastos=pItemsOf('gasto').reduce((s,i)=>s+(parseFloat(i.monto)||0),0);
+  const desde=pStatsDesde();
+  const ingresos=pItemsOf('ingreso').filter(pInStatsRange).reduce((s,i)=>s+(parseFloat(i.monto)||0),0);
+  const gastos=pItemsOf('gasto').filter(pInStatsRange).reduce((s,i)=>s+(parseFloat(i.monto)||0),0);
   const fijosMes=pItemsOf('fijo').reduce((s,i)=>s+(parseFloat(i.monto)||0),0);
   const msiMes=pItemsOf('msi').reduce((s,m)=>s+(pMSICuotaMonto(m)),0);
   // Deudas externas
   let meDebenExt=0, deboExt=0;
   pItemsOf('deuda').forEach(d=>{ const a=parseFloat(d.monto)||0; if(d.dir==='medeben')meDebenExt+=a; else deboExt+=a; });
-  // Balance de la sesión activa (compartido)
-  const balSes=pBalanceSesionActual();
-  const meDebenSes = balSes>0?balSes:0, deboSes = balSes<0?-balSes:0;
-  const meDeben=meDebenExt+meDebenSes, debo=deboExt+deboSes;
+  const meDeben=meDebenExt, debo=deboExt;
   const saldoBase=pSaldoBase();
   const saldo=saldoBase+ingresos-gastos-fijosMes-msiMes;
 
@@ -4990,8 +4990,8 @@ function pRenderResumen(){
     ${sub?'<div style="font-size:10px;color:var(--ink-3);margin-top:2px">'+sub+'</div>':''}</div>`;
 
   return `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:16px">
-    ${card('var(--shared-bg)','var(--shared-bdr)','var(--shared)','💰 Me deben', pMoney(meDeben), 'ext '+pMoney(meDebenExt)+' · sesión '+pMoney(meDebenSes))}
-    ${card('var(--temis-bg)','var(--temis-bdr)','var(--temis)','⚠️ Debo', pMoney(debo), 'ext '+pMoney(deboExt)+' · sesión '+pMoney(deboSes))}
+    ${card('var(--shared-bg)','var(--shared-bdr)','var(--shared)','💰 Me deben', pMoney(meDeben), 'deudas registradas')}
+    ${card('var(--temis-bg)','var(--temis-bdr)','var(--temis)','⚠️ Debo', pMoney(debo), 'deudas registradas')}
     ${card('var(--lot-bg)','var(--lot-bdr)','var(--lot)','📈 Ingresos (reg.)', pMoney(ingresos), '')}
     ${card('var(--surface2)','var(--border2)','var(--ink)','🧮 Saldo estimado', pMoney(saldo), 'inicial '+pMoney(saldoBase)+' + ingresos − gastos − fijos − MSI')}
   </div>
@@ -5003,11 +5003,11 @@ function pRenderResumen(){
       <div style="display:flex;justify-content:space-between"><span>🧾 Gastos personales</span><strong style="font-family:var(--mono)">${pMoney(gastos)}</strong></div>
     </div>
   </div>
-  <div style="margin-top:10px"><button class="rt-btn" style="font-size:11px" onclick="pSetSaldoBase()">✏️ Editar saldo inicial (${pMoney(saldoBase)})</button></div>
+  <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="rt-btn" style="font-size:11px" onclick="pSetSaldoBase()">✏️ Editar saldo inicial (${pMoney(saldoBase)})</button><button class="rt-btn" style="font-size:11px" onclick="pSetStatsDesde()">📅 Calcular desde ${desde?fmtDate(desde):'todo'}</button></div>
   <div style="font-size:11px;color:var(--ink-3);margin-top:8px">El "saldo inicial" es tu punto de partida (efectivo/banco con el que empiezas). Sin él, con puras deudas el saldo se ve siempre en negativo.</div>`;
 }
 
-// ── DEUDAS EXTERNAS ──
+// ── DEUDAS ──
 function pRenderDeudas(){
   const items=pItemsOf('deuda');
   const rows=items.map(d=>{
@@ -5022,8 +5022,8 @@ function pRenderDeudas(){
       <button class="rt-btn" onclick="pOpenForm('deuda','${esc(d.id)}')" title="Editar">✏️</button>
       <button class="shop-del" onclick="pDelItem('${esc(d.id)}')" title="Eliminar">🗑</button>
     </div>`;
-  }).join('') || '<div style="color:var(--ink-3);font-size:13px;padding:20px;text-align:center">Sin deudas externas. Agrega préstamos con gente fuera de las sesiones.</div>';
-  return `<button class="rt-btn" style="font-weight:600;margin-bottom:12px" onclick="pOpenForm('deuda','')">＋ Nueva deuda externa</button>${rows}`;
+  }).join('') || '<div style="color:var(--ink-3);font-size:13px;padding:20px;text-align:center">Sin deudas. Agrega préstamos o pagos pendientes con gente fuera de las sesiones.</div>';
+  return `<button class="rt-btn" style="font-weight:600;margin-bottom:12px" onclick="pOpenForm('deuda','')">＋ Nueva deuda</button>${rows}`;
 }
 function pEditDeuda(id){
   const d = id ? pItems.find(x=>x.id===id) : {tipo:'deuda',dir:'medeben'};
@@ -5043,6 +5043,7 @@ function pRenderFijos(){
     const pagado=(f.pagos||{})[mk]; const dias=pDiasPara(f.diaLimite);
     const card=pCardById(f.tarjeta);
     const fechaPagado=pagado&&typeof pagado==='object'?pagado.fecha:'';
+    const historial=Object.keys(f.pagos||{}).sort().reverse().slice(0,8).map(k=>'<span class="chip" style="font-size:10px;margin:2px;background:var(--shared-bg);color:var(--shared)">✓ '+esc(k)+(((f.pagos||{})[k]&&typeof (f.pagos||{})[k]==='object'&&(f.pagos||{})[k].fecha)?(' · '+esc((f.pagos||{})[k].fecha)):'')+'</span>').join('');
     let alarma='';
     if(!pagado && dias!==null){
       if(dias<0) alarma='<span style="color:var(--temis);font-weight:600">🔴 vencido</span>';
@@ -5054,12 +5055,14 @@ function pRenderFijos(){
         <div style="flex:1;min-width:0">
           <div style="font-weight:600;font-size:13px">${esc(f.concepto||'—')} ${alarma}</div>
           <div style="font-size:11px;color:var(--ink-3)">día límite ${f.diaLimite||'?'}${f.fechaPago?(' · pago '+esc(f.fechaPago)):''}${fechaPagado?(' · pagado '+esc(fechaPagado)):''}${card?(' · 💳 '+esc(pCardLabel(card))):''}${f.nota?(' · '+esc(f.nota)):''}</div>
+          ${historial?'<div style="margin-top:4px">'+historial+'</div>':''}
         </div>
         <div style="font-family:var(--mono);font-weight:700">${pMoney(f.monto)}</div>
       </div>
       <div style="display:flex;gap:6px;margin-top:8px">
         <button class="rt-btn" style="font-weight:600" onclick="pAccionFijo('${esc(f.id)}')">${f.tipoPago==='tarjeta'?'🔎 Revisar pago':'🧾 Registrar pago'}</button>
         <button class="rt-btn" style="${pagado?'':'font-weight:600;border-color:var(--shared);color:var(--shared)'}" onclick="pToggleFijoPagado('${esc(f.id)}')">${pagado?'✓ Pagado '+(fechaPagado||'este mes')+' (deshacer)':'Marcar pagado ('+mk+')'}</button>
+        <button class="rt-btn" onclick="pAddFijoPago('${esc(f.id)}')">＋ Otro pago</button>
         <button class="rt-btn" onclick="pOpenForm('fijo','${esc(f.id)}')">✏️</button>
         <button class="shop-del" onclick="pDelItem('${esc(f.id)}')">🗑</button>
       </div>
@@ -5075,6 +5078,17 @@ function pToggleFijoPagado(id){
   const fecha=prompt('Fecha de pago de '+(f.concepto||'este pago')+' ('+mk+'):', f.fechaPago||hoy);
   if(fecha===null) return;
   f.pagos[mk]={monto:parseFloat(f.monto)||0, fecha:(fecha||hoy).trim()};
+  pSaveItem(f);
+}
+function pAddFijoPago(id){
+  const f=pItems.find(x=>x.id===id); if(!f)return;
+  const periodo=prompt('Periodo a registrar (ej. 2026-04, 2026-05-Q1, abril, quincena 1):', pMesKey());
+  if(periodo===null||!periodo.trim()) return;
+  const hoy=new Date().toISOString().substring(0,10);
+  const fecha=prompt('Fecha de pago:', hoy); if(fecha===null) return;
+  const monto=prompt('Monto pagado:', f.monto||''); if(monto===null) return;
+  f.pagos=f.pagos||{};
+  f.pagos[periodo.trim()]={monto:parseFloat(monto)||0, fecha:(fecha||hoy).trim()};
   pSaveItem(f);
 }
 function pAccionFijo(id){
@@ -5121,7 +5135,7 @@ function pRenderTarjetas(){
       <div style="flex:1;min-width:0">
         <div style="font-weight:600;font-size:13px">💳 ${esc(pCardLabel(c))}</div>
         <div style="font-size:11px;color:var(--ink-3)">${esc(c.nombre||'')}${c.diaCorte?(' · corte '+esc(c.diaCorte)):''}${c.diaDisponible?(' · disponible '+esc(c.diaDisponible)):''}${c.diaLimite?(' · límite '+esc(c.diaLimite)):''}${c.nota?(' · 📝 '+esc(c.nota)):''}</div>
-        <div style="font-size:11px;color:var(--temis);font-weight:600;margin-top:2px">Estimado del ciclo: ${pMoney(pTarjetaEstimado(c))} <button class="rt-btn" style="font-size:9px;padding:2px 6px;margin-left:4px" onclick="pOpenEstado('${esc(c.id)}','')">＋ Estado</button></div>
+        <div style="font-size:11px;color:var(--temis);font-weight:600;margin-top:2px">Estimado del ciclo: ${pMoney(pTarjetaEstimado(c))} <button class="rt-btn" style="font-size:9px;padding:2px 6px;margin-left:4px" onclick="pOpenEstado('${esc(c.id)}','')">＋ Nuevo estado de cuenta</button></div>
         <div style="font-size:10px;color:var(--ink-3)">+ fijos/MSI asignados: ${pMoney(pTarjetaCargado(c.id))}</div>
       </div>
       <button class="rt-btn" onclick="pOpenForm('tarjeta','${esc(c.id)}')">✏️</button>
@@ -5257,6 +5271,30 @@ function pEstadoLabel(s){
 function pMovsToText(movs){
   return (movs||[]).map(m=>[m.fecha||'',m.descripcion||'',m.monto||'',m.categoria||'',m.estado||'pendiente',m.gastoId||''].join(' | ')).join('\n');
 }
+function pMovRowsHTML(movs){
+  const arr=(movs&&movs.length)?movs:[{estado:'pendiente'}];
+  return '<div class="pf-field"><label>Movimientos del estado</label><div class="mov-grid head"><span>Fecha</span><span>Descripción</span><span>Monto</span><span>Categoría</span><span>Estado</span><span></span></div><div id="pfMovRows">'
+    + arr.map(pMovRowHTML).join('')
+    + '</div><button type="button" class="rt-btn" style="margin-top:6px;font-size:11px" onclick="pAddEstadoMov()">＋ Movimiento</button></div>';
+}
+function pMovRowHTML(m){
+  m=m||{estado:'pendiente'};
+  const opts=['pendiente','identificado','posible','no_identificado','ignorado'].map(s=>'<option value="'+s+'"'+((m.estado||'pendiente')===s?' selected':'')+'>'+pEstadoLabel(s)+'</option>').join('');
+  return '<div class="mov-grid"><input type="date" class="mov-fecha" value="'+esc(m.fecha||'')+'"><input class="mov-desc" value="'+esc(m.descripcion||'')+'" placeholder="Comercio"><input type="number" class="mov-monto" value="'+esc(m.monto||'')+'" placeholder="0"><input class="mov-cat" value="'+esc(m.categoria||'')+'" placeholder="Categoría"><select class="mov-estado">'+opts+'</select><button type="button" class="shop-del" onclick="this.closest(\'.mov-grid\').remove()">🗑</button></div>';
+}
+function pAddEstadoMov(){
+  const host=pF('pfMovRows'); if(!host)return;
+  host.insertAdjacentHTML('beforeend', pMovRowHTML({estado:'pendiente'}));
+}
+function pMovsFromRows(){
+  return [...document.querySelectorAll('#pfMovRows .mov-grid')].map(row=>({
+    fecha:(row.querySelector('.mov-fecha')||{}).value||'',
+    descripcion:(row.querySelector('.mov-desc')||{}).value||'',
+    monto:parseFloat((row.querySelector('.mov-monto')||{}).value)||0,
+    categoria:(row.querySelector('.mov-cat')||{}).value||'',
+    estado:(row.querySelector('.mov-estado')||{}).value||'pendiente'
+  })).filter(m=>m.fecha||m.descripcion||m.monto);
+}
 function pTextToMovs(txt){
   return String(txt||'').split(/\n+/).map(line=>{
     const p=line.split('|').map(x=>x.trim());
@@ -5391,7 +5429,6 @@ function pFormFieldsHTML(tipo, it){
       + F('Notas','pfNotaTarj',it.nota,'placeholder="Ej. paga en app, banco lejano…"');
   }
   if(tipo==='estado'){
-    const movs=pMovsToText(it.movimientos||[]);
     return `<div class="pf-field"><label>Tarjeta</label><select id="pfTarjeta">${pCardOptions(it.tarjeta)}</select></div>`
       + F('Mes','pfMes',it.mes||pMesKey(),'type="month"')
       + F('Total estado de cuenta','pfTotal',it.total,'type="number" placeholder="0"')
@@ -5406,7 +5443,8 @@ function pFormFieldsHTML(tipo, it){
         </select></div>`
       + F('PDF adjunto','pfPdfUrl',it.pdfUrl,'placeholder="URL de Drive o sube PDF abajo"')
       + `<div class="pf-field"><label>Subir PDF</label><input type="file" id="pfPdfFile" accept="application/pdf"></div>`
-      + TA('Movimientos del estado (fecha | descripción | monto | categoría | estado)','pfMovimientos',movs,'placeholder="2026-05-01 | Netflix | 219 | Suscripciones | pendiente"')
+      + TA('Transcript / texto extraído del PDF','pfTranscript',it.transcript,'placeholder="Pega aquí el texto extraído por IA o del PDF…"')
+      + pMovRowsHTML(it.movimientos||[])
       + F('Nota','pfNota',it.nota,'placeholder="Detalle del periodo…"');
   }
   if(tipo==='msi'){
@@ -5458,7 +5496,7 @@ async function pFormSave(){
         else throw new Error((up&&up.error)||'No se pudo subir PDF');
       }catch(e){ showToast('⚠ '+e.message); btnReady(); return; }
     }
-    item={...base, tarjeta:pFval('pfTarjeta'), mes:pFval('pfMes')||pMesKey(), total:parseFloat(pFval('pfTotal'))||0, minimo:parseFloat(pFval('pfMinimo'))||0, noIntereses:parseFloat(pFval('pfNoIntereses'))||0, fechaCorte:pFval('pfFechaCorte'), fechaLimite:pFval('pfFechaLimite'), fechaSubida:(prev&&prev.fechaSubida)||hoy, estado:pFval('pfEstado')||'pendiente', pdfUrl, movimientos:pTextToMovs(pFval('pfMovimientos')), nota:pFval('pfNota').trim()};
+    item={...base, tarjeta:pFval('pfTarjeta'), mes:pFval('pfMes')||pMesKey(), total:parseFloat(pFval('pfTotal'))||0, minimo:parseFloat(pFval('pfMinimo'))||0, noIntereses:parseFloat(pFval('pfNoIntereses'))||0, fechaCorte:pFval('pfFechaCorte'), fechaLimite:pFval('pfFechaLimite'), fechaSubida:(prev&&prev.fechaSubida)||hoy, estado:pFval('pfEstado')||'pendiente', pdfUrl, transcript:pFval('pfTranscript'), movimientos:pMovsFromRows(), nota:pFval('pfNota').trim()};
   } else if(t==='msi'){
     if(!pFval('pfConcepto').trim()){ showToast('¿Qué compraste?'); return; }
     const prev=prevItem;
