@@ -1052,10 +1052,10 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--i
       </div>
     </div>
     <div class="controls">
-<button class="ftab"          data-f="all"        onclick="setFilter('all',this)">Todos</button>
-<button class="ftab shr-t on" data-f="Compartido" onclick="setFilter('Compartido',this)">🤝 Compartido</button>
-      <button class="ftab lon-t" data-f="Prestamo"   onclick="setFilter('Prestamo',this)">💸 Préstamo/↩️</button>
-      <button class="ftab cot-t" data-f="Cotizacion" onclick="setFilter('Cotizacion',this)">💬 Cotización</button>
+<button class="ftab" id="fltAll" data-f="all" onclick="setFilter('all',this)">Todos</button>
+<button class="ftab shr-t on" id="fltCompartido" data-f="Compartido" onclick="setFilter('Compartido',this)">🤝 Compartido</button>
+      <button class="ftab lon-t" id="fltPrestamo" data-f="Prestamo" onclick="setFilter('Prestamo',this)">💸 Préstamo/↩️</button>
+      <button class="ftab cot-t" id="fltCotizacion" data-f="Cotizacion" onclick="setFilter('Cotizacion',this)">💬 Cotización</button>
       <span id="personFilters"><!-- v10: dinámico --></span>
     </div>
 
@@ -1658,6 +1658,9 @@ function buildPersonFilters(){
 }
 function applyPeopleUI(){
   buildPayerButtons(); buildPersonFilters();
+  ['fltCompartido','fltPrestamo','fltCotizacion'].forEach(id=>{ const el=document.getElementById(id); if(el) el.style.display=personalMode?'none':''; });
+  const allBtn=document.getElementById('fltAll');
+  if(allBtn) allBtn.textContent=personalMode?'👤 Mi vista':'Todos';
   const sb=document.getElementById('sesionBadge');
   if(sb){
     if(personalMode){
@@ -5433,12 +5436,13 @@ function pMovRowsHTML(movs){
   const arr=(movs&&movs.length)?movs:[{estado:'pendiente'}];
   return '<div class="pf-field"><label>Movimientos del estado</label><div class="mov-grid head"><span>Fecha</span><span>Descripción</span><span>Monto</span><span>Categoría</span><span>Estado</span><span></span></div><div id="pfMovRows">'
     + arr.map(pMovRowHTML).join('')
-    + '</div><button type="button" class="rt-btn" style="margin-top:6px;font-size:11px" onclick="pAddEstadoMov()">＋ Movimiento</button></div>';
+    + '</div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px"><button type="button" class="rt-btn" style="font-size:11px" onclick="pAddEstadoMov()">＋ Movimiento</button><button type="button" class="rt-btn" style="font-size:11px" onclick="pAutoMatchFormMovs()">🔎 Auto-identificar</button></div></div>';
 }
 function pMovRowHTML(m){
   m=m||{estado:'pendiente'};
   const opts=['pendiente','identificado','posible','no_identificado','ignorado'].map(s=>'<option value="'+s+'"'+((m.estado||'pendiente')===s?' selected':'')+'>'+pEstadoLabel(s)+'</option>').join('');
-  return '<div class="mov-grid"><input type="date" class="mov-fecha" value="'+esc(m.fecha||'')+'"><input class="mov-desc" value="'+esc(m.descripcion||'')+'" placeholder="Comercio"><input type="number" class="mov-monto" value="'+esc(m.monto||'')+'" placeholder="0"><input class="mov-cat" value="'+esc(m.categoria||'')+'" placeholder="Categoría"><select class="mov-estado">'+opts+'</select><button type="button" class="shop-del" onclick="this.closest(\'.mov-grid\').remove()">🗑</button></div>';
+  const link=m.gastoId?'<button type="button" class="shop-del" title="Ver gasto vinculado" onclick="pOpenLinkedGasto(\''+esc(m.gastoId)+'\')">↗</button>':'';
+  return '<div class="mov-grid"><input type="date" class="mov-fecha" value="'+esc(m.fecha||'')+'"><input class="mov-desc" value="'+esc(m.descripcion||'')+'" placeholder="Comercio"><input type="number" class="mov-monto" value="'+esc(m.monto||'')+'" placeholder="0"><input class="mov-cat" value="'+esc(m.categoria||'')+'" placeholder="Categoría"><select class="mov-estado">'+opts+'</select><span style="display:flex;gap:2px"><input type="hidden" class="mov-gasto" value="'+esc(m.gastoId||'')+'">'+link+'<button type="button" class="shop-del" onclick="this.closest(\'.mov-grid\').remove()">🗑</button></span></div>';
 }
 function pAddEstadoMov(){
   const host=pF('pfMovRows'); if(!host)return;
@@ -5450,7 +5454,8 @@ function pMovsFromRows(){
     descripcion:(row.querySelector('.mov-desc')||{}).value||'',
     monto:parseFloat((row.querySelector('.mov-monto')||{}).value)||0,
     categoria:(row.querySelector('.mov-cat')||{}).value||'',
-    estado:(row.querySelector('.mov-estado')||{}).value||'pendiente'
+    estado:(row.querySelector('.mov-estado')||{}).value||'pendiente',
+    gastoId:(row.querySelector('.mov-gasto')||{}).value||''
   })).filter(m=>m.fecha||m.descripcion||m.monto);
 }
 function pTextToMovs(txt){
@@ -5459,6 +5464,52 @@ function pTextToMovs(txt){
     if(!p[0]&&!p[1]&&!p[2]) return null;
     return {fecha:p[0]||'', descripcion:p[1]||'', monto:parseFloat(p[2])||0, categoria:p[3]||'', estado:p[4]||'pendiente', gastoId:p[5]||''};
   }).filter(Boolean);
+}
+function pDateDistance(a,b){
+  if(!a||!b) return 9999;
+  return Math.abs((new Date(a+'T12:00:00')-new Date(b+'T12:00:00'))/864e5);
+}
+function pMatchMovimiento(m, cardId, mes){
+  const c=pCardById(cardId)||{};
+  const gastos=pGastosDeTarjetaMes(c, mes||pMesKey());
+  const monto=parseFloat(m.monto)||0;
+  const desc=normTxt(m.descripcion||'');
+  let best=null, score=-1;
+  gastos.forEach(g=>{
+    const ga=parseFloat(g.costo)||0;
+    const montoOk=Math.abs(ga-monto)<=1;
+    if(!montoOk) return;
+    const dd=pDateDistance(String(m.fecha||'').substring(0,10), String(g.fecha||'').substring(0,10));
+    if(dd>5) return;
+    const txt=normTxt((g.concepto||'')+' '+(g.tienda||'')+' '+(g.notas||''));
+    const words=desc.split(/\s+/).filter(w=>w.length>3);
+    const hits=words.filter(w=>txt.includes(w)).length;
+    const sc=30-dd+(hits*10);
+    if(sc>score){ score=sc; best=g; }
+  });
+  return best?{gasto:best, exact:score>=35}:null;
+}
+function pAutoMatchFormMovs(silent){
+  const cardId=pFval('pfTarjeta'), mes=pFval('pfMes')||pMesKey();
+  const movs=pMovsFromRows();
+  let id=0, pos=0;
+  movs.forEach(m=>{
+    if(m.estado==='identificado'||m.estado==='ignorado') return;
+    const match=pMatchMovimiento(m,cardId,mes);
+    if(match){
+      m.gastoId=String(match.gasto.rowIndex||'');
+      m.estado=match.exact?'identificado':'posible';
+      if(match.exact) id++; else pos++;
+    }else if(m.estado==='pendiente') m.estado='no_identificado';
+  });
+  const host=pF('pfMovRows'); if(host) host.innerHTML=movs.map(pMovRowHTML).join('');
+  if(!silent) showToast('🔎 '+id+' identificados · '+pos+' posibles');
+}
+function pOpenLinkedGasto(ref){
+  const row=parseInt(ref);
+  const e=(allExp||[]).find(x=>x.rowIndex===row)||(misGastosAll||[]).find(x=>x.rowIndex===row);
+  if(!e){ showToast('No encontré ese gasto en la vista cargada'); return; }
+  openExpView(row);
 }
 function pUploadPdf(file, mes){
   return new Promise((resolve,reject)=>{
@@ -5473,6 +5524,34 @@ function pUploadPdf(file, mes){
     r.onerror=()=>reject(new Error('No se pudo leer el PDF'));
     r.readAsDataURL(file);
   });
+}
+function pReadFileBase64(file){
+  return new Promise((resolve,reject)=>{
+    const r=new FileReader();
+    r.onload=ev=>resolve(String(ev.target.result||'').split(',')[1]||'');
+    r.onerror=()=>reject(new Error('No se pudo leer el archivo'));
+    r.readAsDataURL(file);
+  });
+}
+async function pLeerEstadoIA(){
+  const btn=(typeof event!=='undefined'&&event&&event.target)?event.target:null; if(btn){ btn.disabled=true; btn.textContent='Leyendo…'; }
+  try{
+    const file=(pF('pfPdfFile')&&pF('pfPdfFile').files&&pF('pfPdfFile').files[0])||null;
+    const transcript=pFval('pfTranscript');
+    const base64=file?await pReadFileBase64(file):'';
+    const r=await postGAS({action:'leerEstadoCuenta', owner:pOwner, pass:pPass, base64, mimeType:file?(file.type||'application/pdf'):'', transcript});
+    if(!(r&&r.ok)) throw new Error((r&&r.error)||'No se pudo leer');
+    const x=r.result||{};
+    if(x.total!=null) pF('pfTotal').value=x.total;
+    if(x.minimo!=null) pF('pfMinimo').value=x.minimo;
+    if(x.noIntereses!=null) pF('pfNoIntereses').value=x.noIntereses;
+    if(x.fechaCorte) pF('pfFechaCorte').value=String(x.fechaCorte).substring(0,10);
+    if(x.fechaLimite) pF('pfFechaLimite').value=String(x.fechaLimite).substring(0,10);
+    const movs=(Array.isArray(x.movimientos)?x.movimientos:[]).map(m=>({fecha:String(m.fecha||'').substring(0,10), descripcion:m.descripcion||'', monto:parseFloat(m.monto)||0, categoria:m.categoria||'Por revisar', estado:m.estado||'pendiente', gastoId:m.gastoId||''}));
+    if(movs.length){ pF('pfMovRows').innerHTML=movs.map(pMovRowHTML).join(''); pAutoMatchFormMovs(true); }
+    showToast('✨ IA leyó '+movs.length+' movimientos');
+  }catch(e){ showToast('⚠ IA estado: '+e.message); }
+  finally{ if(btn){ btn.disabled=false; btn.textContent='🤖 Leer con IA'; } }
 }
 
 // Abre el formulario para crear (id vacío) o editar (id existente)
@@ -5601,6 +5680,10 @@ function pFormFieldsHTML(tipo, it){
         </select></div>`
       + F('PDF adjunto','pfPdfUrl',it.pdfUrl,'placeholder="URL de Drive o sube PDF abajo"')
       + `<div class="pf-field"><label>Subir PDF</label><input type="file" id="pfPdfFile" accept="application/pdf"></div>`
+      + `<div style="display:flex;gap:8px;flex-wrap:wrap;margin:-2px 0 10px 0">
+          <button type="button" class="rt-btn" style="font-weight:600;color:var(--personal);border-color:var(--personal)" onclick="pLeerEstadoIA()">🤖 Leer con IA</button>
+          <button type="button" class="rt-btn" onclick="pAutoMatchFormMovs()">🔎 Auto-identificar</button>
+        </div>`
       + TA('Transcript / texto extraído del PDF','pfTranscript',it.transcript,'placeholder="Pega aquí el texto extraído por IA o del PDF…"')
       + pMovRowsHTML(it.movimientos||[])
       + F('Nota','pfNota',it.nota,'placeholder="Detalle del periodo…"');
@@ -5731,6 +5814,7 @@ function pRenderEstadosTarjeta(c){
         <span style="color:${co.dif?'var(--temis)':'var(--shared)'}">dif ${pMoney(Math.abs(co.dif))}</span>
         ${e.pdfUrl?'<a class="rt-btn" style="font-size:10px;padding:3px 8px;text-decoration:none" href="'+esc(e.pdfUrl)+'" target="_blank">PDF</a>':''}
         <button class="rt-btn" style="font-size:10px;padding:3px 8px" onclick="pVerConciliacion('${esc(e.id)}')">🔎 Conciliar</button>
+        <button class="rt-btn" style="font-size:10px;padding:3px 8px" onclick="pEnviarNoIdentificados('${esc(e.id)}')">Enviar a gastos</button>
         <button class="rt-btn" style="font-size:10px;padding:3px 8px" onclick="pOpenEstado('${esc(c.id)}','${esc(e.id)}')">✏️</button>
         <button class="shop-del" style="font-size:10px;padding:3px 8px" onclick="pDelItem('${esc(e.id)}')">🗑</button>
       </div>
@@ -5747,15 +5831,15 @@ function pVerEstadoCuenta(cardId){
 function pVerConciliacion(estadoId){
   const e=pItems.find(x=>x.id===estadoId); if(!e)return;
   const co=pConciliacionEstado(e);
-  const movTxt=(co.movs||[]).map(m=>'• '+(m.fecha||'—')+' '+(m.descripcion||'')+' '+pMoney(m.monto)+' · '+pEstadoLabel(m.estado||'pendiente')).join('\n')||'(sin movimientos capturados)';
-  const registrar=co.dif>1 && confirm('🔎 Conciliación — '+pCardLabel(co.card)+' · '+(e.mes||'')+
+  const movTxt=(co.movs||[]).map(m=>'• '+(m.fecha||'—')+' '+(m.descripcion||'')+' '+pMoney(m.monto)+' · '+pEstadoLabel(m.estado||'pendiente')+(m.gastoId?' · ver gasto ↗':'')).join('\n')||'(sin movimientos capturados)';
+  const registrar=confirm('🔎 Conciliación — '+pCardLabel(co.card)+' · '+(e.mes||'')+
     '\n\nRegistrado en app: '+pMoney(co.totalApp)+
     '\nEstado de cuenta: '+pMoney(co.totalReal)+
     '\nDiferencia: '+pMoney(Math.abs(co.dif))+
     '\nEstado: '+pEstadoLabel(co.estado)+
     '\n\nMovimientos:\n'+movTxt+
-    '\n\nEl pago completo de tarjeta NO se registra como gasto.\n\n¿Registrar solo la diferencia como gasto por revisar?');
-  if(registrar) pRegistrarDiferencia(estadoId);
+    '\n\nEl pago completo de tarjeta NO se registra como gasto.\n\n¿Enviar a gastos solo los movimientos NO identificados?');
+  if(registrar) pEnviarNoIdentificados(estadoId);
 }
 function pRegistrarDiferencia(estadoId){
   const e=pItems.find(x=>x.id===estadoId); if(!e)return;
@@ -5769,6 +5853,47 @@ function pRegistrarDiferencia(estadoId){
   document.getElementById('iNotas').value='Diferencia estado '+(e.mes||'')+' · '+pCardLabel(co.card)+' · estadoId '+e.id;
   const mm=document.getElementById('iMetodo'); if(mm){ mm.value='Tarjeta'; onMetodoChange(); const s=document.getElementById('iTarjetaSel'); if(s){ s.value=e.tarjeta; onTarjetaSelChange(); } }
   showToast('Revisa y guarda solo la diferencia, no el pago completo');
+}
+async function pEnviarNoIdentificados(estadoId){
+  const e=pItems.find(x=>x.id===estadoId); if(!e)return;
+  const c=pCardById(e.tarjeta)||{};
+  const movs=(e.movimientos||[]).map(m=>({...m}));
+  const pend=movs.filter(m=>(m.estado||'pendiente')==='no_identificado');
+  if(!pend.length){ showToast('No hay movimientos no identificados para enviar'); return; }
+  if(!confirm('Se crearán '+pend.length+' gasto(s) reales. Los identificados no se duplican. ¿Continuar?')) return;
+  const ses=currentSaveSesion();
+  const quien=c.titular||myName()||P1();
+  const label=((c.banco||'')+((c.termFisica||c.terminacion)?(' ····'+(c.termFisica||c.terminacion)):'')+(c.termVirtual?(' /····'+c.termVirtual):'')).trim();
+  const pago=(c.ctipo||'TDC')+'§'+label;
+  let creados=0;
+  for(const m of movs){
+    if((m.estado||'pendiente')!=='no_identificado') continue;
+    const r=await postGAS({action:'saveGasto',
+      fecha:m.fecha||new Date().toISOString().substring(0,10),
+      fecha_captura:new Date().toISOString().substring(0,10),
+      costo:parseFloat(m.monto)||0,
+      moneda_pago:appSettings.moneda_local,
+      concepto:m.descripcion||'Movimiento no identificado',
+      tienda:m.descripcion||'',
+      quien_paga:quien,
+      compartido:'Personal',
+      pago,
+      categoria:m.categoria||'Por revisar',
+      notas:'Desde estado de cuenta '+(e.mes||'')+' · '+pCardLabel(c)+' · estadoId '+e.id,
+      sesion:ses
+    });
+    if(r&&r.ok){
+      m.estado='identificado';
+      m.gastoId=String(r.rowIndex||'');
+      creados++;
+    }
+  }
+  e.movimientos=movs;
+  e.estado=pConciliacionEstado(e).estado;
+  await pSaveItem(e);
+  invalidateSesionCache(ses);
+  if(personalMode) await pReloadMisGastos(); else await loadExp();
+  showToast('✓ '+creados+' movimiento(s) enviados a gastos');
 }
 
 
@@ -5805,6 +5930,8 @@ async function pEnterPersonal(){
   }
   personalMode = true;
   activeF='all';
+  document.querySelectorAll('.controls .ftab').forEach(b=>b.classList.remove('on'));
+  const allBtn=document.getElementById('fltAll'); if(allBtn) allBtn.classList.add('on');
   const tabSalud=document.getElementById('tabSalud'); if(tabSalud) tabSalud.style.display='';
   try{ await pLoad(); }catch(e){}
   // Traer mis gastos de TODAS las sesiones
