@@ -1180,6 +1180,7 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--i
         <button class="ftab" id="invF-cot" onclick="v30SetInvFilter('cotizacion',this)">💬 Cotizaciones</button>
         <button class="ftab" id="invF-star" onclick="v30SetInvFilter('prioritarios',this)">⭐ Prioritarios</button>
         <button class="ftab" onclick="v29OpenDeptos()">✏️ Catálogos</button>
+        <button class="ftab" onclick="v29OpenListaGrupos()" title="Elegir con qué sesiones se comparten los productos marcados 🔗">🔗 Compartir con…</button>
         <button class="rt-btn" style="padding:7px 14px;font-size:13px" onclick="v31ProdForm({target:'sheet'})">＋ Producto a inventario</button>
       </div>
       <div id="invColPanel" style="display:none;gap:8px;flex-wrap:wrap;margin:-2px 0 10px 0;font-size:11px"></div>
@@ -1396,7 +1397,7 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--i
   <div class="modal" style="max-width:420px">
     <div class="mhdr"><h2>🔗 Compartir lista con…</h2><button class="mclose" onclick="document.getElementById('listaGruposOverlay').style.display='none'">✕</button></div>
     <div class="mbody">
-      <div style="font-size:11px;color:var(--ink-3);margin-bottom:8px">Los items marcados 🔗 en <strong id="listaGruposSesion"></strong> serán visibles también en las sesiones que marques aquí (y viceversa). Los items 🔒 siempre quedan privados de su sesión.</div>
+      <div style="font-size:11px;color:var(--ink-3);margin-bottom:8px">Los items y productos marcados 🔗 en <strong id="listaGruposSesion"></strong> (lista de compras e inventario) serán visibles también en las sesiones que marques aquí (y viceversa). Lo marcado 🔒 siempre queda privado de su sesión.</div>
       <div id="listaGruposBody" style="display:flex;flex-direction:column;gap:8px"></div>
       <div class="mfooter" style="padding:12px 0 0">
         <button class="bcnl" onclick="document.getElementById('listaGruposOverlay').style.display='none'">Cancelar</button>
@@ -1426,7 +1427,7 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--i
 </div>
 
 <!-- MODAL -->
-<div class="overlay" id="mOverlay" style="display:none" onclick="closeBdrop(event)">
+<div class="overlay" id="mOverlay" style="display:none;z-index:290" onclick="closeBdrop(event)">
 <div class="modal">
   <div class="mhdr">
     <span class="mtitle" id="mTitle">Nuevo gasto</span>
@@ -1765,7 +1766,7 @@ async function v29UnlockSesion(){
   document.getElementById('sessionGate').style.display='none';
   v29ShowSesionLoading();
   applyPeopleUI();
-  v27ShopLoaded=false; // v29: la lista de compras es por sesión, recargar
+  v27ShopLoaded=false; invSharedLoaded=false; // v29: lista/inventario compartido son por sesión, recargar
   await loadExp();
   renderAll();
 }
@@ -1780,7 +1781,7 @@ async function v29SwitchSesion(s){
     localStorage.setItem('gastos_sesion', s);
     v29ShowSesionLoading();
     applyPeopleUI(); renderNames();
-    v27ShopLoaded=false; // v29: la lista de compras es por sesión, recargar
+    v27ShopLoaded=false; invSharedLoaded=false; // v29: lista/inventario compartido son por sesión, recargar
     await loadExp(); renderAll();
     showToast('Sesión: '+s);
   } else {
@@ -2359,7 +2360,7 @@ function switchPage(page,el){
   document.getElementById('saludView').style.display=page==='salud'?'block':'none';
   if(page==='salud') pOpenPage();
   if(page==='shopping') v28LoadShopping(); // lazy load al abrir
-  if(page==='inventario'){ v30RenderInv(); v32RenderResumen(); }
+  if(page==='inventario'){ v30RenderInv(); v32RenderResumen(); v33LoadInvCompartido(); }
 }
 
 const SORT_COLS=['fecha','concepto','monto','pago','tipo','cat','foto'];
@@ -3836,8 +3837,9 @@ async function v29SaveListaGrupos(){
   try{
     await postGAS({action:'saveListaGrupos', grupos});
     document.getElementById('listaGruposOverlay').style.display='none';
-    v27ShopLoaded=false;
+    v27ShopLoaded=false; invSharedLoaded=false;
     await v28LoadShopping();
+    await v33LoadInvCompartido();
     showToast('✓ Compartido con '+(checks.length||0)+' sesión(es)');
   }catch(e){ showToast('⚠ No se pudo guardar'); }
 }
@@ -4077,10 +4079,34 @@ ${p.fotoProducto
         </select>
         <button class="inv-toggle ${invSI?'si':''}" onclick="v31ToggleInv(${r})" title="¿Va a inventario? (NA = regalos u otros)">${invSI?'📦 SI':'NA'}</button>
       </span>
-      <span style="display:flex;gap:2px"><button class="shop-del" style="color:var(--personal)" onclick="v31PriceHist('${esc(p.concepto).replace(/'/g,"\\'")}')" title="Historial de precio">📈</button><button class="shop-del" onclick="v33Duplicar(${r})" title="Duplicar (p.ej. cotizar en otra tienda)">⧉</button><button class="shop-del" onclick="v35EditProd(${r})" title="Editar producto (foto, código, catálogo…)">✏️</button><button class="shop-del" onclick="v30DelProd(${r})" title="Eliminar producto">🗑</button></span>
+      <span style="display:flex;gap:2px"><button class="rt-btn" style="font-size:9px;padding:1px 4px;${p.invAlcance==='compartido'?'color:var(--shared);border-color:var(--shared-bdr)':''}" onclick="v30ToggleInvAlcance(${r},'${p.invAlcance==='compartido'?'compartido':''}')" title="${p.invAlcance==='compartido'?'Compartido con sesiones vinculadas — clic para hacerlo privado':'Privado de esta sesión — clic para compartir'}">${p.invAlcance==='compartido'?'🔗':'🔒'}</button><button class="shop-del" style="color:var(--personal)" onclick="v31PriceHist('${esc(p.concepto).replace(/'/g,"\\'")}')" title="Historial de precio">📈</button><button class="shop-del" onclick="v33Duplicar(${r})" title="Duplicar (p.ej. cotizar en otra tienda)">⧉</button><button class="shop-del" onclick="v35EditProd(${r})" title="Editar producto (foto, código, catálogo…)">✏️</button><button class="shop-del" onclick="v30DelProd(${r})" title="Eliminar producto">🗑</button></span>
     </div>`;
-  }).join('');
+  }).join('') + v33InvCompartidoHTML();
   v30ApplyInvCols();
+}
+function v30ToggleInvAlcance(rowIndex, cur){
+  v30SaveField(rowIndex, 'invAlcance', cur==='compartido' ? '' : 'compartido');
+}
+// v29: inventario compartido desde sesiones vinculadas (solo lectura aquí;
+// para editarlo entra a la sesión de origen).
+let sharedProds=[], invSharedLoaded=false;
+async function v33LoadInvCompartido(){
+  if(invSharedLoaded) return;
+  try{
+    const r=await postGAS({action:'getInventarioCompartido', sesion:currentSaveSesion()});
+    sharedProds=(r&&r.ok&&Array.isArray(r.productos))?r.productos:[];
+    invSharedLoaded=true;
+    v30RenderInv();
+  }catch(e){ sharedProds=[]; }
+}
+function v33InvCompartidoHTML(){
+  if(!sharedProds.length) return '';
+  const rows=sharedProds.map(p=>`<div style="display:flex;align-items:center;gap:8px;padding:7px 9px;border:1px solid var(--border);border-radius:8px;margin-bottom:5px;background:var(--surface2);font-size:11.5px">
+    <span class="chip" style="font-size:9px" title="Sesión de origen">🔗 ${esc(p.sesion)}</span>
+    <div style="flex:1;min-width:0">${esc(p.concepto||'—')}${p.marca?(' · '+esc(p.marca)):''}${p.categoria?(' · '+esc(p.categoria)):''}${p.ubicacion?(' · 📍'+esc(p.ubicacion)):''}</div>
+    <span style="color:var(--ink-3)">${p.cantidad?esc(p.cantidad)+' '+esc(p.unidad||''):''}</span>
+  </div>`).join('');
+  return `<div style="margin-top:14px"><div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-3);margin-bottom:6px">🔗 Inventario compartido de otras sesiones</div>${rows}</div>`;
 }
 const INV_COLS=['producto','tienda','categoria','ubicacion','cantidad','precio','base','caduca','queda','acciones'];
 const INV_COL_LABELS={producto:'Producto',tienda:'Tienda',categoria:'Categoría',ubicacion:'Lugar',cantidad:'Cant.',precio:'Precio',base:'Precio base',caduca:'Caduca',queda:'Queda',acciones:'Acciones'};
@@ -5075,6 +5101,7 @@ let pItems = [];          // items personales cargados
 let pLoaded = false;
 let pPass  = '';          // contraseña personal (memoria + localStorage)
 let pOwner = '';          // = myName()
+let vPass  = '';          // v29: contraseña de datos sensibles (memoria + sessionStorage — se olvida al cerrar la pestaña)
 let pSection = 'resumen';  // resumen | deudas | fijos | tarjetas | movs
 let pFijoFiltro = 'todos'; // todos | pendientes | pagados | vencidos | tarjetas | servicios | suscripciones
 
@@ -5204,7 +5231,7 @@ function pCardPagoRow(c){
     else if(dias<=5) alarma='<span style="color:var(--loan);font-weight:600">🔔 en '+dias+'d</span>';
     else alarma='<span style="color:var(--ink-3)">límite en '+dias+'d</span>';
   }
-  const cargado=pTarjetaCargado(c.id);
+  const cargado=pTarjetaCargado(c.id,mk);
   return '<div style="margin:-4px 0 8px 0;padding:8px 10px;background:var(--surface2);border-radius:8px;font-size:11.5px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
     +'<span>Pago del mes ('+mk+'): '+alarma+'</span>'
     +'<span style="color:var(--ink-3)">cargado '+pMoney(cargado)+'</span>'
@@ -5415,6 +5442,16 @@ function pRenderResumen(){
 }
 
 // ── INVERSIONES (resumen dentro de Resumen) ──
+//  Proyección a vencimiento con interés compuesto anual sobre el monto inicial.
+function pInversionMontoFinal(i){
+  const tasa=parseFloat(i.tasaInteres)||0;
+  if(!tasa || !i.fechaFin || !i.fecha) return null;
+  const ini=new Date(i.fecha+'T12:00:00'), fin=new Date(i.fechaFin+'T12:00:00');
+  const years=(fin-ini)/(365.25*86400000);
+  if(years<=0) return null;
+  const base=parseFloat(i.montoInicial)||0;
+  return base*Math.pow(1+tasa/100, years);
+}
 function pRenderInversionesResumen(){
   const items=pItemsOf('inversion');
   const totalActual=items.reduce((s,i)=>s+(parseFloat(i.valorActual)||0),0);
@@ -5422,10 +5459,12 @@ function pRenderInversionesResumen(){
   const ganancia=totalActual-totalInicial;
   const rows=items.map(i=>{
     const g=(parseFloat(i.valorActual)||0)-(parseFloat(i.montoInicial)||0);
+    const montoFinal=pInversionMontoFinal(i);
     return `<div style="display:flex;align-items:center;gap:8px;padding:9px;border:1px solid var(--border);border-radius:9px;margin-bottom:6px;background:var(--surface)">
       <div style="flex:1;min-width:0">
         <div style="font-weight:600;font-size:12.5px">${esc(i.nombre||'—')}${i.institucion?(' · '+esc(i.institucion)):''}</div>
-        <div style="font-size:10px;color:var(--ink-3)">invertido ${pMoney(i.montoInicial)}${g?(' · '+(g>0?'+':'')+pMoney(g)):''}</div>
+        <div style="font-size:10px;color:var(--ink-3)">invertido ${pMoney(i.montoInicial)}${g?(' · '+(g>0?'+':'')+pMoney(g)):''}${i.tasaInteres?(' · '+esc(i.tasaInteres)+'%/año'):''}</div>
+        ${montoFinal?'<div style="font-size:10px;color:var(--shared);font-weight:600">al vencer ('+esc(i.fechaFin)+'): '+pMoney(montoFinal)+'</div>':''}
       </div>
       <div style="font-family:var(--mono);font-weight:700">${pMoney(i.valorActual)}</div>
       <button class="rt-btn" onclick="pOpenForm('inversion','${esc(i.id)}')">✏️</button>
@@ -5444,7 +5483,66 @@ function pRenderInversionesResumen(){
 }
 
 // ── DEUDAS ──
+// v29: deudas de sesión (Compartido/Préstamo/Devolución) desglosadas por
+// sesión de origen y por contraparte, a partir de misGastosAll (ya trae
+// mi fracción/participantes de cada sesión donde participo).
+function pDeudasPorSesion(){
+  const me=myName();
+  const bySes={}; // sesion -> { contraparte: neto (positivo=me deben, negativo=debo) }
+  const addTo=(ses,who,amt)=>{ if(!who||who===me||!amt) return; if(!bySes[ses]) bySes[ses]={}; bySes[ses][who]=(bySes[ses][who]||0)+amt; };
+  (misGastosAll||[]).forEach(e=>{
+    const ses=e.sesion||'Personal';
+    const comp=e.compartido, a=parseFloat(e.costo)||0, mi=parseFloat(e.miParte)||0;
+    const q=e.quien_paga;
+    const parts=(Array.isArray(e.participantes)&&e.participantes.length)?e.participantes:null;
+    if(comp==='Compartido'){
+      if(q===me){
+        const otros=parts?parts.filter(p=>p!==me):[];
+        const n=(parts?parts.length:0)||1;
+        otros.forEach(p=>addTo(ses,p,a/n));
+      } else addTo(ses,q,-mi);
+    } else if(comp==='Prestamo'){
+      if(q===me){
+        const deudores=parts?parts.filter(p=>p!==me):[];
+        const n=deudores.length||1;
+        deudores.forEach(p=>addTo(ses,p,a/n));
+      } else addTo(ses,q,-(mi||a));
+    } else if(comp==='Devolucion'){
+      if(q===me){
+        const deudores=parts?parts.filter(p=>p!==me):[];
+        const n=deudores.length||1;
+        deudores.forEach(p=>addTo(ses,p,-(a/n)));
+      } else addTo(ses,q,mi||a);
+    }
+  });
+  return bySes;
+}
+function pRenderDeudasSesionHTML(){
+  const bySes=pDeudasPorSesion();
+  const sesiones=Object.keys(bySes).filter(s=>Object.values(bySes[s]).some(v=>Math.round(v)!==0));
+  if(!sesiones.length) return '';
+  let totMeDeben=0, totDebo=0;
+  const rows=sesiones.sort().map(ses=>{
+    const contrapartes=Object.entries(bySes[ses]).filter(([,v])=>Math.round(v)!==0);
+    const lineas=contrapartes.map(([who,v])=>{
+      const round=Math.round(v);
+      if(round>0){ totMeDeben+=round; return '<span style="color:var(--shared)">'+esc(who)+' te debe '+pMoney(round)+'</span>'; }
+      totDebo+=Math.abs(round);
+      return '<span style="color:var(--temis)">le debes a '+esc(who)+' '+pMoney(Math.abs(round))+'</span>';
+    }).join(' · ');
+    return '<div style="padding:9px 11px;border:1px solid var(--border);border-radius:9px;margin-bottom:6px;background:var(--surface);font-size:12.5px"><strong>'+esc(ses)+'</strong><div style="margin-top:3px">'+lineas+'</div></div>';
+  }).join('');
+  return `<div style="margin-bottom:14px">
+    <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-3);margin-bottom:6px">🤝 Deudas de sesión (por sesión y persona)</div>
+    <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+      <div style="flex:1;min-width:120px;background:var(--shared-bg);border:1px solid var(--shared-bdr);border-radius:9px;padding:9px"><div style="font-size:10px;color:var(--shared)">Total te deben</div><div style="font-family:var(--mono);font-weight:700;color:var(--shared)">${pMoney(totMeDeben)}</div></div>
+      <div style="flex:1;min-width:120px;background:var(--temis-bg);border:1px solid var(--temis-bdr);border-radius:9px;padding:9px"><div style="font-size:10px;color:var(--temis)">Total debes</div><div style="font-family:var(--mono);font-weight:700;color:var(--temis)">${pMoney(totDebo)}</div></div>
+    </div>
+    ${rows}
+  </div>`;
+}
 function pRenderDeudas(){
+  const sesionHtml=personalMode?pRenderDeudasSesionHTML():'';
   const items=pItemsOf('deuda');
   const rows=items.map(d=>{
     const a=parseFloat(d.monto)||0; const esMeDeben=d.dir==='medeben';
@@ -5459,7 +5557,7 @@ function pRenderDeudas(){
       <button class="shop-del" onclick="pDelItem('${esc(d.id)}')" title="Eliminar">🗑</button>
     </div>`;
   }).join('') || '<div style="color:var(--ink-3);font-size:13px;padding:20px;text-align:center">Sin deudas. Agrega préstamos o pagos pendientes con gente fuera de las sesiones.</div>';
-  return `<button class="rt-btn" style="font-weight:600;margin-bottom:12px" onclick="pOpenForm('deuda','')">＋ Nueva deuda</button>${rows}`;
+  return `${sesionHtml}<div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-3);margin-bottom:6px">🌐 Deudas externas (fuera de sesiones)</div><button class="rt-btn" style="font-weight:600;margin-bottom:12px" onclick="pOpenForm('deuda','')">＋ Nueva deuda</button>${rows}`;
 }
 // ── PAGOS FIJOS (con alarmas y marcado por mes) ──
 function pSetFijoFiltro(f){ pFijoFiltro=f; pRender(); }
@@ -5570,31 +5668,65 @@ function pAccionFijo(id){
   showToast('Revisa y guarda el gasto; luego queda ligado al pago fijo');
 }
 // ── TARJETAS (catálogo) ──
+//  Saldo de referencia para "crédito disponible": el total del estado más
+//  reciente si ya hay uno capturado, si no el estimado del ciclo actual.
+function pTarjetaSaldoRef(c,mk){
+  const estados=pItemsOf('estado').filter(e=>e.tarjeta===c.id).sort((a,b)=>(b.mes||'').localeCompare(a.mes||''));
+  if(estados.length) return parseFloat(estados[0].total)||0;
+  return pTarjetaEstimadoCiclo(c,mk);
+}
 function pRenderTarjetas(){
   const items=pItemsOf('tarjeta');
   const mk=pMesKey();
   const rows=items.map(c=>{
     const cy=pCicloTarjeta(c,mk);
     const proxVenc=c.diaLimite?pProximaFecha(c.diaLimite):'';
-    const fechas=`<div style="display:flex;flex-wrap:wrap;gap:4px 12px;font-size:11px;color:var(--ink-3);margin-top:2px">`
+    const fechas=`<div style="display:flex;flex-wrap:wrap;gap:4px 12px;font-size:11px;color:var(--ink-3)">`
       +`<span>📅 Corte: <strong>${esc(c.diaCorte||'—')}</strong></span>`
       +`<span>🟢 Disponible desde: <strong>${esc(c.diaDisponible||'—')}</strong></span>`
       +`<span>⏰ Límite: <strong>${esc(c.diaLimite||'—')}</strong></span>`
       +`<span>➡️ Próximo vencimiento: <strong>${proxVenc?esc(proxVenc)+' ('+pDiasPara(c.diaLimite)+'d)':'—'}</strong></span>`
       +`</div>`;
+    // Crédito máximo / disponible (solo TDC con límite capturado)
+    let creditoHtml='';
+    if(c.ctipo==='TDC' && parseFloat(c.creditoMax)>0){
+      const max=parseFloat(c.creditoMax)||0;
+      const usado=pTarjetaSaldoRef(c,mk);
+      const disp=Math.max(max-usado,0);
+      const pct=Math.min(100,Math.round((usado/max)*100));
+      creditoHtml=`<div style="margin-top:8px">
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--ink-3)"><span>Crédito disponible: <strong style="color:${pct>80?'var(--temis)':'var(--shared)'}">${pMoney(disp)}</strong> de ${pMoney(max)}</span><span>${pct}% usado</span></div>
+        <div style="height:5px;background:var(--surface2);border-radius:3px;overflow:hidden;margin-top:2px"><div style="width:${pct}%;height:100%;background:${pct>80?'var(--temis)':'var(--shared)'}"></div></div>
+      </div>`;
+    }
+    // Datos sensibles (ocultos hasta pedir contraseña de datos sensibles)
+    const sensibles=[vField('CLABE',c.clabe),vField('Núm. física',c.numFisica),vField('Núm. virtual',c.numVirtual),vField('PIN',c.pin)].filter(Boolean).join(' ');
+    const sensiblesHtml=sensibles?`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">${sensibles}</div>`:'';
+    // Comisiones/intereses (solo si hay algo capturado)
+    const feeParts=[];
+    if(c.interesAnual) feeParts.push('Interés '+esc(c.interesAnual)+'%/año');
+    if(c.comisionTardio) feeParts.push('Pago tardío '+pMoney(c.comisionTardio));
+    if(c.comisionInactividad) feeParts.push('Inactividad '+pMoney(c.comisionInactividad));
+    if(c.requisitoMinimo) feeParts.push('Mín: '+esc(c.requisitoMinimo));
+    const feesHtml=feeParts.length?`<div style="font-size:10.5px;color:var(--temis);margin-top:6px;background:var(--temis-bg);border-radius:6px;padding:4px 8px">⚠️ ${feeParts.join(' · ')}</div>`:'';
     return `<div style="padding:12px;border:1px solid var(--border);border-radius:10px;margin-bottom:10px;background:var(--surface)">
     <div style="display:flex;align-items:center;gap:10px">
       <div style="flex:1;min-width:0">
         <div style="font-weight:800;font-size:14px">💳 ${esc(pCardLabel(c))}</div>
-        <div style="font-size:11px;color:var(--ink-3)">${esc(c.nombre||'')} · ${esc(mk)} · Periodo: ${esc(cy.label)}</div>
+        <div style="font-size:11px;color:var(--ink-3);margin-bottom:4px">${esc(c.nombre||'')} · ${esc(mk)} · Periodo: ${esc(cy.label)}</div>
         ${fechas}
-        <div style="font-size:12px;color:var(--temis);font-weight:800;margin-top:3px">Estimado del ciclo: ${pMoney(pTarjetaEstimadoCiclo(c,mk))}</div>
-        <div style="font-size:10px;color:var(--ink-3)">compras del ciclo + fijos/MSI asignados: ${pMoney(pTarjetaCargado(c.id))}</div>
       </div>
-      <button class="rt-btn" style="font-weight:700" onclick="pOpenEstado('${esc(c.id)}','')">＋ Estado</button>
-      <button class="rt-btn" onclick="pOpenForm('tarjeta','${esc(c.id)}')">✏️</button>
-      <button class="shop-del" onclick="pDelItem('${esc(c.id)}')">🗑</button>
+      <div style="display:flex;gap:6px">
+        <button class="rt-btn" style="font-weight:700" onclick="pOpenEstado('${esc(c.id)}','')">＋ Estado</button>
+        <button class="rt-btn" onclick="pOpenForm('tarjeta','${esc(c.id)}')">✏️</button>
+        <button class="shop-del" onclick="pDelItem('${esc(c.id)}')">🗑</button>
+      </div>
     </div>
+    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:8px;padding-top:8px;border-top:1px dashed var(--border)">
+      <span style="font-size:12px;font-weight:800;color:var(--temis)">Estimado del ciclo: ${pMoney(pTarjetaEstimadoCiclo(c,mk))}</span>
+      <span style="font-size:10px;color:var(--ink-3)">compras + fijos/MSI: ${pMoney(pTarjetaCargado(c.id,mk))}</span>
+    </div>
+    ${creditoHtml}${feesHtml}${sensiblesHtml}
     ${pCardPagoRow(c)}${pRenderEstadosTarjeta(c)}${pMSIDeTarjeta(c.id)}</div>`;
   }).join('') || '<div style="color:var(--ink-3);font-size:13px;padding:20px;text-align:center">Sin tarjetas. Agrega tus TDC/TDD para elegirlas al pagar.</div>';
   const sinTarjeta=pItemsOf('msi').filter(m=>!m.tarjeta);
@@ -5701,22 +5833,42 @@ function pMovRowHTML(m){
   const link=m.gastoId?'<button type="button" class="shop-del" title="Ver gasto vinculado" onclick="pOpenLinkedGasto(\''+esc(m.gastoId)+'\')">↗</button>':'<button type="button" class="rt-btn" style="font-size:10px;padding:2px 5px" title="Vincular con gasto existente" onclick="pVincularMovRow(this)">🔗</button><button type="button" class="rt-btn" style="font-size:10px;padding:2px 5px" title="Registrar como nuevo gasto" onclick="pRegistrarMovComoGasto(this)">➕</button>';
   return '<div class="mov-grid"><input type="date" class="mov-fecha" value="'+esc(m.fecha||'')+'"><input class="mov-desc" value="'+esc(m.descripcion||'')+'" placeholder="Comercio"><input type="number" class="mov-monto" value="'+esc(m.monto||'')+'" placeholder="0"><input class="mov-cat" value="'+esc(m.categoria||'')+'" placeholder="Categoría"><select class="mov-estado">'+opts+'</select><span style="display:flex;gap:2px;flex-wrap:wrap"><input type="hidden" class="mov-gasto" value="'+esc(m.gastoId||'')+'">'+link+'<button type="button" class="shop-del" onclick="this.closest(\'.mov-grid\').remove()">🗑</button></span></div>';
 }
-//  Intenta vincular esta fila con un gasto existente (mismo motor que auto-identificar).
+//  Vincular con gasto existente: sugiere el mejor match automático, pero si no
+//  hay coincidencia confiable (o el usuario quiere elegir otro) muestra un
+//  selector manual con los gastos candidatos de esa tarjeta/ciclo.
 function pVincularMovRow(btn){
   const row=btn.closest('.mov-grid');
   const cardId=pFval('pfTarjeta')||(pConciliacionActual&&pConciliacionActual.tarjeta)||'';
   const mes=pFval('pfMes')||(pConciliacionActual&&pConciliacionActual.mes)||pMesKey();
+  const c=pCardById(cardId)||{};
   const m={
     fecha:(row.querySelector('.mov-fecha')||{}).value||'',
     descripcion:(row.querySelector('.mov-desc')||{}).value||'',
     monto:parseFloat((row.querySelector('.mov-monto')||{}).value)||0
   };
   const match=pMatchMovimiento(m,cardId,mes);
-  if(!match){ showToast('Sin coincidencia sugerida para esta fila'); return; }
-  row.querySelector('.mov-gasto').value=String(match.gasto.rowIndex||'');
-  row.querySelector('.mov-estado').value=match.exact?'identificado':'posible';
-  row.replaceWith(pRowFromEl(pMovRowHTMLObjFromRow(row)));
-  showToast('🔗 Vinculado: '+(match.gasto.concepto||match.gasto.tienda||'gasto')+' · '+pMoney(match.gasto.costo));
+  const candidatos=(cardId?pGastosDeTarjetaMes(c,mes):[]).slice().sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||''));
+  const msg = match ? ('Sugerido: '+esc(match.gasto.concepto||match.gasto.tienda||'gasto')+' · '+pMoney(match.gasto.costo)+' — no se identifica con certeza, confirma o elige otro:') : 'No se identifica automáticamente. ¿Deseas seleccionar tú con cuál gasto vincularlo?';
+  const opts = '<option value="">— elegir gasto —</option>'+candidatos.map(g=>'<option value="'+g.rowIndex+'"'+(match&&String(match.gasto.rowIndex)===String(g.rowIndex)?' selected':'')+'>'+esc(String(g.fecha||'').substring(0,10))+' · '+esc((g.concepto||g.tienda||'').substring(0,28))+' · '+pMoney(g.costo)+'</option>').join('');
+  const pop=document.createElement('div');
+  pop.className='mov-vincular-pop';
+  pop.style.cssText='padding:8px;background:var(--surface2);border-radius:8px;margin:2px 0 6px;font-size:11px';
+  pop.innerHTML='<div style="margin-bottom:5px;color:var(--ink-3)">'+msg+'</div>'
+    +'<select style="width:100%;margin-bottom:6px;font-size:11px">'+opts+'</select>'
+    +'<div style="display:flex;gap:6px"><button type="button" class="rt-btn" style="font-size:10px;font-weight:600" onclick="pVincularConfirmar(this)">Usar este gasto</button><button type="button" class="rt-btn" style="font-size:10px" onclick="this.closest(\'.mov-vincular-pop\').remove()">Cancelar</button></div>';
+  row.insertAdjacentElement('afterend', pop);
+}
+function pVincularConfirmar(btn){
+  const pop=btn.closest('.mov-vincular-pop');
+  const rowIndex=pop.querySelector('select').value;
+  if(!rowIndex){ showToast('Elige un gasto de la lista'); return; }
+  const row=pop.previousElementSibling;
+  row.querySelector('.mov-gasto').value=rowIndex;
+  row.querySelector('.mov-estado').value='identificado';
+  const nuevo=pRowFromEl(pMovRowHTMLObjFromRow(row));
+  row.replaceWith(nuevo);
+  pop.remove();
+  showToast('🔗 Vinculado');
 }
 function pMovRowHTMLObjFromRow(row){
   return {
@@ -5942,13 +6094,34 @@ function pFormFieldsHTML(tipo, it){
           ${F('Día límite','pfDiaLimite',it.diaLimite,'type="number" min="1" max="31" placeholder="opc."')}
         </div>`
       + F('Pago disponible desde','pfDiaDisponible',it.diaDisponible,'type="number" min="1" max="31" placeholder="opc."')
-      + F('Notas','pfNotaTarj',it.nota,'placeholder="Ej. paga en app, banco lejano…"');
+      + (ct==='TDC'?F('Crédito máximo (¥, opcional)','pfCreditoMax',it.creditoMax,'type="number" placeholder="0"'):'')
+      + F('Notas','pfNotaTarj',it.nota,'placeholder="Ej. paga en app, banco lejano…"')
+      + `<details style="margin-top:6px"><summary style="cursor:pointer;font-size:11px;font-weight:600;color:var(--ink-3)">💰 Intereses y comisiones (para no llevarte sorpresas)</summary>
+          <div style="margin-top:8px">
+          ${F('Interés anual por no pagar (%)','pfInteres',it.interesAnual,'type="number" step="0.01" placeholder="Ej. 45"')}
+          ${F('Comisión por pago tardío (¥)','pfComisionTardio',it.comisionTardio,'type="number" placeholder="0"')}
+          ${F('Comisión por inactividad (¥)','pfComisionInactividad',it.comisionInactividad,'type="number" placeholder="0"')}
+          ${F('Requisito mínimo para evitar comisión','pfRequisitoMinimo',it.requisitoMinimo,'placeholder="Ej. 1 compra al mes"')}
+          </div>
+        </details>`
+      + `<details style="margin-top:6px"><summary style="cursor:pointer;font-size:11px;font-weight:600;color:var(--personal)">🔒 Datos sensibles (CLABE, número, PIN — piden contraseña aparte)</summary>
+          <div style="margin-top:8px">
+          ${F('CLABE (opcional)','pfClabe',it.clabe,'placeholder="18 dígitos" autocomplete="off"')}
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            ${F('Nº completo — física','pfNumFis',it.numFisica,'placeholder="16 dígitos" autocomplete="off"')}
+            ${F('Nº completo — virtual','pfNumVir',it.numVirtual,'placeholder="16 dígitos" autocomplete="off"')}
+          </div>
+          ${F('PIN (opcional)','pfPin',it.pin,'placeholder="4 dígitos" autocomplete="off"')}
+          <div style="font-size:10px;color:var(--ink-3)">Se guardan tal cual en tu Sheet privado. En la lista de tarjetas se ven ocultos hasta que pongas tu contraseña de datos sensibles (distinta de tu contraseña personal).</div>
+          </div>
+        </details>`;
   }
   if(tipo==='estado'){
     const c=pCardById(it.tarjeta)||pItemsOf('tarjeta')[0]||{};
     const mk=it.mes||pMesKey();
     const cy=c.id?pCicloTarjeta(c,mk):{label:'—'};
-    return `<div class="pf-field"><label>Subir PDF</label><input type="file" id="pfPdfFile" accept="application/pdf"></div>`
+    const pdfLink=it.pdfUrl?`<a href="${esc(it.pdfUrl)}" target="_blank" class="rt-btn" style="text-decoration:none;font-size:11px">📄 Ver PDF actual</a>`:'';
+    return `<div class="pf-field"><label>Subir PDF${it.pdfUrl?' (ya hay uno — sube otro para reemplazarlo)':''}</label><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><input type="file" id="pfPdfFile" accept="application/pdf" style="flex:1;min-width:160px">${pdfLink}</div></div>`
       + `<div style="display:flex;gap:8px;flex-wrap:wrap;margin:-2px 0 10px 0">
           <button type="button" class="rt-btn" style="font-weight:600;color:var(--personal);border-color:var(--personal)" onclick="pLeerEstadoIA()">🤖 Leer con IA</button>
           <button type="button" class="rt-btn" onclick="pAutoMatchFormMovs()">🔎 Auto-identificar</button>
@@ -5966,10 +6139,14 @@ function pFormFieldsHTML(tipo, it){
       + `<div class="pf-field"><label>Estado</label><select id="pfEstado">
           ${['pendiente','parcial','conciliado','diferencia'].map(x=>'<option value="'+x+'"'+((it.estado||'pendiente')===x?' selected':'')+'>'+pEstadoLabel(x)+'</option>').join('')}
         </select></div>`
-      + F('PDF adjunto','pfPdfUrl',it.pdfUrl,'placeholder="URL de Drive o sube PDF arriba"')
-      + TA('Transcript / texto extraído del PDF','pfTranscript',it.transcript,'placeholder="Pega aquí el texto extraído por IA o del PDF…"')
       + pMovRowsHTML(it.movimientos||[])
-      + F('Nota','pfNota',it.nota,'placeholder="Detalle del periodo…"');
+      + F('Nota','pfNota',it.nota,'placeholder="Detalle del periodo…"')
+      + `<details style="margin-top:4px"><summary style="cursor:pointer;font-size:11px;color:var(--ink-3)">Opciones avanzadas (URL de PDF manual, pegar texto)</summary>
+          <div style="margin-top:8px">
+          ${F('PDF adjunto (URL)','pfPdfUrl',it.pdfUrl,'placeholder="URL de Drive o sube PDF arriba"')}
+          ${TA('Transcript / texto pegado (si no tienes el PDF a la mano)','pfTranscript',it.transcript,'placeholder="Pega aquí el texto del estado de cuenta…"')}
+          </div>
+        </details>`;
   }
   if(tipo==='msi'){
     return F('¿Qué compraste?','pfConcepto',it.concepto,'placeholder="Ej. Laptop" id="pFormFirst"')
@@ -5984,7 +6161,10 @@ function pFormFieldsHTML(tipo, it){
       + F('Institución (opcional)','pfInstitucion',it.institucion,'placeholder="Ej. GBM, Banco, Binance…"')
       + F('Monto invertido inicial (¥)','pfMontoInicial',it.montoInicial,'type="number" placeholder="0"')
       + F('Valor actual (¥)','pfValorActual',it.valorActual!==undefined?it.valorActual:it.montoInicial,'type="number" placeholder="0"')
-      + F('Fecha','pfFecha',it.fecha||hoy,'type="date"')
+      + F('Fecha de inicio','pfFecha',it.fecha||hoy,'type="date"')
+      + F('Tasa de interés anual % (opcional)','pfTasaInteres',it.tasaInteres,'type="number" step="0.01" placeholder="Ej. 11.5"')
+      + F('Fecha de fin / vencimiento (opcional, si aplica)','pfFechaFin',it.fechaFin,'type="date"')
+      + `<div style="font-size:11px;color:var(--ink-3);margin:-4px 0 8px">Con tasa + fecha de fin, calculamos cuánto recibirías al vencimiento (interés compuesto anual sobre el monto inicial).</div>`
       + F('Nota (opcional)','pfNota',it.nota,'placeholder="Detalle…"');
   }
   return '';
@@ -6013,7 +6193,7 @@ async function pFormSave(){
     item={...base, concepto:pFval('pfConcepto').trim(), tipoPago, monto:parseFloat(pFval('pfMonto'))||0, frecuencia:pFval('pfFrecuencia')||'mensual', diaLimite:pFval('pfDiaLimite'), fechaPago:pFval('pfFechaPago'), categoria:pFval('pfCategoria').trim(), formaPago:pFval('pfFormaPago'), tarjeta:(pFval('pfFormaPago')==='Tarjeta'?pFval('pfTarjeta'):''), generaGasto:(tipoPago==='tarjeta'?false:(pFval('pfGeneraGasto')!=='no')), nota:pFval('pfNota').trim(), pagos:(prev&&prev.pagos)||{}};
   } else if(t==='tarjeta'){
     if(!pFval('pfBanco').trim() && !pFval('pfNombre').trim()){ showToast('Pon al menos alias o banco'); return; }
-    item={...base, nombre:pFval('pfNombre').trim(), titular:pFval('pfTitular').trim(), banco:pFval('pfBanco').trim(), ctipo:pFval('pfCtipo'), termFisica:pFval('pfTermFis').trim(), termVirtual:pFval('pfTermVir').trim(), diaCorte:pFval('pfDiaCorte'), diaDisponible:pFval('pfDiaDisponible'), diaLimite:pFval('pfDiaLimite'), nota:pFval('pfNotaTarj').trim()};
+    item={...base, nombre:pFval('pfNombre').trim(), titular:pFval('pfTitular').trim(), banco:pFval('pfBanco').trim(), ctipo:pFval('pfCtipo'), termFisica:pFval('pfTermFis').trim(), termVirtual:pFval('pfTermVir').trim(), diaCorte:pFval('pfDiaCorte'), diaDisponible:pFval('pfDiaDisponible'), diaLimite:pFval('pfDiaLimite'), creditoMax:parseFloat(pFval('pfCreditoMax'))||0, interesAnual:parseFloat(pFval('pfInteres'))||0, comisionTardio:parseFloat(pFval('pfComisionTardio'))||0, comisionInactividad:parseFloat(pFval('pfComisionInactividad'))||0, requisitoMinimo:pFval('pfRequisitoMinimo').trim(), clabe:pFval('pfClabe').trim(), numFisica:pFval('pfNumFis').trim(), numVirtual:pFval('pfNumVir').trim(), pin:pFval('pfPin').trim(), nota:pFval('pfNotaTarj').trim()};
   } else if(t==='estado'){
     if(!pFval('pfTarjeta')){ showToast('Elige tarjeta'); return; }
     const prev=pFormId?pItems.find(x=>x.id===pFormId):null;
@@ -6034,7 +6214,7 @@ async function pFormSave(){
     item={...base, concepto:pFval('pfConcepto').trim(), monto:parseFloat(pFval('pfMonto'))||0, meses:parseInt(pFval('pfMeses'))||1, tarjeta:pFval('pfTarjeta'), inicio:pFval('pfInicio'), diaLimite:pFval('pfDiaLimite'), pagadas:(prev&&prev.pagadas)||{}};
   } else if(t==='inversion'){
     if(!pFval('pfNombre').trim()){ showToast('Escribe un nombre'); return; }
-    item={...base, nombre:pFval('pfNombre').trim(), institucion:pFval('pfInstitucion').trim(), montoInicial:parseFloat(pFval('pfMontoInicial'))||0, valorActual:parseFloat(pFval('pfValorActual'))||0, fecha:pFval('pfFecha'), nota:pFval('pfNota').trim()};
+    item={...base, nombre:pFval('pfNombre').trim(), institucion:pFval('pfInstitucion').trim(), montoInicial:parseFloat(pFval('pfMontoInicial'))||0, valorActual:parseFloat(pFval('pfValorActual'))||0, fecha:pFval('pfFecha'), tasaInteres:parseFloat(pFval('pfTasaInteres'))||0, fechaFin:pFval('pfFechaFin'), nota:pFval('pfNota').trim()};
   }
   btnBusy('Guardando…');
   const ok=await pSaveItem(item);
@@ -6043,10 +6223,17 @@ async function pFormSave(){
 }
 
 // Suma cargada a cada tarjeta (pagos fijos + cuotas MSI del mes)
-function pTarjetaCargado(cardId){
+// v29: solo suma la cuota de MSI si ESE mes cae dentro del plazo del MSI —
+// antes sumaba el promedio mensual para siempre, incluso después de terminado.
+function pTarjetaCargado(cardId, mk){
+  mk = mk || pMesKey();
   let tot=0;
   pItemsOf('fijo').forEach(f=>{ if(f.tarjeta===cardId) tot+=parseFloat(f.monto)||0; });
-  pItemsOf('msi').forEach(m=>{ if(m.tarjeta===cardId) tot+=pMSICuotaMonto(m); });
+  pItemsOf('msi').forEach(m=>{
+    if(m.tarjeta!==cardId) return;
+    const cuota=pMSICuotas(m).find(q=>q.key===mk);
+    if(cuota) tot+=cuota.monto;
+  });
   return tot;
 }
 // v42: ¿el "pago" de un gasto corresponde a esta tarjeta? (match por banco/terminación)
@@ -6067,12 +6254,30 @@ function pGastosDeTarjeta(c){
 function pTarjetaEstimado(c){
   return pGastosDeTarjeta(c).reduce((s,e)=>s+(parseFloat(e.costo)||0),0);
 }
+function pMesAnterior(mk){
+  const y=parseInt(mk.slice(0,4)), m=parseInt(mk.slice(5,7))-1;
+  const d=new Date(y,m-1,1);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+}
+// v29: si ya capturaste el estado de cuenta de este mes (y del anterior), usa
+// SU fecha de corte real en vez del día general de la tarjeta — el corte puede
+// variar un día de un mes a otro (fin de semana, mes corto, etc).
 function pCicloTarjeta(c,mk){
   mk=mk||pMesKey();
   const y=parseInt(mk.slice(0,4)), m=parseInt(mk.slice(5,7))-1;
-  const corte=Math.max(1,Math.min(31,parseInt(c.diaCorte)||new Date(y,m+1,0).getDate()));
-  const fin=new Date(y,m,Math.min(corte,new Date(y,m+1,0).getDate()));
-  const ini=new Date(y,m-1,Math.min(corte+1,new Date(y,m,0).getDate()));
+  const edoMes = (typeof pEstadoDeTarjetaMes==='function') ? pEstadoDeTarjetaMes(c.id,mk) : null;
+  const edoPrev = (typeof pEstadoDeTarjetaMes==='function') ? pEstadoDeTarjetaMes(c.id,pMesAnterior(mk)) : null;
+  let fin, ini;
+  if(edoMes && edoMes.fechaCorte){ fin=new Date(edoMes.fechaCorte+'T12:00:00'); }
+  else {
+    const corte=Math.max(1,Math.min(31,parseInt(c.diaCorte)||new Date(y,m+1,0).getDate()));
+    fin=new Date(y,m,Math.min(corte,new Date(y,m+1,0).getDate()));
+  }
+  if(edoPrev && edoPrev.fechaCorte){ ini=new Date(edoPrev.fechaCorte+'T12:00:00'); ini.setDate(ini.getDate()+1); }
+  else {
+    const corte=Math.max(1,Math.min(31,parseInt(c.diaCorte)||new Date(y,m+1,0).getDate()));
+    ini=new Date(y,m-1,Math.min(corte+1,new Date(y,m,0).getDate()));
+  }
   return {ini:ini.toISOString().substring(0,10), fin:fin.toISOString().substring(0,10), label:fmtDate(ini.toISOString())+' al '+fmtDate(fin.toISOString())};
 }
 function pGastosDeTarjetaCiclo(c,mk){
@@ -6080,7 +6285,7 @@ function pGastosDeTarjetaCiclo(c,mk){
   return pGastosDeTarjeta(c).filter(e=>String(e.fecha||'').substring(0,10)>=cy.ini && String(e.fecha||'').substring(0,10)<=cy.fin);
 }
 function pTarjetaEstimadoCiclo(c,mk){
-  return pGastosDeTarjetaCiclo(c,mk).reduce((s,e)=>s+(parseFloat(e.costo)||0),0)+pTarjetaCargado(c.id);
+  return pGastosDeTarjetaCiclo(c,mk).reduce((s,e)=>s+(parseFloat(e.costo)||0),0)+pTarjetaCargado(c.id,mk);
 }
 function pEstadoDeTarjetaMes(cardId, mk){
   return pItemsOf('estado').find(e=>e.tarjeta===cardId && (e.mes||'')===mk);
@@ -6248,6 +6453,50 @@ async function pReloadMisGastos(){
     misGastosAll=(r&&r.ok&&Array.isArray(r.gastos))?r.gastos:[];
   }catch(e){ misGastosAll=[]; }
 }
+// v29: contraseña de datos sensibles (CLABE, número completo, PIN de tarjetas) —
+// SEPARADA de la contraseña personal. Se guarda en sessionStorage (se olvida
+// al cerrar la pestaña, a propósito, para que no quede guardada en el dispositivo).
+async function vEnsure(){
+  if(vPass) return true;
+  const cached=sessionStorage.getItem('gastos_vpass_'+pOwner);
+  if(cached){ vPass=cached; return true; }
+  const pass=prompt('🔒 Contraseña de datos sensibles (distinta de tu contraseña personal).\nSi es la primera vez, escribe una nueva:','');
+  if(pass===null) return false;
+  try{
+    const r=await postGAS({action:'vaultAuth', owner:pOwner, vpass:pass});
+    if(!(r&&r.ok)){ showToast('⚠ '+((r&&r.error==='PASSWORD')?'Contraseña incorrecta':(r&&r.error)||'Error')); return false; }
+    vPass=pass; sessionStorage.setItem('gastos_vpass_'+pOwner, pass);
+    return true;
+  }catch(e){ showToast('⚠ Error de red'); return false; }
+}
+async function vRevelar(btn, campo, valor){
+  if(!(await vEnsure())) return;
+  const span=btn.closest('.vault-field').querySelector('.vault-val');
+  span.textContent=valor;
+  btn.style.display='none';
+  span.style.display='inline';
+  const cp=btn.closest('.vault-field').querySelector('.vault-copy'); if(cp) cp.style.display='inline-flex';
+}
+async function vCopiar(btn, valor){
+  try{
+    if(navigator.clipboard&&navigator.clipboard.writeText) await navigator.clipboard.writeText(valor);
+    else { const ta=document.createElement('textarea'); ta.value=valor; ta.style.position='fixed'; ta.style.opacity='0'; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta); }
+    showToast('✓ Copiado');
+  }catch(e){ showToast('⚠ No se pudo copiar'); }
+}
+//  Campo enmascarado con botón revelar (pide vEnsure) + copiar (aparece tras revelar).
+function vField(label, valor){
+  if(!valor) return '';
+  const masked = valor.length>4 ? ('•'.repeat(Math.max(valor.length-4,4))+valor.slice(-4)) : '••••';
+  const valEsc = esc(valor).replace(/'/g,"\\'");
+  return `<span class="vault-field" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;background:var(--surface2);border-radius:6px;padding:3px 7px">
+    <span style="color:var(--ink-3)">${esc(label)}:</span>
+    <span class="vault-masked" style="font-family:var(--mono)">${esc(masked)}</span>
+    <span class="vault-val" style="display:none;font-family:var(--mono)"></span>
+    <button type="button" class="rt-btn" style="font-size:9px;padding:1px 5px" onclick="vRevelar(this,'${esc(label)}','${valEsc}')">👁</button>
+    <button type="button" class="rt-btn vault-copy" style="font-size:9px;padding:1px 5px;display:none" onclick="vCopiar(this,'${valEsc}')">📋</button>
+  </span>`;
+}
 async function pEnterPersonal(){
   pOwner = myName();
   if(!pOwner){ showToast('Primero elige tu nombre en 👥 (⭐ ¿Quién eres tú?)'); openPeople(); return; }
@@ -6413,12 +6662,13 @@ function pRenderMiLista(){
 
 <!-- v29: Conciliación de estado de cuenta (tabla real, no confirm()) -->
 <div class="overlay" id="conciliacionOverlay" style="display:none;z-index:280;align-items:flex-start" onclick="if(event.target.id==='conciliacionOverlay')pCerrarConciliacion()">
-  <div class="modal" style="max-width:640px;width:100%;margin:16px auto">
-    <div class="mhdr" style="display:flex;align-items:center;justify-content:space-between;padding:15px 18px;border-bottom:1px solid var(--border)">
+  <div class="modal" style="width:min(640px,92vw);height:min(80vh,720px);max-width:none;margin:16px auto;resize:both;overflow:hidden;min-width:360px;min-height:300px;display:flex;flex-direction:column">
+    <div class="mhdr" style="display:flex;align-items:center;justify-content:space-between;padding:15px 18px;border-bottom:1px solid var(--border);flex-shrink:0">
       <h2 style="margin:0;font-size:16px">🔎 Conciliación</h2>
       <button class="mclose" onclick="pCerrarConciliacion()">✕</button>
     </div>
-    <div id="conciliacionBody" style="padding:8px 18px 18px;max-height:78vh;overflow:auto"></div>
+    <div id="conciliacionBody" style="padding:8px 18px 18px;flex:1;overflow:auto"></div>
+    <div style="font-size:10px;color:var(--ink-3);text-align:right;padding:2px 8px;flex-shrink:0">↘ arrastra la esquina para agrandar</div>
   </div>
 </div>
 
