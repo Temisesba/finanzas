@@ -1832,10 +1832,41 @@ function v29FillSesionSelect(){
     const opts=SESIONES.map(s=>'<option value="'+esc(s)+'"'+(!personalMode&&s===activeSesion?' selected':'')+'>'+esc(s)+'</option>').join('');
     sel.innerHTML='<option value="__PERSONAL__"'+(personalMode?' selected':'')+'>👤 Personal (yo'+(myName()?': '+esc(myName()):'')+')</option>'+opts;
   }
-  const soy=document.getElementById('soySelect'); if(soy){
-    const me=myName();
-    soy.innerHTML='<option value="">— elige tu nombre —</option>'+PEOPLE.map(n=>'<option value="'+esc(n)+'"'+(n===me?' selected':'')+'>'+pEmoji(n)+' '+esc(n)+'</option>').join('');
-  }
+  v29FillSoySelect(PEOPLE); // primero rápido con lo que ya hay (sesión activa)…
+  v29LoadAllPeople().then(v29FillSoySelect); // …y se completa con el resto de tus sesiones
+}
+function v29FillSoySelect(names){
+  const soy=document.getElementById('soySelect'); if(!soy) return;
+  const me=myName();
+  soy.innerHTML='<option value="">— elige tu nombre —</option>'+names.map(n=>'<option value="'+esc(n)+'"'+(n===me?' selected':'')+'>'+pEmoji(n)+' '+esc(n)+'</option>').join('');
+}
+// v29: nombres de TODAS las sesiones desbloqueadas en este dispositivo (no
+// solo la activa), para el selector "¿Quién eres tú?". Se cachea 24h y se
+// pide en paralelo (Promise.all) para que no se sienta lento al cambiar de
+// sesión — antes solo mostraba los miembros de la sesión que tuvieras abierta.
+function v29AllPeopleCached(){
+  try{
+    const raw=localStorage.getItem('gastos_allpeople_cache');
+    if(!raw) return null;
+    const o=JSON.parse(raw);
+    if(!o||Date.now()-o.t>24*3600*1000) return null;
+    return o.names;
+  }catch(e){ return null; }
+}
+async function v29LoadAllPeople(force){
+  if(!force){ const cached=v29AllPeopleCached(); if(cached) return cached; }
+  const set=new Set(PEOPLE);
+  await Promise.all(SESIONES.filter(s=>s!==activeSesion).map(async s=>{
+    const pass=localStorage.getItem('gastos_pass_'+s);
+    if(pass===null) return; // no desbloqueada en este dispositivo, no la pedimos
+    try{
+      const r=await postGAS({action:'checkSesion', sesion:s, pass});
+      if(r&&r.ok&&Array.isArray(r.miembros)) r.miembros.forEach(n=>{ if(n) set.add(n); });
+    }catch(e){}
+  }));
+  const names=[...set].sort((a,b)=>a.localeCompare(b,'es'));
+  try{ localStorage.setItem('gastos_allpeople_cache', JSON.stringify({t:Date.now(), names})); }catch(e){}
+  return names;
 }
 function pSetSoy(n){ if(!n)return; localStorage.setItem('gastos_myname', n); renderNames(); v29FillSesionSelect(); showToast('⭐ Eres '+n); }
 function openPeople(){ v29FillSesionSelect(); renderNames();
@@ -2955,7 +2986,13 @@ function getWeekStart(dateStr) {
 function renderStats() {
   const grid = document.getElementById('statsGrid');
   if (!grid) return;
-  if(window.__PEOPLE_FULL){ PEOPLE=window.__PEOPLE_FULL; window.__PEOPLE_FULL=null; } // v43: parte siempre de la lista completa
+  // v29: PEOPLE se sobreescribe temporalmente más abajo (en Personal, para
+  // colorear por sesión) — el try/finally GARANTIZA que se restaure al salir
+  // de esta función sin importar el camino (return temprano incluido), en vez
+  // de depender de que la próxima pantalla lo "arregle" (eso dejaba a PEOPLE
+  // corrupto con nombres de sesión si el usuario navegaba a otro lado antes).
+  const __PEOPLE_BACKUP = PEOPLE;
+  try{
 const statsSource = personalMode ? (misGastosAll||[]) : (allExp||[]);
 let data = statsSource.filter(e =>
   e.fecha &&
@@ -2972,9 +3009,7 @@ if(personalMode){ const me=myName(); data=data.filter(e=>e.miParte!==undefined |
 })); }
 // v43/v29: en personal, PEOPLE pasa a ser la lista de SESIONES de origen (una por color)
 const __statsPeople = personalMode ? [...new Set(data.map(e=>e.quien_paga))].sort() : PEOPLE;
-const PEOPLE_ALL = PEOPLE;
-if(personalMode){ window.__PEOPLE_FULL = PEOPLE_ALL; PEOPLE = __statsPeople.length?__statsPeople:['Personal']; }
-  else { window.__PEOPLE_FULL = null; }
+if(personalMode){ PEOPLE = __statsPeople.length?__statsPeople:['Personal']; }
   if (!data.length) {
     grid.innerHTML = '<div style="padding:50px;text-align:center;color:var(--ink-3)">Sin datos todavía.</div>';
     return;
@@ -3065,7 +3100,12 @@ if(personalMode){ window.__PEOPLE_FULL = PEOPLE_ALL; PEOPLE = __statsPeople.leng
       // contribución por miembro de ESTE gasto (personal o su parte del compartido)
       const contrib={};
       const addC=(nm,k,val)=>{ if(!contrib[nm])contrib[nm]={personal:0,shared:0}; contrib[nm][k]+=val; };
-      if (e.compartido==='Personal' && PEOPLE.includes(e.quien_paga)) addC(e.quien_paga,'personal',a);
+      // v29: en Personal, quien_paga YA es la sesión de origen y costo YA es mi
+      // fracción (miParte) — usar v31ParticipantesEf aquí repartiría cada gasto
+      // entre TODAS las sesiones por igual (PEOPLE ya no son personas reales),
+      // que es justo el bug que hacía ver el mismo número en las 3 barras.
+      if(personalMode) addC(e.quien_paga, e.compartido==='Compartido'?'shared':'personal', a);
+      else if (e.compartido==='Personal' && PEOPLE.includes(e.quien_paga)) addC(e.quien_paga,'personal',a);
       else if (e.compartido==='Compartido'){ const parts=v31ParticipantesEf(e); const n=parts.length||1; parts.forEach(p=>addC(p,'shared',a/n)); }
       // Préstamo/Devolución no cuentan como gasto propio (son transferencias)
       [hier[m], hier[m].weeks[ws], hier[m].weeks[ws].days[d]].forEach(obj => {
@@ -3147,7 +3187,8 @@ let daysHtml = sortedDays.map(d => {
       const a = parseFloat(e.costo)||0;
       byCat[k].n++;
       const contrib={}; const addC=(nm,kk,val)=>{if(!contrib[nm])contrib[nm]={personal:0,shared:0};contrib[nm][kk]+=val;};
-      if (e.compartido==='Personal' && PEOPLE.includes(e.quien_paga)) addC(e.quien_paga,'personal',a);
+      if(personalMode) addC(e.quien_paga, e.compartido==='Compartido'?'shared':'personal', a);
+      else if (e.compartido==='Personal' && PEOPLE.includes(e.quien_paga)) addC(e.quien_paga,'personal',a);
       else if (e.compartido==='Compartido'){ const parts=v31ParticipantesEf(e); const n=parts.length||1; parts.forEach(p=>addC(p,'shared',a/n)); }
       Object.keys(contrib).forEach(nm=>{ if(!byCat[k].mem[nm])byCat[k].mem[nm]={personal:0,shared:0}; byCat[k].mem[nm].personal+=contrib[nm].personal; byCat[k].mem[nm].shared+=contrib[nm].shared; });
     });
@@ -3183,8 +3224,11 @@ let daysHtml = sortedDays.map(d => {
       else if(e.compartido==='Prestamo'){ pAgg2[q].L+=a; pAgg2[q].paid+=a; }
       else if(e.compartido==='Devolucion'){ pAgg2[q].D+=a; pAgg2[q].paid+=a; }
     });
-    const pagosP=v31Simplificar();
-    const netosP=v31Netos();
+    // v29: en Personal, "name" ya es una sesión (no una persona real) — v31Simplificar/
+    // v31Netos calculan sobre allExp+PEOPLE reales y darían números sin sentido aquí.
+    // Se usa el mismo cálculo ya correcto de Deudas de sesión, por sesión.
+    const pagosP=personalMode?[]:v31Simplificar();
+    const netosP=personalMode?pDeudasPorSesion():v31Netos();
 
     const pBox = (name) => {
       const A = pAgg2[name]||{C:0,L:0,D:0,paid:0};
@@ -3230,6 +3274,7 @@ let daysHtml = sortedDays.map(d => {
       + (gCot>0?`<div style="margin-top:8px;background:var(--cot-bg);border:1px solid var(--cot-bdr);border-radius:10px;padding:12px;font-size:12px;color:var(--cot)">💬 Cotizaciones: <strong>${fy(gCot)}</strong> estimado</div>`:'')
       + `<div class="stats-legend">${PEOPLE.map(n=>'<span><span class="leg-dot" style="background:'+pColor(n).col+'"></span>'+esc(n)+' personal</span>').join('')}<span><span class="leg-dot" style="background:var(--shared);opacity:.7"></span>Parte del compartido</span></div>`;
   }
+  } finally { PEOPLE = __PEOPLE_BACKUP; }
 }
 
 function toggleAcc(id) {
@@ -3287,7 +3332,7 @@ function openLightbox(src){document.getElementById('lbImg').src=src;document.get
 function closeLightbox(){document.getElementById('lightbox').style.display='none';}
 
 // ── Modal ─────────────────────────────────────────────────
-function openModal(){ resetModal(); document.getElementById('mTitle').textContent='Nuevo gasto'; document.getElementById('editIdx').value=''; document.getElementById('iDate').value=new Date().toISOString().split('T')[0]; document.getElementById('iCaptura').value=localDateTimeValue(new Date()); if(personalMode){ const me=myName(); if(me) setPayer(me); setType('Personal'); } const lbl=document.getElementById('mEditSesionLbl'); if(lbl) lbl.style.display='none'; document.getElementById('mOverlay').style.display='flex'; }
+function openModal(){ resetModal(); document.getElementById('mTitle').textContent='Nuevo gasto'; document.getElementById('editIdx').value=''; document.getElementById('iDate').value=new Date().toISOString().split('T')[0]; document.getElementById('iCaptura').value=localDateTimeValue(new Date()); if(personalMode){ const me=myName(); if(me) setPayer(me); setType('Personal'); } const lbl=document.getElementById('mEditSesionLbl'); if(lbl) lbl.style.display='none'; window.__movVincularPendiente=null; document.getElementById('mOverlay').style.display='flex'; }
 function hasUnsavedData(){ return document.getElementById('iConc').value.trim()||document.getElementById('iCosto').value.trim()||tb64; }
 function closeModal(force){ if(!force&&hasUnsavedData()){if(!confirm('¿Salir sin guardar?'))return;} document.getElementById('mOverlay').style.display='none';
   if(pReturnToPersonalAfterEdit){ pReturnToPersonalAfterEdit=false; pEnterPersonal(); }
@@ -3644,6 +3689,13 @@ sesion:saveSesion};
         })});
     }
     if(!ei && window.__pagoFijoPendiente){ const f=pItems.find(x=>x.id===window.__pagoFijoPendiente); if(f){ const mk=pMesKey(); f.pagos=f.pagos||{}; f.pagos[mk]={monto:parseFloat(f.monto)||0, fecha:fecha, gastoRef:body.concepto||''}; await pSaveItem(f); } window.__pagoFijoPendiente=''; }
+    // v29: si este gasto nuevo vino de "➕ Registrar como nuevo gasto" en conciliación, vincula la fila sola
+    if(!ei && r.rowIndex && window.__movVincularPendiente){
+      const mrow=window.__movVincularPendiente;
+      const gEl=mrow.querySelector&&mrow.querySelector('.mov-gasto'), eEl=mrow.querySelector&&mrow.querySelector('.mov-estado');
+      if(gEl && eEl){ gEl.value=String(r.rowIndex); eEl.value='identificado'; try{ mrow.replaceWith(pRowFromEl(pMovRowHTMLObjFromRow(mrow))); }catch(_){} }
+      window.__movVincularPendiente=null;
+    }
     invalidateSesionCache(saveSesion);
     closeModal(true);showToast(ei?'✓ Actualizado':'✓ Guardado');await new Promise(r => setTimeout(r, 350));
 if(personalMode){ await pReloadMisGastos(); renderAll(); } else await loadExp();}else showToast('Error: '+(r.error||'desconocido'));}
@@ -5588,8 +5640,40 @@ function pDeudasPorSesion(){
   Object.keys(porSes).forEach(ses=>{ bySes[ses]=Math.round(pPersonalNetFromRows(porSes[ses], me)); });
   return bySes;
 }
+//  v29: desglose por CONTRAPARTE dentro de cada sesión, con el mismo signo ya
+//  corregido que pPersonalNetFromRows (Devolución = mismo sentido que Préstamo).
+//  En una sesión de 2 personas esto SIEMPRE suma exacto al neto de arriba (no
+//  hay tercero por el que enrutar). En sesiones de 3+ es una atribución cruda
+//  por entrada, no la simplificación mínima del veredicto — puede no agrupar
+//  igual, pero nunca contradice el signo (a quién le debes / quién te debe).
+function pDeudasPorSesionDetalle(){
+  const me=myName();
+  const bySes={};
+  const addTo=(ses,who,amt)=>{ if(!who||who===me||!amt) return; if(!bySes[ses]) bySes[ses]={}; bySes[ses][who]=(bySes[ses][who]||0)+amt; };
+  (misGastosAll||[]).forEach(e=>{
+    const ses=e.sesion||'Personal';
+    const comp=e.compartido, a=parseFloat(e.costo)||0, mi=parseFloat(e.miParte)||0;
+    const q=e.quien_paga;
+    const parts=(Array.isArray(e.participantes)&&e.participantes.length)?e.participantes:null;
+    if(comp==='Compartido'){
+      if(q===me){
+        const otros=parts?parts.filter(p=>p!==me):[];
+        const n=(parts?parts.length:0)||1;
+        otros.forEach(p=>addTo(ses,p,a/n));
+      } else addTo(ses,q,-mi);
+    } else if(comp==='Prestamo' || comp==='Devolucion'){
+      if(q===me){
+        const deudores=parts?parts.filter(p=>p!==me):[];
+        const n=deudores.length||1;
+        deudores.forEach(p=>addTo(ses,p,a/n));
+      } else addTo(ses,q,-(mi||a));
+    }
+  });
+  return bySes;
+}
 function pRenderDeudasSesionHTML(){
   const bySes=pDeudasPorSesion();
+  const detalle=pDeudasPorSesionDetalle();
   const sesiones=Object.keys(bySes).filter(s=>bySes[s]!==0);
   if(!sesiones.length) return '';
   let totMeDeben=0, totDebo=0;
@@ -5598,11 +5682,19 @@ function pRenderDeudasSesionHTML(){
     let linea;
     if(v>0){ totMeDeben+=v; linea='<span style="color:var(--shared)">Te deben '+pMoney(v)+'</span>'; }
     else { totDebo+=Math.abs(v); linea='<span style="color:var(--temis)">Debes '+pMoney(Math.abs(v))+'</span>'; }
-    return '<div style="padding:9px 11px;border:1px solid var(--border);border-radius:9px;margin-bottom:6px;background:var(--surface);font-size:12.5px;display:flex;justify-content:space-between;align-items:center"><strong>'+esc(ses)+'</strong>'+linea+'</div>';
+    const contrapartes=Object.entries(detalle[ses]||{}).filter(([,x])=>Math.round(x)!==0);
+    const quienes=contrapartes.map(([who,x])=>{
+      const r=Math.round(x);
+      return r>0?('<span style="color:var(--shared)">'+esc(who)+' te debe '+pMoney(r)+'</span>')
+                :('<span style="color:var(--temis)">le debes a '+esc(who)+' '+pMoney(Math.abs(r))+'</span>');
+    }).join(' · ');
+    return '<div style="padding:9px 11px;border:1px solid var(--border);border-radius:9px;margin-bottom:6px;background:var(--surface);font-size:12.5px">'
+      +'<div style="display:flex;justify-content:space-between;align-items:center"><strong>'+esc(ses)+'</strong>'+linea+'</div>'
+      +(quienes?'<div style="margin-top:3px;font-size:11px">'+quienes+'</div>':'')
+      +'</div>';
   }).join('');
   return `<div style="margin-bottom:14px">
-    <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-3);margin-bottom:6px">🤝 Deudas de sesión (tu neto en cada una)</div>
-    <div style="font-size:10px;color:var(--ink-3);margin-bottom:8px">El desglose por persona de cada sesión vive en el veredicto de arriba cuando entras a esa sesión (ahí sí se simplifica entre todos los miembros).</div>
+    <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-3);margin-bottom:6px">🤝 Deudas de sesión</div>
     <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap">
       <div style="flex:1;min-width:120px;background:var(--shared-bg);border:1px solid var(--shared-bdr);border-radius:9px;padding:9px"><div style="font-size:10px;color:var(--shared)">Total te deben</div><div style="font-family:var(--mono);font-weight:700;color:var(--shared)">${pMoney(totMeDeben)}</div></div>
       <div style="flex:1;min-width:120px;background:var(--temis-bg);border:1px solid var(--temis-bdr);border-radius:9px;padding:9px"><div style="font-size:10px;color:var(--temis)">Total debes</div><div style="font-family:var(--mono);font-weight:700;color:var(--temis)">${pMoney(totDebo)}</div></div>
@@ -5912,7 +6004,7 @@ function pMovRowsHTML(movs){
 function pMovRowHTML(m){
   m=m||{estado:'pendiente'};
   const opts=['pendiente','identificado','posible','no_identificado','ignorado'].map(s=>'<option value="'+s+'"'+((m.estado||'pendiente')===s?' selected':'')+'>'+pEstadoLabel(s)+'</option>').join('');
-  const link=m.gastoId?'<button type="button" class="shop-del" title="Ver gasto vinculado" onclick="pOpenLinkedGasto(\''+esc(m.gastoId)+'\')">↗</button>':'<button type="button" class="rt-btn" style="font-size:10px;padding:2px 5px" title="Vincular con gasto existente" onclick="pVincularMovRow(this)">🔗</button><button type="button" class="rt-btn" style="font-size:10px;padding:2px 5px" title="Registrar como nuevo gasto" onclick="pRegistrarMovComoGasto(this)">➕</button>';
+  const link=m.gastoId?'<button type="button" class="shop-del" title="Ver gasto vinculado" onclick="pOpenLinkedGasto(\''+esc(m.gastoId)+'\')">↗</button>':'<button type="button" class="rt-btn" style="font-size:10px;padding:2px 5px" title="Vincular con gasto existente" onclick="pVincularMovRow(this)">🔗</button><button type="button" class="rt-btn" style="font-size:10px;padding:2px 5px" title="Registrar como nuevo gasto" onclick="pRegistrarMovComoGasto(this)">➕</button><button type="button" class="rt-btn" style="font-size:10px;padding:2px 5px" title="Este movimiento es una compra a meses (MSI) — crearla desde aquí" onclick="pMovComoMSI(this)">🗓️</button>';
   return '<div class="mov-grid"><input type="date" class="mov-fecha" value="'+esc(m.fecha||'')+'"><input class="mov-desc" value="'+esc(m.descripcion||'')+'" placeholder="Comercio"><input type="number" class="mov-monto" value="'+esc(m.monto||'')+'" placeholder="0"><input class="mov-cat" value="'+esc(m.categoria||'')+'" placeholder="Categoría"><select class="mov-estado">'+opts+'</select><span style="display:flex;gap:2px;flex-wrap:wrap"><input type="hidden" class="mov-gasto" value="'+esc(m.gastoId||'')+'">'+link+'<button type="button" class="shop-del" onclick="this.closest(\'.mov-grid\').remove()">🗑</button></span></div>';
 }
 //  Vincular con gasto existente: sugiere el mejor match automático, pero si no
@@ -5991,14 +6083,34 @@ function pRegistrarMovComoGasto(btn){
   const m=pMovRowHTMLObjFromRow(row);
   const cardId=pFval('pfTarjeta')||(pConciliacionActual&&pConciliacionActual.tarjeta)||'';
   const c=pCardById(cardId)||{};
-  openModal();
+  openModal(); // limpia window.__movVincularPendiente — se vuelve a poner después
   document.getElementById('iDate').value=m.fecha||new Date().toISOString().substring(0,10);
   document.getElementById('iCosto').value=Math.round(m.monto||0);
   document.getElementById('iConc').value=m.descripcion||'Movimiento de estado de cuenta';
   document.getElementById('iCat').value=m.categoria||'Por revisar';
   document.getElementById('iNotas').value='Desde estado de cuenta · '+pCardLabel(c);
   const mm=document.getElementById('iMetodo'); if(mm && cardId){ mm.value='Tarjeta'; onMetodoChange(); const s=document.getElementById('iTarjetaSel'); if(s){ s.value=cardId; onTarjetaSelChange(); } }
-  showToast('Revisa y guarda; esta fila queda pendiente de marcar identificada');
+  window.__movVincularPendiente=row; // v29: al guardar, esta fila se vincula sola
+  showToast('Revisa y guarda; esta fila se vinculará sola al guardar');
+}
+//  v29: este movimiento en realidad es una compra a meses (MSI) que apenas
+//  aparece en el estado — abre el form de MSI prellenado en vez de un gasto
+//  suelto, para que el resto de las cuotas se calculen y sigan solas.
+function pMovComoMSI(btn){
+  const row=btn.closest('.mov-grid');
+  const m=pMovRowHTMLObjFromRow(row);
+  const cardId=pFval('pfTarjeta')||(pConciliacionActual&&pConciliacionActual.tarjeta)||'';
+  const meses=parseInt(prompt('¿A cuántos meses es esta compra a MSI? (ej. 3, 6, 12)','12'))||1;
+  pOpenForm('msi','');
+  setTimeout(()=>{
+    const cuota=parseFloat(m.monto)||0;
+    if(pF('pfConcepto')) pF('pfConcepto').value=m.descripcion||'';
+    if(pF('pfMonto')) pF('pfMonto').value=Math.round(cuota*meses); // total sugerido = esta cuota × meses; ajústalo si ya llevaba pagadas
+    if(pF('pfMeses')) pF('pfMeses').value=meses;
+    if(pF('pfInicio')) pF('pfInicio').value=m.fecha||new Date().toISOString().substring(0,10);
+    if(cardId && pF('pfTarjeta')) pF('pfTarjeta').value=cardId;
+  },0);
+  showToast('Revisa el TOTAL sugerido (esta cuota × '+meses+') y guarda. Luego marca este movimiento como "Ignorado" — ya queda como MSI, no como gasto suelto.');
 }
 function pAddEstadoMov(){
   const host=pF('pfMovRows'); if(!host)return;
@@ -6749,7 +6861,7 @@ function pRenderMiLista(){
 
 
 <!-- v46: Visor de solo lectura de un gasto -->
-<div class="overlay" id="expViewOverlay" style="display:none;z-index:175;align-items:flex-start" onclick="if(event.target.id==='expViewOverlay')closeExpView()">
+<div class="overlay" id="expViewOverlay" style="display:none;z-index:295;align-items:flex-start" onclick="if(event.target.id==='expViewOverlay')closeExpView()">
   <div class="modal" style="max-width:440px;width:100%;margin:16px auto">
     <div class="mhdr" style="display:flex;align-items:center;justify-content:space-between;padding:15px 18px;border-bottom:1px solid var(--border)">
       <h2 style="margin:0;font-size:16px">👁 Detalle del gasto</h2>
