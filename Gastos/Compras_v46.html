@@ -578,6 +578,8 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--i
 
 .overlay{position:fixed;inset:0;background:rgba(30,25,20,.4);display:flex;align-items:center;justify-content:center;z-index:100;padding:16px;backdrop-filter:blur(3px)}
 summary{list-style:none}summary::-webkit-details-marker{display:none}
+.chev{display:inline-block;transition:transform .15s;margin-right:2px}
+details:not([open]) .chev{transform:rotate(-90deg)}
 .modal{background:var(--surface);border:1px solid var(--border2);border-radius:16px;width:100%;max-width:540px;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.15);animation:sUp .18s ease}
 @keyframes sUp{from{transform:translateY(14px);opacity:0}to{transform:none;opacity:1}}
 .mhdr{padding:18px 20px 0;display:flex;align-items:center;justify-content:space-between}
@@ -1936,12 +1938,14 @@ function pPersonalNetFromRows(rows, me){
     if(comp==='Compartido'){
       if(e.quien_paga===me) net += a-mi;
       else net -= mi;
-    }else if(comp==='Prestamo'){
+    }else if(comp==='Prestamo' || comp==='Devolucion'){
+      // v29: antes Devolución tenía el signo invertido respecto a Préstamo, lo
+      // que hacía que este cálculo (usado en Resumen y en Deudas por sesión)
+      // no coincidiera con el veredicto de la sesión (v31Deudas), que SIEMPRE
+      // trata Préstamo y Devolución igual (el/los deudor(es) le deben a quien
+      // pagó). Se alinea aquí con esa misma regla para que ambos coincidan.
       if(e.quien_paga===me) net += a;
       else net -= mi||a;
-    }else if(comp==='Devolucion'){
-      if(e.quien_paga===me) net -= a;
-      else net += mi||a;
     }
   });
   return net;
@@ -5337,6 +5341,7 @@ function pToggleCardPago(id){
   c.pagos[mk]={monto:parseFloat(monto)||0, fecha:new Date().toISOString().substring(0,10)};
   pSaveItem(c);
 }
+function pCardTipoEmoji(c){ return (c.ctipo||'TDC')==='TDD' ? '🏦' : '💳'; }
 function pCardLabel(c){
   const tipo = c.ctipo||'TDC';
   const tf = c.termFisica||c.terminacion, tv=c.termVirtual;
@@ -5673,7 +5678,7 @@ function pRenderFijos(){
     </div>`;
   }).join('') || '<div style="color:var(--ink-3);font-size:13px;padding:20px;text-align:center">Sin pagos fijos con este filtro.</div>';
   return `<button class="rt-btn" style="font-weight:600;margin-bottom:12px" onclick="pOpenForm('fijo','')">＋ Nuevo pago fijo</button>${chips}${rows}
-    <details style="margin-top:14px"><summary style="cursor:pointer;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-3)">📅 Historial completo por mes</summary>
+    <details style="margin-top:14px"><summary style="cursor:pointer;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-3)"><span class="chev">▾</span> 📅 Historial completo por mes</summary>
       <div style="margin-top:8px">${pRenderHistorialMensual()}</div>
     </details>`;
 }
@@ -5783,9 +5788,9 @@ function pRenderTarjetas(){
     const cardId='cardbody_'+c.id;
     return `<div style="padding:12px;border:1px solid var(--border);border-radius:10px;margin-bottom:10px;background:var(--surface)">
     <div style="display:flex;align-items:center;gap:10px">
-      <button type="button" onclick="pToggleCardCollapse('${esc(cardId)}',this)" style="background:none;border:none;cursor:pointer;font-size:13px;color:var(--ink-3);padding:2px 4px;flex-shrink:0">▾</button>
+      <button type="button" onclick="pToggleCardCollapse('${esc(cardId)}',this)" style="background:none;border:none;cursor:pointer;font-size:13px;color:var(--ink-3);padding:2px 4px;flex-shrink:0">▸</button>
       <div style="flex:1;min-width:0">
-        <div style="font-weight:800;font-size:14px">💳 ${esc(pCardLabel(c))}</div>
+        <div style="font-weight:800;font-size:14px">${pCardTipoEmoji(c)} ${esc(pCardLabel(c))}</div>
         <div style="font-size:11px;color:var(--ink-3)">${esc(c.nombre||'')} · Periodo: ${esc(cy.label)}</div>
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
@@ -5795,7 +5800,7 @@ function pRenderTarjetas(){
         <button class="shop-del" onclick="pDelItem('${esc(c.id)}')">🗑</button>
       </div>
     </div>
-    <div id="${esc(cardId)}">
+    <div id="${esc(cardId)}" style="display:none">
     ${fechas}
     <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:4px;margin-top:8px;padding-top:8px;border-top:1px dashed var(--border)">
       <span style="font-size:12px;font-weight:800;color:var(--temis)">Estimado del ciclo: ${pMoney(pTarjetaEstimadoCiclo(c,mk))}</span>
@@ -5913,19 +5918,37 @@ function pMovRowHTML(m){
 //  Vincular con gasto existente: sugiere el mejor match automático, pero si no
 //  hay coincidencia confiable (o el usuario quiere elegir otro) muestra un
 //  selector manual con los gastos candidatos de esa tarjeta/ciclo.
+//  Candidatos para vincular a mano: primero los que coinciden con la tarjeta
+//  (como el auto-match), y si eso no basta, TODOS los gastos de la vista
+//  actual cerca de la fecha del movimiento (±45 días) — así siempre hay algo
+//  para elegir, aunque el gasto no esté tageado con esta tarjeta específica.
+function pCandidatosVincular(m, cardId, mes){
+  const c=pCardById(cardId)||{};
+  const porTarjeta = cardId ? pGastosDeTarjetaMes(c,mes) : [];
+  const fuente = personalMode ? (misGastosAll||[]) : (allExp||[]);
+  const fechaMov = String(m.fecha||'').substring(0,10);
+  const otros = fuente.filter(e=>{
+    if(e.compartido==='Cotizacion'||e.tipoFila==='producto') return false;
+    if(!fechaMov) return true;
+    const d=Math.abs(new Date(String(e.fecha||'').substring(0,10)+'T12:00:00') - new Date(fechaMov+'T12:00:00'))/86400000;
+    return d<=45;
+  });
+  const vistos={}; const out=[];
+  porTarjeta.concat(otros).forEach(g=>{ if(g.rowIndex && !vistos[g.rowIndex]){ vistos[g.rowIndex]=true; out.push(g); } });
+  return out.sort((a,b)=>String(b.fecha||'').localeCompare(String(a.fecha||'')));
+}
 function pVincularMovRow(btn){
   const row=btn.closest('.mov-grid');
   const cardId=pFval('pfTarjeta')||(pConciliacionActual&&pConciliacionActual.tarjeta)||'';
   const mes=pFval('pfMes')||(pConciliacionActual&&pConciliacionActual.mes)||pMesKey();
-  const c=pCardById(cardId)||{};
   const m={
     fecha:(row.querySelector('.mov-fecha')||{}).value||'',
     descripcion:(row.querySelector('.mov-desc')||{}).value||'',
     monto:parseFloat((row.querySelector('.mov-monto')||{}).value)||0
   };
   const match=pMatchMovimiento(m,cardId,mes);
-  const candidatos=(cardId?pGastosDeTarjetaMes(c,mes):[]).slice().sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||''));
-  const msg = match ? ('Sugerido: '+esc(match.gasto.concepto||match.gasto.tienda||'gasto')+' · '+pMoney(match.gasto.costo)+' — no se identifica con certeza, confirma o elige otro:') : 'No se identifica automáticamente. ¿Deseas seleccionar tú con cuál gasto vincularlo?';
+  const candidatos=pCandidatosVincular(m,cardId,mes);
+  const msg = match ? ('Sugerido: '+esc(match.gasto.concepto||match.gasto.tienda||'gasto')+' · '+pMoney(match.gasto.costo)+' — no se identifica con certeza, confirma o elige otro:') : (candidatos.length?'No se identifica automáticamente. ¿Deseas seleccionar tú con cuál gasto vincularlo?':'No se identifica automáticamente y no hay gastos registrados cerca de esa fecha. Prueba con "➕ Registrar como nuevo gasto" en vez de vincular.');
   const opts = '<option value="">— elegir gasto —</option>'+candidatos.map(g=>'<option value="'+g.rowIndex+'"'+(match&&String(match.gasto.rowIndex)===String(g.rowIndex)?' selected':'')+'>'+esc(String(g.fecha||'').substring(0,10))+' · '+esc((g.concepto||g.tienda||'').substring(0,28))+' · '+pMoney(g.costo)+'</option>').join('');
   const pop=document.createElement('div');
   pop.className='mov-vincular-pop';
@@ -6173,7 +6196,7 @@ function pFormFieldsHTML(tipo, it){
       + F('Pago disponible desde','pfDiaDisponible',it.diaDisponible,'type="number" min="1" max="31" placeholder="opc."')
       + (ct==='TDC'?F('Crédito máximo (¥, opcional)','pfCreditoMax',it.creditoMax,'type="number" placeholder="0"'):'')
       + F('Notas','pfNotaTarj',it.nota,'placeholder="Ej. paga en app, banco lejano…"')
-      + `<details style="margin-top:6px"><summary style="cursor:pointer;font-size:11px;font-weight:600;color:var(--ink-3)">💰 Intereses y comisiones (para no llevarte sorpresas)</summary>
+      + `<details style="margin-top:6px"><summary style="cursor:pointer;font-size:11px;font-weight:600;color:var(--ink-3)"><span class="chev">▾</span> 💰 Intereses y comisiones (para no llevarte sorpresas)</summary>
           <div style="margin-top:8px">
           ${F('Interés anual por no pagar (%)','pfInteres',it.interesAnual,'type="number" step="0.01" placeholder="Ej. 45"')}
           ${F('Comisión por pago tardío (¥)','pfComisionTardio',it.comisionTardio,'type="number" placeholder="0"')}
@@ -6181,7 +6204,7 @@ function pFormFieldsHTML(tipo, it){
           ${F('Requisito mínimo para evitar comisión','pfRequisitoMinimo',it.requisitoMinimo,'placeholder="Ej. 1 compra al mes"')}
           </div>
         </details>`
-      + `<details style="margin-top:6px"><summary style="cursor:pointer;font-size:11px;font-weight:600;color:var(--personal)">🔒 Datos sensibles (CLABE, número, PIN — piden contraseña aparte)</summary>
+      + `<details style="margin-top:6px"><summary style="cursor:pointer;font-size:11px;font-weight:600;color:var(--personal)"><span class="chev">▾</span> 🔒 Datos sensibles (CLABE, número, PIN — piden contraseña aparte)</summary>
           <div style="margin-top:8px">
           ${F('CLABE (opcional)','pfClabe',it.clabe,'placeholder="18 dígitos" autocomplete="off"')}
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
@@ -6218,7 +6241,7 @@ function pFormFieldsHTML(tipo, it){
         </select></div>`
       + pMovRowsHTML(it.movimientos||[])
       + F('Nota','pfNota',it.nota,'placeholder="Detalle del periodo…"')
-      + `<details style="margin-top:4px"><summary style="cursor:pointer;font-size:11px;color:var(--ink-3)">Opciones avanzadas (URL de PDF manual, pegar texto)</summary>
+      + `<details style="margin-top:4px"><summary style="cursor:pointer;font-size:11px;color:var(--ink-3)"><span class="chev">▾</span> Opciones avanzadas (URL de PDF manual, pegar texto)</summary>
           <div style="margin-top:8px">
           ${F('PDF adjunto (URL)','pfPdfUrl',it.pdfUrl,'placeholder="URL de Drive o sube PDF arriba"')}
           ${TA('Transcript / texto pegado (si no tienes el PDF a la mano)','pfTranscript',it.transcript,'placeholder="Pega aquí el texto del estado de cuenta…"')}
@@ -6393,7 +6416,7 @@ function pOpenEstado(cardId,id){
 function pRenderEstadosTarjeta(c){
   const estados=pItemsOf('estado').filter(e=>e.tarjeta===c.id).sort((a,b)=>(b.mes||'').localeCompare(a.mes||''));
   if(!estados.length) return '<div style="margin:-4px 0 8px 0;padding:8px 10px;background:var(--surface2);border-radius:8px;font-size:11.5px;color:var(--ink-3)">Sin estados de cuenta ligados a esta tarjeta.</div>';
-  return '<details open style="margin-top:8px"><summary style="cursor:pointer;background:#d1bd8f;border-radius:6px;padding:7px 10px;font-weight:800;color:var(--ink)">Estados de cuenta</summary>'+estados.map(e=>{
+  return '<details open style="margin-top:8px"><summary style="cursor:pointer;background:#d1bd8f;border-radius:6px;padding:7px 10px;font-weight:800;color:var(--ink)"><span class="chev">▾</span> Estados de cuenta</summary>'+estados.map(e=>{
     const co=pConciliacionEstado(e);
     return `<div style="margin:8px 0 0 0;padding:10px;background:var(--surface2);border-radius:8px;font-size:11.5px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
