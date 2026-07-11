@@ -1042,7 +1042,6 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--i
       <button class="btn-clr date-preset" data-preset="week" onclick="setDatePreset('week')">Semana</button>
       <button class="btn-clr date-preset" data-preset="month" onclick="setDatePreset('month')">Mes</button>
       <button class="btn-clr date-preset" data-preset="year" onclick="setDatePreset('year')">Año</button>
-      <button class="btn-clr date-preset" data-preset="all" onclick="setDatePreset('all')">Todo</button>
       <div class="sep-line"></div>
       <label>Cat:</label>
       <select id="catSelect" onchange="renderAll()" style="min-width:140px"><option value="">Todas</option></select>
@@ -1155,7 +1154,7 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--i
       <div id="pBody" style="display:none">
         <div id="pTabs" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">
           <button class="ptab2 on" onclick="pSetSection('resumen',this)">📊 Resumen</button>
-          <button class="ptab2" onclick="pSetSection('movs',this)">💰 Ingresos/Egresos</button>
+          <button class="ptab2" onclick="pSetSection('movs',this)">📈 Ingresos</button>
           <button class="ptab2" onclick="pSetSection('fijos',this)">🔁 Pagos fijos</button>
           <button class="ptab2" onclick="pSetSection('tarjetas',this)">💳 Tarjetas</button>
           <button class="ptab2" onclick="pSetSection('deudas',this)">🤝 Deudas</button>
@@ -1434,6 +1433,7 @@ html,body{height:100%;font-family:var(--sans);background:var(--bg);color:var(--i
     <button class="mclose" onclick="closeModal(false)">✕</button>
   </div>
   <div class="mbody">
+    <div id="mEditSesionLbl" style="display:none;font-size:11px;font-weight:600;color:var(--personal);background:var(--surface2);border-radius:6px;padding:5px 9px;margin-bottom:8px"></div>
     <input type="hidden" id="editIdx">
     <input type="hidden" id="storedPhoto">
     <div class="field">
@@ -1704,7 +1704,7 @@ function applyPeopleUI(){
   buildPayerButtons(); buildPersonFilters();
   ['fltCompartido','fltPrestamo','fltCotizacion'].forEach(id=>{ const el=document.getElementById(id); if(el) el.style.display=personalMode?'none':''; });
   const allBtn=document.getElementById('fltAll');
-  if(allBtn) allBtn.textContent=personalMode?'👤 Mi vista':'Todos';
+  if(allBtn) allBtn.textContent='Todo';
   const sb=document.getElementById('sesionBadge');
   if(sb){
     if(personalMode){
@@ -1763,6 +1763,7 @@ async function v29UnlockSesion(){
   localStorage.setItem('gastos_sesion', s);
   localStorage.setItem('gastos_pass_'+s, p); // cache: no vuelve a pedir en este dispositivo
   document.getElementById('sessionGate').style.display='none';
+  v29ShowSesionLoading();
   applyPeopleUI();
   v27ShopLoaded=false; // v29: la lista de compras es por sesión, recargar
   await loadExp();
@@ -1770,13 +1771,14 @@ async function v29UnlockSesion(){
 }
 async function v29SwitchSesion(s){
   if(s==='__PERSONAL__'){ closePeople(); pEnterPersonal(); return; }
-  personalMode=false; pUpdatePersonalBanner();
+  personalMode=false; localStorage.removeItem('gastos_personalMode'); pUpdatePersonalBanner();
   const tabSalud=document.getElementById('tabSalud'); if(tabSalud) tabSalud.style.display='none';
   const cached=sesionPass(s);
   const chk=await v29CheckSesion(s, cached);
   if(chk.ok){
     activeSesion=s; PEOPLE=chk.miembros;
     localStorage.setItem('gastos_sesion', s);
+    v29ShowSesionLoading();
     applyPeopleUI(); renderNames();
     v27ShopLoaded=false; // v29: la lista de compras es por sesión, recargar
     await loadExp(); renderAll();
@@ -1834,6 +1836,16 @@ function openPeople(){ v29FillSesionSelect(); renderNames();
   const mf=document.getElementById('miembrosField'); if(mf) mf.style.display=personalMode?'none':'';
   document.getElementById('peopleOverlay').style.display='flex'; }
 function closePeople(){ document.getElementById('peopleOverlay').style.display='none'; }
+
+// v29: al cambiar de sesión/modo, limpia la vista de inmediato para nunca
+// mostrar datos de la sesión anterior mezclados con la nueva mientras carga.
+function v29ShowSesionLoading(){
+  allExp=[];
+  const list=document.getElementById('expList');
+  if(list) list.innerHTML='<div class="load-st"><span class="spin"></span> Cargando sesión…</div>';
+  const vbox=document.getElementById('vbox'); if(vbox) vbox.style.display='none';
+  ['s-total','s-lot','s-temis','s-count'].forEach(id=>{ const el=document.getElementById(id); if(el) el.textContent='—'; });
+}
 
 // v29: actividad de borrado (respaldo/auditoría) de la sesión activa
 function v29RelTime(iso){
@@ -2223,6 +2235,31 @@ async function init(){
   } catch(e) {
     console.log("Error en la carga inicial:", e);
   }
+
+  // v29: al recargar, volver exactamente a la sesión/modo y pestaña donde estabas
+  try{
+    if(localStorage.getItem('gastos_personalMode')==='1' && myName()){
+      await pEnterPersonal();
+    }
+    const savedPage=localStorage.getItem('gastos_currentPage');
+    if(savedPage && savedPage!=='gastos'){
+      const btn=[...document.querySelectorAll('.ptab')].find(b=>{
+        const txt=b.textContent||'';
+        return (savedPage==='salud'&&/Finanzas/.test(txt))||(savedPage==='stats'&&/Estadísticas/.test(txt))||(savedPage==='budget'&&/Presupuesto/.test(txt))||(savedPage==='shopping'&&/Lista/.test(txt))||(savedPage==='inventario'&&/Inventario/.test(txt));
+      });
+      if(btn && (savedPage!=='salud' || btn.style.display!=='none')) switchPage(savedPage, btn);
+    }
+    if(savedPage==='salud'){
+      const savedSection=localStorage.getItem('gastos_pSection');
+      if(savedSection){
+        const sbtn=[...document.querySelectorAll('#pTabs .ptab2')].find(b=>{
+          const txt=b.textContent||'';
+          return (savedSection==='deudas'&&/Deudas/.test(txt))||(savedSection==='fijos'&&/Pagos fijos/.test(txt))||(savedSection==='tarjetas'&&/Tarjetas/.test(txt))||(savedSection==='movs'&&/Ingresos/.test(txt))||(savedSection==='resumen'&&/Resumen/.test(txt));
+        });
+        if(sbtn) pSetSection(savedSection, sbtn);
+      }
+    }
+  }catch(e){}
 }
 
 function buildCurrencySelects(){
@@ -2309,6 +2346,7 @@ function refreshTiendasDatalist(){
 
 function switchPage(page,el){
   currentPage=page;
+  localStorage.setItem('gastos_currentPage', page); // v29: recordar pestaña para recargas
   document.querySelectorAll('.ptab').forEach(b=>b.classList.remove('on'));
   el.classList.add('on');
   document.getElementById('gastosView').style.display=page==='gastos'?'block':'none';
@@ -2531,6 +2569,22 @@ function renderCards(data){
   // v39: modo personal → resumen con MI fracción
   if(personalMode){
     const me=myName();
+    // v29: si hay un filtro Compartido/Préstamo/Cotización/Solo-personales activo,
+    // las tarjetas reflejan ESE filtro en vez de siempre el resumen general.
+    if(activeF==='Compartido'||activeF==='Prestamo'||activeF==='Cotizacion'||activeF.startsWith('P:')){
+      let tot=0, miParte=0;
+      data.forEach(e=>{ tot+=(parseFloat(e.costo)||0); miParte+=(e.miParte!==undefined?(parseFloat(e.miParte)||0):(parseFloat(e.costo)||0)); });
+      let l0='Total vista';
+      if(activeF==='Compartido') l0='🤝 Total compartido';
+      else if(activeF==='Prestamo') l0='💸 Total préstamos';
+      else if(activeF==='Cotizacion') l0='💬 Total cotizado';
+      else if(activeF.startsWith('P:')) l0='👤 Personales';
+      const L=[l0,'Mi parte','Registros','—'];
+      const V=[fy(tot),fy(miParte),data.length+'',''];
+      ['sl-0','sl-1','sl-2','sl-3'].forEach((id,i)=>document.getElementById(id).textContent=L[i]);
+      ['s-total','s-lot','s-temis','s-count'].forEach((id,i)=>document.getElementById(id).textContent=V[i]);
+      return;
+    }
     // Egresos = suma de MI parte (multi-sesión)
     let egSes=0;
     data.forEach(e=>{ egSes += (e.miParte!==undefined)?(parseFloat(e.miParte)||0):(parseFloat(e.costo)||0); });
@@ -2774,9 +2828,15 @@ function pDerivedRowsHTML(){
 function pGoSalud(){ const t=document.getElementById('tabSalud'); if(t){ t.style.display=''; switchPage('salud',t); } }
 // v40: ver el gasto ORIGINAL completo (abre el editor con el dato real) + sesión
 function pViewOriginal(rowIndex){ openExpView(rowIndex); }
+// v29: al editar desde la vista Personal, el gasto SIGUE perteneciendo a su
+// sesión real (necesitamos sus miembros/participantes para editarlo bien),
+// pero al cerrar el modal regresamos solos a Personal — el usuario nunca
+// "sale" de Personal a propósito, solo mientras dura la edición.
+let pReturnToPersonalAfterEdit=false;
 async function pEditPersonal(rowIndex, sesion){
   const src=(misGastosAll||[]).find(x=>String(x.rowIndex)===String(rowIndex))||{};
   const target=sesion||src.sesion||activeSesion;
+  const veniaDePersonal=personalMode;
   if(String(target||'').startsWith('Personal-')){
     editExp(rowIndex);
     return;
@@ -2788,13 +2848,17 @@ async function pEditPersonal(rowIndex, sesion){
     const tabSalud=document.getElementById('tabSalud'); if(tabSalud) tabSalud.style.display='none';
     activeSesion=target; PEOPLE=chk.miembros||PEOPLE;
     localStorage.setItem('gastos_sesion',target);
+    v29ShowSesionLoading();
     applyPeopleUI(); renderNames(); await loadExp(); renderAll();
   }else if(personalMode){
     personalMode=false;
     pUpdatePersonalBanner();
     applyPeopleUI();
   }
+  pReturnToPersonalAfterEdit=veniaDePersonal;
   editExp(rowIndex);
+  const lbl=document.getElementById('mEditSesionLbl');
+  if(lbl){ lbl.textContent='Sesión: '+target; lbl.style.display=veniaDePersonal?'block':'none'; }
 }
 // v46: visor de solo lectura con TODAS las variables
 function openExpView(rowIndex){
@@ -2893,13 +2957,15 @@ let data = statsSource.filter(e =>
 );
 if(personalMode){ const me=myName(); data=data.filter(e=>e.miParte!==undefined || e.quien_paga===me).map(e=>Object.assign({}, e, {
   costo: e.miParte!==undefined ? e.miParte : e.costo,
-  compartido:'Personal',
-  quien_paga:me
+  // v29: NO se aplana todo a 'Personal' — conserva el tipo original (Compartido/Personal/
+  // Préstamo) y agrupa por SESIÓN de origen (en vez de por integrante) para poder
+  // distinguir de dónde viene cada quien con su propio color.
+  quien_paga: e.sesion || 'Personal'
 })); }
-// v43: en personal, restringe PEOPLE a mí SOLO durante el render de stats (se restaura en renderAll)
-const __statsPeople = personalMode ? PEOPLE.filter(n=>n===myName()) : PEOPLE;
+// v43/v29: en personal, PEOPLE pasa a ser la lista de SESIONES de origen (una por color)
+const __statsPeople = personalMode ? [...new Set(data.map(e=>e.quien_paga))].sort() : PEOPLE;
 const PEOPLE_ALL = PEOPLE;
-if(personalMode){ window.__PEOPLE_FULL = PEOPLE_ALL; PEOPLE = __statsPeople.length?__statsPeople:[myName()]; }
+if(personalMode){ window.__PEOPLE_FULL = PEOPLE_ALL; PEOPLE = __statsPeople.length?__statsPeople:['Personal']; }
   else { window.__PEOPLE_FULL = null; }
   if (!data.length) {
     grid.innerHTML = '<div style="padding:50px;text-align:center;color:var(--ink-3)">Sin datos todavía.</div>';
@@ -2918,9 +2984,9 @@ if(personalMode){ window.__PEOPLE_FULL = PEOPLE_ALL; PEOPLE = __statsPeople.leng
     const a = parseFloat(e.costo)||0; const q=e.quien_paga;
     if (e.compartido==='Compartido'){
       gC+=a;
-      const parts=v31ParticipantesEf(e); const n=parts.length||1;
-      parts.forEach(p=>{ if(memEff[p]) memEff[p].shared+=a/n; });
-    } else if (e.compartido==='Personal' && memEff[q]) memEff[q].personal+=a;
+      if(personalMode){ if(memEff[q]) memEff[q].shared+=a; } // ya viene fraccionado (miParte) por sesión
+      else { const parts=v31ParticipantesEf(e); const n=parts.length||1; parts.forEach(p=>{ if(memEff[p]) memEff[p].shared+=a/n; }); }
+    } else if ((e.compartido==='Personal'||(personalMode&&e.compartido==='Prestamo')) && memEff[q]) memEff[q].personal+=a;
     if (e.compartido==='Cotizacion' || q==='Cotizacion') gCot+=a;
   });
 
@@ -2929,21 +2995,21 @@ if(personalMode){ window.__PEOPLE_FULL = PEOPLE_ALL; PEOPLE = __statsPeople.leng
   const balGlobal = pagosG.reduce((s,p)=>s+p.monto,0);
   const balTxt = pagosG.length ? pagosG.map(p=>esc(p.de)+'→'+esc(p.a)+' ¥'+p.monto.toLocaleString()).join(' · ') : 'Al día ✅';
 
-  // Tarjeta de compartido + una por miembro + balance
+  // Tarjeta de compartido + una por miembro (o por sesión, en Personal) + balance
   const cardComp = `<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px">
-      <div style="font-size:10px;text-transform:uppercase;letter-spacing:.09em;color:var(--ink-3);margin-bottom:3px">🤝 Compartido</div>
+      <div style="font-size:10px;text-transform:uppercase;letter-spacing:.09em;color:var(--ink-3);margin-bottom:3px">🤝 Compartido (mi parte)</div>
       <div style="font-family:var(--mono);font-size:16px;font-weight:600;color:var(--shared)">${fy(gC)}</div>
-      <div style="font-size:10px;color:var(--ink-3)">÷ ${NP} ${NP===1?'miembro':'miembros'} (según participantes)</div>
+      <div style="font-size:10px;color:var(--ink-3)">${personalMode?'de tus sesiones compartidas':'÷ '+NP+' '+(NP===1?'miembro':'miembros')+' (según participantes)'}</div>
     </div>`;
   const cardsMiembros = PEOPLE.map(nm=>{
     const c=pColor(nm); const eff=memEff[nm].personal+memEff[nm].shared;
     return `<div style="background:${c.bg};border:1px solid ${c.bdr};border-radius:var(--radius);padding:12px">
-      <div style="font-size:10px;text-transform:uppercase;letter-spacing:.09em;color:${c.col};margin-bottom:3px">${pEmoji(nm)} ${esc(nm)}</div>
+      <div style="font-size:10px;text-transform:uppercase;letter-spacing:.09em;color:${c.col};margin-bottom:3px">${personalMode?'🗂️':pEmoji(nm)} ${esc(nm)}</div>
       <div style="font-family:var(--mono);font-size:16px;font-weight:600;color:${c.col}">${fy(eff)}</div>
-      <div style="font-size:10px;color:var(--ink-3)">pers ${fy(memEff[nm].personal)} + comp ${fy(memEff[nm].shared)}</div>
+      <div style="font-size:10px;color:var(--ink-3)">${personalMode?'personal':'pers'} ${fy(memEff[nm].personal)} + comp ${fy(memEff[nm].shared)}</div>
     </div>`;
   }).join('');
-  const cardBal = `<div style="background:var(--shared-bg);border:1px solid var(--shared-bdr);border-radius:var(--radius);padding:12px">
+  const cardBal = personalMode ? '' : `<div style="background:var(--shared-bg);border:1px solid var(--shared-bdr);border-radius:var(--radius);padding:12px">
       <div style="font-size:10px;text-transform:uppercase;letter-spacing:.09em;color:var(--shared);margin-bottom:3px">⚖️ Balance global</div>
       <div style="font-family:var(--mono);font-size:16px;font-weight:600;color:var(--shared)">${fy(balGlobal)}</div>
       <div style="font-size:10px;color:var(--ink-3)">${balTxt}</div>
@@ -3213,9 +3279,11 @@ function openLightbox(src){document.getElementById('lbImg').src=src;document.get
 function closeLightbox(){document.getElementById('lightbox').style.display='none';}
 
 // ── Modal ─────────────────────────────────────────────────
-function openModal(){ resetModal(); document.getElementById('mTitle').textContent='Nuevo gasto'; document.getElementById('editIdx').value=''; document.getElementById('iDate').value=new Date().toISOString().split('T')[0]; document.getElementById('iCaptura').value=localDateTimeValue(new Date()); if(personalMode){ const me=myName(); if(me) setPayer(me); setType('Personal'); } document.getElementById('mOverlay').style.display='flex'; }
+function openModal(){ resetModal(); document.getElementById('mTitle').textContent='Nuevo gasto'; document.getElementById('editIdx').value=''; document.getElementById('iDate').value=new Date().toISOString().split('T')[0]; document.getElementById('iCaptura').value=localDateTimeValue(new Date()); if(personalMode){ const me=myName(); if(me) setPayer(me); setType('Personal'); } const lbl=document.getElementById('mEditSesionLbl'); if(lbl) lbl.style.display='none'; document.getElementById('mOverlay').style.display='flex'; }
 function hasUnsavedData(){ return document.getElementById('iConc').value.trim()||document.getElementById('iCosto').value.trim()||tb64; }
-function closeModal(force){ if(!force&&hasUnsavedData()){if(!confirm('¿Salir sin guardar?'))return;} document.getElementById('mOverlay').style.display='none'; }
+function closeModal(force){ if(!force&&hasUnsavedData()){if(!confirm('¿Salir sin guardar?'))return;} document.getElementById('mOverlay').style.display='none';
+  if(pReturnToPersonalAfterEdit){ pReturnToPersonalAfterEdit=false; pEnterPersonal(); }
+}
 function closeBdrop(e){ if(e.target.id==='mOverlay')closeModal(false); }
 
 function resetModal(){
@@ -5100,6 +5168,7 @@ async function pDelItem(id){
 
 function pSetSection(sec, el){
   pSection=sec;
+  localStorage.setItem('gastos_pSection', sec); // v29: recordar sub-pestaña de Finanzas para recargas
   document.querySelectorAll('#pTabs .ptab2').forEach(b=>b.classList.remove('on'));
   if(el) el.classList.add('on');
   pRender();
@@ -5107,7 +5176,7 @@ function pSetSection(sec, el){
 function pGoSection(sec){
   const t=[...document.querySelectorAll('#pTabs .ptab2')].find(b=>{
     const txt=b.textContent||'';
-    return (sec==='fijos'&&/Pagos fijos/.test(txt))||(sec==='tarjetas'&&/Tarjetas/.test(txt))||(sec==='deudas'&&/Deudas/.test(txt))||(sec==='movs'&&/Ingresos.Egresos/.test(txt))||(sec==='resumen'&&/Resumen/.test(txt));
+    return (sec==='fijos'&&/Pagos fijos/.test(txt))||(sec==='tarjetas'&&/Tarjetas/.test(txt))||(sec==='deudas'&&/Deudas/.test(txt))||(sec==='movs'&&/Ingresos/.test(txt))||(sec==='resumen'&&/Resumen/.test(txt));
   });
   if(t) pSetSection(sec,t); else { pSection=sec; pRender(); }
 }
@@ -5261,7 +5330,13 @@ function pProximosMiniHTML(){
   pItemsOf('fijo').forEach(f=>{ if((f.pagos||{})[mk]) return; rows.push({fecha:pFechaMesDia(mk,f.diaLimite), txt:(f.tipoPago==='tarjeta'?'💳 ':'🔁 ')+(f.concepto||'Pago fijo')}); });
   pItemsOf('tarjeta').filter(c=>c.ctipo==='TDC' && !(c.pagos||{})[mk]).forEach(c=>rows.push({fecha:pFechaMesDia(mk,c.diaLimite), txt:'💳 '+pCardLabel(c)}));
   rows.sort((a,b)=>(a.fecha||'9999').localeCompare(b.fecha||'9999'));
-  return '<strong>Próximos pagos</strong>'+(rows.slice(0,4).map(r=>'<div style="font-size:12px;margin-top:2px">'+(r.fecha?fmtDate(r.fecha):'—')+' · '+esc(r.txt)+'</div>').join('')||'<div style="font-size:12px;color:var(--shared);margin-top:2px">Sin pendientes este mes.</div>');
+  // v29: siempre visible junto a próximos pagos, sin importar el filtro de Gastos activo
+  const me=myName();
+  const sesNet=(function(){ try{ return pPersonalNetFromRows(misGastosAll||[], me)||0; }catch(_){ return 0; } })();
+  const extNet=pItemsOf('deuda').reduce((s,d)=>{ const a=parseFloat(d.monto)||0; return s+(d.dir==='medeben'?a:-a); },0);
+  const net=Math.round(sesNet+extNet);
+  const deudaTxt=net>0?('💰 Te deben <strong>'+curSym()+net.toLocaleString()+'</strong>'):(net<0?('⚠️ Debes <strong>'+curSym()+Math.abs(net).toLocaleString()+'</strong>'):'✅ Deudas al día');
+  return '<div style="font-size:12px;margin-bottom:4px">'+deudaTxt+'</div><strong>Próximos pagos</strong>'+(rows.slice(0,4).map(r=>'<div style="font-size:12px;margin-top:2px">'+(r.fecha?fmtDate(r.fecha):'—')+' · '+esc(r.txt)+'</div>').join('')||'<div style="font-size:12px;color:var(--shared);margin-top:2px">Sin pendientes este mes.</div>');
 }
 
 // ── RESUMEN ──
@@ -5572,26 +5647,22 @@ function pToggleMSICuota(id,key){
   const m=pItems.find(x=>x.id===id); if(!m)return;
   m.pagadas=m.pagadas||{}; m.pagadas[key]=!m.pagadas[key]; pSaveItem(m);
 }
-// ── MOVIMIENTOS (ingresos / gastos personales simples) ──
+// ── MOVIMIENTOS (solo ingresos — los egresos se registran como Gasto) ──
 function pRenderMovs(){
-  const ing=pItemsOf('ingreso'), gas=pItemsOf('gasto');
-  const row=(i,esIng)=>`<div style="display:flex;align-items:center;gap:8px;padding:9px;border:1px solid var(--border);border-radius:9px;margin-bottom:6px;background:var(--surface)">
+  const ing=pItemsOf('ingreso');
+  const row=i=>`<div style="display:flex;align-items:center;gap:8px;padding:9px;border:1px solid var(--border);border-radius:9px;margin-bottom:6px;background:var(--surface)">
       <div style="flex:1;min-width:0"><div style="font-weight:600;font-size:12.5px">${esc(i.concepto||'—')}</div><div style="font-size:10px;color:var(--ink-3)">${esc(i.fecha||'')}${i.nota?(' · '+esc(i.nota)):''}</div></div>
-      <div style="font-family:var(--mono);font-weight:700;color:${esIng?'var(--shared)':'var(--temis)'}">${esIng?'+':'−'}${pMoney(i.monto)}</div>
-      <button class="rt-btn" onclick="pOpenFormMov('${esc(i.id)}','${i.tipo}')">✏️</button>
+      <div style="font-family:var(--mono);font-weight:700;color:var(--shared)">+${pMoney(i.monto)}</div>
+      <button class="rt-btn" onclick="pOpenFormMov('${esc(i.id)}','ingreso')">✏️</button>
       <button class="shop-del" onclick="pDelItem('${esc(i.id)}')">🗑</button>
     </div>`;
   return `<div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
-      <button class="rt-btn" style="font-weight:600" onclick="pNuevoMovimiento()">＋ Nuevo movimiento</button>
-      <button class="rt-btn" style="color:var(--shared);border-color:var(--shared-bdr)" onclick="pOpenForm('ingreso','')">📈 Ingreso</button>
-      <button class="rt-btn" style="color:var(--temis);border-color:var(--temis-bdr)" onclick="pOpenForm('gasto','')">🧾 Egreso</button>
+      <button class="rt-btn" style="font-weight:600;color:var(--shared);border-color:var(--shared-bdr)" onclick="pOpenForm('ingreso','')">＋ Ingreso</button>
     </div>
-    <div style="font-size:11px;font-weight:600;color:var(--ink-3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">📈 Ingresos</div>
-    ${ing.map(i=>row(i,true)).join('')||'<div style="color:var(--ink-3);font-size:12px;margin-bottom:10px">—</div>'}
-    <div style="font-size:11px;font-weight:600;color:var(--ink-3);text-transform:uppercase;letter-spacing:.06em;margin:12px 0 6px">🧾 Gastos personales</div>
-    ${gas.map(i=>row(i,false)).join('')||'<div style="color:var(--ink-3);font-size:12px">—</div>'}`;
+    <div style="font-size:11px;color:var(--ink-3);margin-bottom:8px">Los egresos se registran como Gasto (📋 Gastos) para que cuenten en la sesión correspondiente. Aquí solo va lo que entra: sueldo, pagos que recibes, etc.</div>
+    ${ing.map(row).join('')||'<div style="color:var(--ink-3);font-size:12px;margin-bottom:10px">Sin ingresos registrados.</div>'}`;
 }
-function pOpenFormMov(id){ const it=pItems.find(x=>x.id===id); pOpenForm(it?it.tipo:'gasto', id); }
+function pOpenFormMov(id){ const it=pItems.find(x=>x.id===id); pOpenForm(it?it.tipo:'ingreso', id); }
 
 
 
@@ -5797,25 +5868,6 @@ function pFormTieneDatos(){
 function pCloseForm(force){
   if(!force && pFormTieneDatos() && !confirm('Tienes datos sin guardar. ¿Cerrar de todos modos?')) return;
   pF('pFormOverlay').style.display='none';
-}
-
-// Selector rápido: "Nuevo movimiento" → Ingreso o Egreso
-function pNuevoMovimiento(){
-  pFormTipo='ingreso'; pFormId='';
-  pF('pFormTitle').textContent='Nuevo movimiento';
-  pF('pFormFields').innerHTML =
-    '<div class="pf-field"><label>Tipo</label>'
-    +'<div style="display:flex;gap:8px">'
-    +'<button type="button" class="tbtn sel" id="pmIng" onclick="pMovTipo(\'ingreso\')">📈 Ingreso</button>'
-    +'<button type="button" class="tbtn" id="pmGas" onclick="pMovTipo(\'gasto\')">🧾 Egreso</button>'
-    +'</div></div>'
-    + pFormFieldsHTML('ingreso', {tipo:'ingreso'});
-  pF('pFormOverlay').style.display='flex';
-}
-function pMovTipo(t){
-  pFormTipo=t;
-  pF('pmIng').className = t==='ingreso'?'tbtn sel':'tbtn';
-  pF('pmGas').className = t==='gasto'?'tbtn sel':'tbtn';
 }
 
 // Campos por tipo (todos visibles a la vez)
@@ -6210,22 +6262,30 @@ async function pEnterPersonal(){
     }catch(e){ showToast('⚠ Error de red'); return; }
   }
   personalMode = true;
+  localStorage.setItem('gastos_personalMode','1'); // v29: recordar para recargas
+  misGastosAll=[]; // v29: nunca mostrar lo de la sesión anterior mientras carga
+  v29ShowSesionLoading();
   activeF='all';
   document.querySelectorAll('.controls .ftab').forEach(b=>b.classList.remove('on'));
   const allBtn=document.getElementById('fltAll'); if(allBtn) allBtn.classList.add('on');
   const tabSalud=document.getElementById('tabSalud'); if(tabSalud) tabSalud.style.display='';
   try{ await pLoad(); }catch(e){}
-  // Traer mis gastos de TODAS las sesiones
+  // Traer mis gastos de TODAS las sesiones (siempre fresco, nunca de una entrada anterior)
   await pReloadMisGastos();
   pUpdatePersonalBanner();
   const gt=[...document.querySelectorAll('.ptab')].find(b=>/Gastos/.test(b.textContent));
   if(gt) switchPage('gastos', gt);
+  renderAll();
   showToast('👤 Sesión personal — '+misGastosAll.length+' movimientos de todas tus sesiones');
 }
-function pExitPersonal(){
+async function pExitPersonal(){
   personalMode=false;
+  localStorage.removeItem('gastos_personalMode');
   const tabSalud=document.getElementById('tabSalud'); if(tabSalud) tabSalud.style.display='none';
   pUpdatePersonalBanner();
+  v29ShowSesionLoading();
+  invalidateSesionCache(activeSesion);
+  await loadExp(); // v29: recarga la sesión activa en vez de reusar allExp que quedó vacío/viejo
   if(currentPage==='salud'){ const gt=[...document.querySelectorAll('.ptab')].find(b=>/Gastos/.test(b.textContent)); if(gt) switchPage('gastos', gt); }
   else renderAll();
   showToast('Volviste a la sesión '+(activeSesion||''));
