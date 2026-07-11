@@ -1113,6 +1113,7 @@ summary{list-style:none}summary::-webkit-details-marker{display:none}
           <span class="rt-status" id="shopStatus27" style="margin:0"></span>
         </span>
       </div>
+      <div id="listaSelectorBox" style="display:flex;align-items:center;gap:6px;margin-bottom:10px;flex-wrap:wrap"></div>
       <div id="shopSugs" style="display:none;margin-bottom:10px"></div>
       <div id="shopRebuy" style="display:none;margin-bottom:10px"></div>
       <div class="shop-table">
@@ -1171,6 +1172,7 @@ summary{list-style:none}summary::-webkit-details-marker{display:none}
         <span style="font-size:12px;font-weight:600;color:var(--ink-2);text-transform:uppercase;letter-spacing:.06em">📦 Inventario y productos</span>
         <span class="rt-status" id="invStatus" style="margin:0"></span>
       </div>
+      <div id="invSelectorBox" style="display:flex;align-items:center;gap:6px;margin-bottom:10px;flex-wrap:wrap"></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;align-items:center">
         <div class="search-wrap" style="flex:1;min-width:180px;position:relative">
           <span class="sico">🔍</span>
@@ -1767,7 +1769,7 @@ async function v29UnlockSesion(){
   document.getElementById('sessionGate').style.display='none';
   v29ShowSesionLoading();
   applyPeopleUI();
-  v27ShopLoaded=false; invSharedLoaded=false; // v29: lista/inventario compartido son por sesión, recargar
+  v27ShopLoaded=false; invSharedLoaded=false; invContenedoresLoaded=false; // v29: lista/inventario compartido son por sesión, recargar
   await loadExp();
   renderAll();
 }
@@ -1782,7 +1784,7 @@ async function v29SwitchSesion(s){
     localStorage.setItem('gastos_sesion', s);
     v29ShowSesionLoading();
     applyPeopleUI(); renderNames();
-    v27ShopLoaded=false; invSharedLoaded=false; // v29: lista/inventario compartido son por sesión, recargar
+    v27ShopLoaded=false; invSharedLoaded=false; invContenedoresLoaded=false; // v29: lista/inventario compartido son por sesión, recargar
     await loadExp(); renderAll();
     showToast('Sesión: '+s);
   } else {
@@ -2361,7 +2363,7 @@ function switchPage(page,el){
   document.getElementById('saludView').style.display=page==='salud'?'block':'none';
   if(page==='salud') pOpenPage();
   if(page==='shopping') v28LoadShopping(); // lazy load al abrir
-  if(page==='inventario'){ v30RenderInv(); v32RenderResumen(); v33LoadInvCompartido(); }
+  if(page==='inventario'){ v30RenderInv(); v32RenderResumen(); v33LoadInvCompartido(); v34LoadInventarios(); }
 }
 
 const SORT_COLS=['fecha','concepto','monto','pago','tipo','cat','foto'];
@@ -3630,7 +3632,7 @@ sesion:saveSesion};
         tienda:body.tienda, fecha:body.fecha, quien:currentPayer,
         productos: prodsLimpios.map(p=>{
           const c=v34Catalogo()[normTxt(p.concepto)];
-          const out={concepto:p.concepto.trim(),marca:p.marca||'',notas:p.notas||'',categoria:p.categoria||'',ubicacion:p.ubicacion||'',piezas:p.piezas,cantidad:p.cantidad,unidad:p.unidad,precioInd:p.precioInd,caducidad:p.caducidad,inventario:p.inventario?'SI':'NA',codigo:p.codigo||'',queda:p.queda??''};
+          const out={concepto:p.concepto.trim(),marca:p.marca||'',notas:p.notas||'',categoria:p.categoria||'',ubicacion:p.ubicacion||'',piezas:p.piezas,cantidad:p.cantidad,unidad:p.unidad,precioInd:p.precioInd,caducidad:p.caducidad,inventario:p.inventario?'SI':'NA',codigo:p.codigo||'',queda:p.queda??'',inventarioId:v34ContenedorActual('inventario',inventarios).id};
           if(p.fotoBase64){ out.fotoBase64=p.fotoBase64; out.fotoMime=p.fotoMime; }
           else if(p.fotoUrl){ out.fotoUrl=p.fotoUrl; }
           else if(c&&c.foto){ out.fotoUrl=c.foto; } // hereda del catálogo solo si no eligió una propia
@@ -3840,6 +3842,7 @@ async function v29SaveListaGrupos(){
     document.getElementById('listaGruposOverlay').style.display='none';
     v27ShopLoaded=false; invSharedLoaded=false;
     await v28LoadShopping();
+    invContenedoresLoaded=false; await v34LoadInventarios();
     await v33LoadInvCompartido();
     showToast('✓ Compartido con '+(checks.length||0)+' sesión(es)');
   }catch(e){ showToast('⚠ No se pudo guardar'); }
@@ -3856,6 +3859,78 @@ async function v29SaveDeptos(){
   try{ await postGAS({action:'saveDeptos', deptos:lines.join('\n'), lugares:LUGARES.join('\n')}); showToast('✓ Catálogos guardados'); }
   catch(e){ showToast('⚠ No se pudieron guardar'); }
 }
+// v29: contenedores con nombre (varias listas / varios inventarios por sesión)
+let listas=[], inventarios=[];
+async function v34LoadContenedores(tipo){
+  try{
+    const r=await postGAS({action:'getContenedores', tipo, sesion:currentSaveSesion()});
+    return (r&&r.ok&&Array.isArray(r.contenedores))?r.contenedores:[{id:'',nombre:tipo==='inventario'?'Inventario principal':'Lista principal',def:true}];
+  }catch(e){ return [{id:'',nombre:tipo==='inventario'?'Inventario principal':'Lista principal',def:true}]; }
+}
+async function v34SaveContenedores(tipo, contenedores){
+  try{ await postGAS({action:'saveContenedores', tipo, sesion:currentSaveSesion(), contenedores}); }
+  catch(e){ showToast('⚠ No se pudo guardar'); }
+}
+function v34ActualId(tipo){ return localStorage.getItem('gastos_'+tipo+'_actual_'+currentSaveSesion())||''; }
+function v34SetActualId(tipo,id){ localStorage.setItem('gastos_'+tipo+'_actual_'+currentSaveSesion(), id); }
+function v34ContenedorActual(tipo, contenedores){
+  const id=v34ActualId(tipo);
+  return contenedores.find(c=>c.id===id) || contenedores.find(c=>c.def) || contenedores[0] || {id:'',nombre:'—'};
+}
+function v34SelectorHTML(tipo, contenedores){
+  const cur=v34ContenedorActual(tipo, contenedores);
+  const opts=contenedores.map(c=>'<option value="'+esc(c.id)+'"'+(c.id===cur.id?' selected':'')+'>'+esc(c.nombre)+(c.def?' ⭐':'')+'</option>').join('');
+  return `<select onchange="v34CambiarContenedor('${tipo}',this.value)" style="font-size:12px;font-weight:700;min-width:150px;border:1px solid var(--border2);border-radius:8px;padding:6px 8px;background:var(--bg)">${opts}</select>
+    <button class="rt-btn" style="font-size:11px" onclick="v34NuevoContenedor('${tipo}')">＋ Nueva</button>
+    <button class="rt-btn" style="font-size:11px" onclick="v34RenombrarContenedor('${tipo}')">✏️ Renombrar</button>
+    ${cur.def?'':'<button class="rt-btn" style="font-size:11px" onclick="v34SetDefault(\''+tipo+'\')">⭐ Predeterminada</button>'}`;
+}
+async function v34CambiarContenedor(tipo, id){
+  v34SetActualId(tipo, id);
+  if(tipo==='lista'){ v27ShopLoaded=false; await v28LoadShopping(); }
+  else { v30RenderInv(); }
+}
+async function v34NuevoContenedor(tipo){
+  const nombre=prompt(tipo==='inventario'?'Nombre del nuevo inventario (ej. "Despensa casa", "Bodega"):':'Nombre de la nueva lista (ej. "Costco", "Súper de la semana"):');
+  if(!nombre||!nombre.trim()) return;
+  const contenedores=tipo==='inventario'?inventarios:listas;
+  const id='c'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+  contenedores.push({id, nombre:nombre.trim(), def:false});
+  await v34SaveContenedores(tipo, contenedores);
+  v34SetActualId(tipo, id);
+  if(tipo==='inventario'){ inventarios=contenedores; document.getElementById('invSelectorBox').innerHTML=v34SelectorHTML('inventario',inventarios); v30RenderInv(); }
+  else { listas=contenedores; document.getElementById('listaSelectorBox').innerHTML=v34SelectorHTML('lista',listas); v27ShopLoaded=false; await v28LoadShopping(); }
+  showToast('✓ "'+nombre.trim()+'" creada');
+}
+async function v34RenombrarContenedor(tipo){
+  const contenedores=tipo==='inventario'?inventarios:listas;
+  const cur=v34ContenedorActual(tipo, contenedores);
+  const nombre=prompt('Nuevo nombre:', cur.nombre);
+  if(!nombre||!nombre.trim()) return;
+  cur.nombre=nombre.trim();
+  await v34SaveContenedores(tipo, contenedores);
+  if(tipo==='inventario') document.getElementById('invSelectorBox').innerHTML=v34SelectorHTML('inventario',inventarios);
+  else document.getElementById('listaSelectorBox').innerHTML=v34SelectorHTML('lista',listas);
+  showToast('✓ Renombrada');
+}
+let invContenedoresLoaded=false;
+async function v34LoadInventarios(){
+  if(invContenedoresLoaded) return;
+  inventarios=await v34LoadContenedores('inventario');
+  invContenedoresLoaded=true;
+  const box=document.getElementById('invSelectorBox'); if(box) box.innerHTML=v34SelectorHTML('inventario',inventarios);
+  v30RenderInv();
+}
+async function v34SetDefault(tipo){
+  const contenedores=tipo==='inventario'?inventarios:listas;
+  const cur=v34ContenedorActual(tipo, contenedores);
+  contenedores.forEach(c=>c.def=(c.id===cur.id));
+  await v34SaveContenedores(tipo, contenedores);
+  if(tipo==='inventario') document.getElementById('invSelectorBox').innerHTML=v34SelectorHTML('inventario',inventarios);
+  else document.getElementById('listaSelectorBox').innerHTML=v34SelectorHTML('lista',listas);
+  showToast('⭐ Ahora es la predeterminada');
+}
+
 let shopItems=[]; // {done,item,depto,quien,tienda}
 let shopSort={col:'',dir:1};
 let shopSaveTimer=null;
@@ -3864,11 +3939,14 @@ async function v28LoadShopping(){
   if(v27ShopLoaded) return;
   v27SetStatus('shopStatus27','Cargando…');
   await v29LoadDeptos();
+  listas=await v34LoadContenedores('lista');
+  const box=document.getElementById('listaSelectorBox'); if(box) box.innerHTML=v34SelectorHTML('lista',listas);
+  const listaId=v34ContenedorActual('lista',listas).id;
   try{
-    const r=await postGAS({action:'getShopping', sesion:currentSaveSesion()});
+    const r=await postGAS({action:'getShopping', sesion:currentSaveSesion(), listaId});
     shopItems = Array.isArray(r.items) ? r.items : [];
     v27ShopLoaded=true;
-    if(shopItems.length===0) shopItems.push({done:false,item:'',depto:'',quien:'',tienda:'',sesion:currentSaveSesion(),alcance:'solo'});
+    if(shopItems.length===0) shopItems.push({done:false,item:'',depto:'',quien:'',tienda:'',sesion:currentSaveSesion(),alcance:'solo',listaId});
     v28RenderShop();
     v31RenderSugs(); // v13: chips de "se te está acabando"
     v32RenderRebuy(); // v16: 🔁 ciclos de recompra
@@ -3934,13 +4012,13 @@ function v28ShopItemKey(ev, i){
   ev.preventDefault();
   shopItems[i].item = ev.target.value; // captura lo escrito
   // Enter: agrega fila nueva debajo y enfoca (autosave incluido)
-  shopItems.splice(i+1, 0, {done:false,item:'',depto:shopItems[i].depto||'',quien:'',tienda:shopItems[i].tienda||'',sesion:currentSaveSesion(),alcance:shopItems[i].alcance||'solo'});
+  shopItems.splice(i+1, 0, {done:false,item:'',depto:shopItems[i].depto||'',quien:'',tienda:shopItems[i].tienda||'',sesion:currentSaveSesion(),alcance:shopItems[i].alcance||'solo',listaId:v34ContenedorActual('lista',listas).id});
   v28RenderShop();
   const nx=document.getElementById('shopItem-'+(i+1)); if(nx) nx.focus();
   v28QueueSave();
 }
 function v28ShopAdd(){
-  shopItems.push({done:false,item:'',depto:'',quien:'',tienda:'',sesion:currentSaveSesion(),alcance:'solo'});
+  shopItems.push({done:false,item:'',depto:'',quien:'',tienda:'',sesion:currentSaveSesion(),alcance:'solo',listaId:v34ContenedorActual('lista',listas).id});
   v28RenderShop();
   const nx=document.getElementById('shopItem-'+(shopItems.length-1)); if(nx) nx.focus();
   v28QueueSave();
@@ -3968,7 +4046,7 @@ function v28QueueSave(){
 }
 async function v28SaveShopping(){
   try{
-    const r=await postGAS({action:'saveShopping', sesion:currentSaveSesion(), items: shopItems.filter(it=>it.item.trim()!=='' || it.depto || it.tienda)});
+    const r=await postGAS({action:'saveShopping', sesion:currentSaveSesion(), listaId:v34ContenedorActual('lista',listas).id, items: shopItems.filter(it=>it.item.trim()!=='' || it.depto || it.tienda)});
     if(r.ok){ const h=new Date().toTimeString().substring(0,5); v27SetStatus('shopStatus27','✓ Guardado '+h,true); }
     else v27SetStatus('shopStatus27','⚠ '+(r.error||'Error'));
   }catch(e){ v27SetStatus('shopStatus27','⚠ Error de red — se reintenta al próximo cambio'); }
@@ -4003,6 +4081,10 @@ function v30InvData(){
       precioComp: precioComp(p.precioInd,p.cantidad,p.unidad)
     };
   });
+  // v29: solo productos del inventario con nombre actualmente seleccionado
+  // (los que no tienen inventarioId asignado se ven en cualquiera, por compatibilidad).
+  const invActualId=v34ContenedorActual('inventario',inventarios).id;
+  if(invActualId) list=list.filter(p=>!p.inventarioId || p.inventarioId===invActualId);
   if(invFilter==='inventario') list=list.filter(p=>!p.esCot && (p.inventario||'SI')!=='NA' && String(p.queda??'')!=='0');
   else if(invFilter==='cotizacion') list=list.filter(p=>p.esCot);
   else if(invFilter==='prioritarios'){ const st=v31StarredNames(); list=list.filter(p=>st.has(normTxt(p.concepto))); }
@@ -4333,7 +4415,8 @@ async function v31ProdFormSubmit(){
     inventario:esCot?'NA':(document.getElementById('pfInv').checked?'SI':'NA'),
     codigo:document.getElementById('pfCodigo').value.trim(),
     queda:document.getElementById('pfQueda').value||'',
-    prioritario:document.getElementById('pfStar').checked?'SI':''
+    prioritario:document.getElementById('pfStar').checked?'SI':'',
+    inventarioId:v34ContenedorActual('inventario',inventarios).id
   };
   if(pfFoto.b64){ prod.fotoBase64=pfFoto.b64; prod.fotoMime=pfFoto.mime; }
   else if(pfFotoUrl){ prod.fotoUrl=pfFotoUrl; }
