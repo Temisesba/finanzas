@@ -1691,7 +1691,7 @@ details:not([open]) .chev{transform:rotate(-90deg)}
 // v29: nombre clave de esta entrega — cámbialo cada vez que termines un lote
 // de cambios, así en 👥 → 🛠 Panel dev se puede confirmar que el navegador
 // está cargando la versión más reciente y no una copia en caché.
-const BUILD_VERSION='Edelweiss';
+const BUILD_VERSION='Fresia';
 let GAS_URL=localStorage.getItem('gastos_gas_url')||'';
 function v29TieneGasUrl(){ return !!GAS_URL; }
 function v29GuardarGasUrl(url){
@@ -5638,39 +5638,9 @@ function pBalanceSesionActual(){
 }
 
 // ── Tarjeta: etiqueta legible ──
-// v37: fila de pago mensual de una TDC (con alarma por día límite)
-// v29: separado en botón (va junto a ＋ Estado en el header) + chip de alarma
-// (va en la fila del estimado) — antes era una caja aparte que ocupaba mucho.
-function pCardAlarmaChip(c){
-  if(c.ctipo!=='TDC') return '';
-  const mk=pMesKey(); const reg=(c.pagos||{})[mk];
-  const dias=pDiasPara(c.diaLimite);
-  if(reg) return '<span style="color:var(--shared);font-weight:600">✓ pagado</span>';
-  if(dias===null) return '';
-  if(dias<0) return '<span style="color:var(--temis);font-weight:600">🔴 vencido</span>';
-  if(dias<=5) return '<span style="color:var(--loan);font-weight:600">🔔 límite en '+dias+'d</span>';
-  return '<span style="color:var(--ink-3)">límite en '+dias+'d</span>';
-}
-function pCardPagoBtn(c){
-  if(c.ctipo!=='TDC') return '';
-  const mk=pMesKey(); const reg=(c.pagos||{})[mk];
-  return '<button class="rt-btn" style="font-size:11px;flex-shrink:0;'+(reg?'background:var(--shared-bg);color:var(--shared);border-color:var(--shared-bdr)':'font-weight:700')+'" onclick="pToggleCardPago(\''+esc(c.id)+'\')">'+(reg?('✓ Pagué '+pMoney(reg.monto)):'Marcar pagado')+'</button>';
-}
-function pToggleCardPago(id){
-  const c=pItems.find(x=>x.id===id); if(!c)return;
-  const mk=pMesKey(); c.pagos=c.pagos||{};
-  if(c.pagos[mk]){ delete c.pagos[mk]; pSaveItem(c); return; }
-  const edo=pEstadoDeTarjetaMes(id,mk);
-  if(edo){
-    pVerConciliacion(edo.id);
-    if(!confirm('Este pago de tarjeta se maneja como conciliación, no como gasto completo.\n\n¿Marcar la tarjeta como pagada para '+mk+'?')) return;
-  }
-  const sug=pTarjetaCargado(id);
-  const monto=prompt('¿Cuánto pagaste de esta tarjeta este mes ('+mk+')?', Math.round(sug)||'');
-  if(monto===null) return;
-  c.pagos[mk]={monto:parseFloat(monto)||0, fecha:new Date().toISOString().substring(0,10)};
-  pSaveItem(c);
-}
+// v29: el estatus de pago de la tarjeta ya vive en el estado de cuenta
+// (pagado/fechaPago, ver pEstadoStatusBadgeHTML) — el viejo botón "Marcar
+// pagado"/c.pagos[mk] independiente del estado de cuenta se quitó.
 function pCardTipoEmoji(c){ return (c.ctipo||'TDC')==='TDD' ? '🏦' : '💳'; }
 function pCardLabel(c){
   const tipo = c.ctipo||'TDC';
@@ -5741,7 +5711,7 @@ function pRenderAlarmBadge(){
   pItemsOf('fijo').forEach(f=>{ const pagado=(f.pagos||{})[mk]; const dias=pDiasPara(f.diaLimite);
     if(!pagado && dias!==null && dias<=5) alarmas++; });
   pItemsOf('msi').forEach(m=> pMSICuotas(m).forEach(q=>{ if(!q.pagada && q.dias!==null && q.dias<=5) alarmas++; }));
-  pItemsOf('tarjeta').forEach(c=>{ if(c.ctipo!=='TDC') return; const pagado=(c.pagos||{})[mk]; const dias=pDiasPara(c.diaLimite);
+  pItemsOf('tarjeta').forEach(c=>{ if(c.ctipo!=='TDC') return; const e=pEstadoActualDeTarjeta(c); const pagado=e&&e.pagado; const dias=pDiasPara(c.diaLimite);
     if(!pagado && dias!==null && dias<=5) alarmas++; });
   pItemsOf('estado').forEach(e=>{ const co=pConciliacionEstado(e); if(e.mes===mk && (co.estado==='diferencia'||co.counts.no_identificado||co.counts.pendiente)) alarmas++; });
   const b=document.getElementById('pAlarmBadge');
@@ -5782,7 +5752,7 @@ function pProximosMiniHTML(){
   if(typeof pItemsOf!=='function' || !pItems.length) return '<strong>Próximos pagos</strong><div style="font-size:12px;color:var(--ink-3)">Abre Finanzas para cargar tus pagos.</div>';
   const mk=pMesKey(), rows=[];
   pItemsOf('fijo').forEach(f=>{ if((f.pagos||{})[mk]) return; rows.push({fecha:pFechaMesDia(mk,f.diaLimite), txt:(f.tipoPago==='tarjeta'?'💳 ':'🔁 ')+(f.concepto||'Pago fijo')}); });
-  pItemsOf('tarjeta').filter(c=>c.ctipo==='TDC' && !(c.pagos||{})[mk]).forEach(c=>rows.push({fecha:pFechaMesDia(mk,c.diaLimite), txt:'💳 '+pCardLabel(c)}));
+  pItemsOf('tarjeta').filter(c=>{ if(c.ctipo!=='TDC') return false; const e=pEstadoActualDeTarjeta(c); return !e||!e.pagado; }).forEach(c=>rows.push({fecha:pFechaMesDia(mk,c.diaLimite), txt:'💳 '+pCardLabel(c)}));
   rows.sort((a,b)=>(a.fecha||'9999').localeCompare(b.fecha||'9999'));
   // v29: siempre visible junto a próximos pagos, sin importar el filtro de Gastos activo
   const sesNet=(function(){ try{ return pMiDeudaGlobalNet()||0; }catch(_){ return 0; } })();
@@ -5835,7 +5805,9 @@ function pRenderResumen(){
   const saldo=saldoBase+ingresos-gastos-fijosMes-msiMes;
   const mk=pMesKey();
   const fijosPend=pItemsOf('fijo').filter(f=>!(f.pagos||{})[mk]).length;
-  const tarjetasPend=pItemsOf('tarjeta').filter(c=>c.ctipo==='TDC' && !(c.pagos||{})[mk]).length;
+  // v29: "pagada" ahora vive en el estado de cuenta (pagado/fechaPago), no
+  // en c.pagos[mk] — el botón "Marcar pagado" de la tarjeta ya no existe.
+  const tarjetasPend=pItemsOf('tarjeta').filter(c=>{ if(c.ctipo!=='TDC') return false; const e=pEstadoActualDeTarjeta(c); return !e || !e.pagado; }).length;
   const estadosPend=pItemsOf('estado').filter(e=>{ const co=pConciliacionEstado(e); return (e.mes||'')===mk && (co.estado!=='conciliado'); }).length;
   const noIdent=pItemsOf('estado').reduce((s,e)=>s+(e.movimientos||[]).filter(m=>(m.estado||'pendiente')==='no_identificado').length,0);
 
@@ -6183,12 +6155,22 @@ function pRenderTarjetas(){
   const mk=pMesKey();
   const rows=items.map(c=>{
     const esMia=!c.titular || c.titular===pOwner || c.titular===myName();
+    const cy=pCicloTarjeta(c,mk);
     const proxVenc=c.diaLimite?pProximaFecha(c.diaLimite):'';
-    const fechas=`<div style="display:flex;flex-wrap:wrap;gap:4px 12px;font-size:11px;color:var(--ink-3)">`
+    // v29: este resumen (corte/límite/estatus de pago/periodo/estimado/
+    // próximo vencimiento) ahora se ve SIEMPRE, sin tener que desplegar la
+    // tarjeta — solo el detalle más fino (crédito, comisiones, estados de
+    // cuenta) sigue detrás del ▸.
+    const resumenSiempre=`<div style="font-size:11px;color:var(--ink-3);margin-top:2px;display:flex;flex-wrap:wrap;gap:4px 10px">`
       +`<span>📅 Corte: <strong>${esc(c.diaCorte||'—')}</strong></span>`
-      +`<span>🟢 Disponible desde: <strong>${esc(c.diaDisponible||'—')}</strong></span>`
       +`<span>⏰ Límite: <strong>${esc(c.diaLimite||'—')}</strong></span>`
-      +`<span>➡️ Próximo vencimiento: <strong>${proxVenc?esc(proxVenc)+' ('+pDiasPara(c.diaLimite)+'d)':'—'}</strong></span>`
+      +pEstadoStatusBadgeHTML(c)
+      +`</div>`
+      +`<div style="font-size:11px;color:var(--ink-3);margin-top:2px">Periodo: ${esc(cy.label)} · Estimado del ciclo: <strong>${pMoney(pTarjetaEstimadoCiclo(c,mk))}</strong></div>`
+      +`<div style="font-size:11px;color:var(--ink-3);margin-top:2px">➡️ Próximo vencimiento: <strong>${proxVenc?esc(proxVenc)+' ('+pDiasPara(c.diaLimite)+'d)':'—'}</strong></div>`
+      +`<div style="font-size:10px;color:var(--ink-3);margin-top:2px">fijos/MSI asignados: ${pMoney(pTarjetaCargado(c.id,mk))}</div>`;
+    const fechas=`<div style="display:flex;flex-wrap:wrap;gap:4px 12px;font-size:11px;color:var(--ink-3)">`
+      +`<span>🟢 Disponible desde: <strong>${esc(c.diaDisponible||'—')}</strong></span>`
       +`</div>`;
     // Crédito máximo / disponible (solo TDC con límite capturado)
     let creditoHtml='';
@@ -6221,20 +6203,14 @@ function pRenderTarjetas(){
       <div style="flex:1;min-width:0">
         <div style="font-weight:800;font-size:14px">${pCardTipoEmoji(c)} ${esc(pCardLabel(c))}${esMia?'':' <span class="chip" style="font-size:9px;font-weight:600">👤 '+esc(c.titular||'?')+'</span>'}</div>
         <div style="font-size:11px;color:var(--ink-3)">${esc(c.nombre||'')}</div>
+        ${resumenSiempre}
       </div>
     </div>
-    <div class="tarj-btn-scroll" style="display:flex;gap:6px;margin-top:8px;overflow-x:auto;-webkit-overflow-scrolling:touch;flex-wrap:nowrap">
-        ${pCardPagoBtn(c)}
-        <button class="rt-btn" style="font-weight:700;flex-shrink:0" onclick="pOpenEstado('${esc(c.id)}','')">＋ Estado</button>
-        ${esMia?'<button class="rt-btn" style="flex-shrink:0" onclick="pOpenForm(\'tarjeta\',\''+esc(c.id)+'\')">✏️</button><button class="shop-del" style="flex-shrink:0" onclick="pDelItem(\''+esc(c.id)+'\')">🗑</button>':''}
-    </div>
-    <div id="${esc(cardId)}" style="display:none">
+    ${esMia?`<div class="tarj-btn-scroll" style="display:flex;gap:6px;margin-top:8px;overflow-x:auto;-webkit-overflow-scrolling:touch;flex-wrap:nowrap">
+        <button class="rt-btn" style="flex-shrink:0" onclick="pOpenForm('tarjeta','${esc(c.id)}')">✏️</button><button class="shop-del" style="flex-shrink:0" onclick="pDelItem('${esc(c.id)}')">🗑</button>
+    </div>`:''}
+    <div id="${esc(cardId)}" style="display:none;margin-top:8px;padding-top:8px;border-top:1px dashed var(--border)">
     ${fechas}
-    <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:4px;margin-top:8px;padding-top:8px;border-top:1px dashed var(--border)">
-      <span style="font-size:12px;font-weight:800;color:var(--temis)">Estimado del ciclo: ${pMoney(pTarjetaEstimadoCiclo(c,mk))}</span>
-      <span style="font-size:10px;color:var(--ink-3)">fijos/MSI asignados: ${pMoney(pTarjetaCargado(c.id,mk))}</span>
-      ${pCardAlarmaChip(c)}
-    </div>
     ${creditoHtml}${feesHtml}${sensiblesHtml}
     ${pRenderEstadosTarjeta(c)}
     </div></div>`;
@@ -6838,7 +6814,7 @@ async function pFormSave(){
         else throw new Error((up&&up.error)||'No se pudo subir PDF');
       }catch(e){ showToast('⚠ '+e.message); btnReady(); return; }
     }
-    item={...base, tarjeta:pFval('pfTarjeta'), mes:pFval('pfMes')||pMesKey(), total:parseFloat(pFval('pfTotal'))||0, minimo:parseFloat(pFval('pfMinimo'))||0, noIntereses:parseFloat(pFval('pfNoIntereses'))||0, fechaCorte:pFval('pfFechaCorte'), fechaLimite:pFval('pfFechaLimite'), fechaSubida:(prev&&prev.fechaSubida)||hoy, estado:pFval('pfEstado')||'pendiente', pdfUrl, transcript:pFval('pfTranscript'), movimientos:pMovsFromRows(), nota:pFval('pfNota').trim()};
+    item={...base, tarjeta:pFval('pfTarjeta'), mes:pFval('pfMes')||pMesKey(), total:parseFloat(pFval('pfTotal'))||0, minimo:parseFloat(pFval('pfMinimo'))||0, noIntereses:parseFloat(pFval('pfNoIntereses'))||0, fechaCorte:pFval('pfFechaCorte'), fechaLimite:pFval('pfFechaLimite'), fechaSubida:(prev&&prev.fechaSubida)||hoy, estado:pFval('pfEstado')||'pendiente', pdfUrl, transcript:pFval('pfTranscript'), movimientos:pMovsFromRows(), nota:pFval('pfNota').trim(), pagado:(prev&&prev.pagado)||false, fechaPago:(prev&&prev.fechaPago)||''};
   } else if(t==='msi'){
     if(!pFval('pfConcepto').trim()){ showToast('¿Qué compraste?'); return; }
     const prev=prevItem;
@@ -7008,6 +6984,39 @@ function pTarjetaEstimadoCiclo(c,mk){
 function pEstadoDeTarjetaMes(cardId, mk){
   return pItemsOf('estado').find(e=>e.tarjeta===cardId && (e.mes||'')===mk);
 }
+// v29: el estado de cuenta más reciente de la tarjeta — se usa para saber si
+// "ya está pagado / pendiente / retrasado" en el resumen plegado, según la
+// fecha de hoy (no hace falta abrir cada tarjeta para saberlo).
+function pEstadoActualDeTarjeta(c){
+  const estados=pItemsOf('estado').filter(e=>e.tarjeta===c.id).sort((a,b)=>(b.mes||'').localeCompare(a.mes||''));
+  return estados[0]||null;
+}
+function pEstadoStatusBadgeHTML(c){
+  const e=pEstadoActualDeTarjeta(c);
+  if(!e) return '<span style="color:var(--ink-3)">Sin estado registrado</span>';
+  if(e.pagado) return '<span style="color:var(--shared);font-weight:700">✅ Pagado'+(e.fechaPago?(' '+esc(e.fechaPago)):'')+'</span>';
+  const hoy=new Date().toISOString().substring(0,10);
+  if(e.fechaLimite && e.fechaLimite<hoy) return '<span style="color:var(--temis);font-weight:700">🔴 Retrasado</span>';
+  return '<span style="color:var(--loan);font-weight:700">⚠️ Pendiente de pago</span>';
+}
+const MESES_CORTOS=['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+function pMesLabelCorto(mk){
+  const parts=String(mk||'').split('-');
+  if(parts.length<2) return mk||'—';
+  const idx=parseInt(parts[1],10)-1;
+  return parts[0]+'-'+(MESES_CORTOS[idx]||parts[1]);
+}
+// v29: marcar/desmarcar un estado de cuenta como pagado, con fecha — se
+// puede deshacer (vuelve a "pendiente").
+function pToggleEstadoPagado(id){
+  const e=pItems.find(x=>x.id===id); if(!e) return;
+  if(e.pagado){ e.pagado=false; e.fechaPago=''; pSaveItem(e); return; }
+  const hoy=new Date().toISOString().substring(0,10);
+  const fecha=prompt('Fecha de pago de este estado de cuenta:', hoy);
+  if(fecha===null) return;
+  e.pagado=true; e.fechaPago=(fecha||hoy).trim();
+  pSaveItem(e);
+}
 function pGastosDeTarjetaMes(c, mk){
   return pGastosDeTarjetaCiclo(c,mk);
 }
@@ -7033,12 +7042,19 @@ function pOpenEstado(cardId,id){
 }
 function pRenderEstadosTarjeta(c){
   const estados=pItemsOf('estado').filter(e=>e.tarjeta===c.id).sort((a,b)=>(b.mes||'').localeCompare(a.mes||''));
-  if(!estados.length) return '<div style="margin:-4px 0 8px 0;padding:8px 10px;background:var(--surface2);border-radius:8px;font-size:11.5px;color:var(--ink-3)">Sin estados de cuenta ligados a esta tarjeta.</div>';
-  return '<details open style="margin-top:8px"><summary style="cursor:pointer;background:#d1bd8f;border-radius:6px;padding:7px 10px;font-weight:800;color:var(--ink)"><span class="chev">▾</span> Estados de cuenta</summary>'+estados.map(e=>{
+  const addBtn='<button class="rt-btn" style="font-size:10px;padding:3px 8px;font-weight:700" onclick="event.stopPropagation();pOpenEstado(\''+esc(c.id)+'\',\'\')">＋ Estado</button>';
+  if(!estados.length) return '<div style="margin-top:8px;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;background:var(--surface2);border-radius:8px;font-size:11.5px;color:var(--ink-3)"><span>Sin estados de cuenta ligados a esta tarjeta.</span>'+addBtn+'</div>';
+  return '<details open style="margin-top:8px"><summary style="cursor:pointer;background:#d1bd8f;border-radius:6px;padding:7px 10px;font-weight:800;color:var(--ink);display:flex;align-items:center;justify-content:space-between;gap:8px"><span><span class="chev">▾</span> Estados de cuenta</span>'+addBtn+'</summary>'+estados.map(e=>{
     const co=pConciliacionEstado(e);
+    // v29: check visual para pagado/pendiente (en vez de solo texto), con
+    // fecha de pago inline y opción de deshacer sin abrir el formulario.
+    const pagadoChip=e.pagado
+      ? '<button class="rt-btn" style="font-size:10px;padding:3px 8px;background:var(--shared-bg);color:var(--shared);border-color:var(--shared-bdr);font-weight:700" onclick="pToggleEstadoPagado(\''+esc(e.id)+'\')" title="Deshacer">✅ Pagado '+esc(e.fechaPago||'')+' · deshacer</button>'
+      : '<button class="rt-btn" style="font-size:10px;padding:3px 8px" onclick="pToggleEstadoPagado(\''+esc(e.id)+'\')">☐ Marcar pagado</button>';
     return `<div style="margin:8px 0 0 0;padding:10px;background:var(--surface2);border-radius:8px;font-size:11.5px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-        <strong>🧾 ${esc(e.mes||'—')}</strong>
+        <strong class="chip" style="font-size:11px;background:var(--surface);border:1px solid var(--border2)">🧾 ${esc(pMesLabelCorto(e.mes))}</strong>
+        ${pagadoChip}
         <span style="color:${pEstadoColor(co.estado)};font-weight:600">${pEstadoLabel(co.estado)}</span>
         <span>app ${pMoney(co.totalApp)}</span>
         <span>estado ${pMoney(co.totalReal)}</span>
