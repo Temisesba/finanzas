@@ -1692,7 +1692,7 @@ details:not([open]) .chev{transform:rotate(-90deg)}
 // v29: nombre clave de esta entrega — cámbialo cada vez que termines un lote
 // de cambios, así en 👥 → 🛠 Panel dev se puede confirmar que el navegador
 // está cargando la versión más reciente y no una copia en caché.
-const BUILD_VERSION='Narciso';
+const BUILD_VERSION='Peonia';
 let GAS_URL=localStorage.getItem('gastos_gas_url')||'';
 function v29TieneGasUrl(){ return !!GAS_URL; }
 function v29GuardarGasUrl(url){
@@ -6251,7 +6251,24 @@ function pRenderTarjetas(){
   // veías tus propias tarjetas, nunca las de Lot). sesionCards ya trae las
   // de todos los miembros de la sesión activa (cargado en loadSesionCards).
   const todas=(sesionCards&&sesionCards.length)?sesionCards:pItemsOf('tarjeta');
-  const items=pTarjFiltroTipo?todas.filter(c=>(c.ctipo||'TDC')===pTarjFiltroTipo):todas;
+  // v29: TDC/TDD/Puntos ordenadas por próximo vencimiento, con las
+  // retrasadas (estado de cuenta con fecha límite ya pasada y sin pagar)
+  // primero — pDiasPara() por sí solo nunca da negativo (siempre proyecta
+  // la PRÓXIMA ocurrencia), así que el atraso real se checa contra el
+  // estado de cuenta más reciente, igual que el badge de estatus.
+  const pTarjOrden=(c)=>{
+    const e=pEstadoActualDeTarjeta(c);
+    const hoy=new Date().toISOString().substring(0,10);
+    const retrasada = !!(e && !e.pagado && e.fechaLimite && e.fechaLimite<hoy);
+    const dias = pDiasPara(c.diaLimite);
+    return { retrasada, dias: dias===null?99999:dias };
+  };
+  const items=(pTarjFiltroTipo?todas.filter(c=>(c.ctipo||'TDC')===pTarjFiltroTipo):todas.slice())
+    .sort((a,b)=>{
+      const oa=pTarjOrden(a), ob=pTarjOrden(b);
+      if(oa.retrasada!==ob.retrasada) return oa.retrasada?-1:1;
+      return oa.dias-ob.dias;
+    });
   const mk=pMesKey();
   const rows=items.map(c=>{
     const esMia=!c.titular || c.titular===pOwner || c.titular===myName();
