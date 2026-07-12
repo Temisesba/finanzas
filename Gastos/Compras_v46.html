@@ -1471,7 +1471,9 @@ details:not([open]) .chev{transform:rotate(-90deg)}
     <button class="mclose" onclick="closeModal(false)">✕</button>
   </div>
   <div class="mbody">
-    <div id="mEditSesionLbl" style="display:none;font-size:11px;font-weight:600;color:var(--personal);background:var(--surface2);border-radius:6px;padding:5px 9px;margin-bottom:8px"></div>
+    <div id="mEditSesionLbl" style="display:none;font-size:11px;font-weight:600;color:var(--personal);background:var(--surface2);border-radius:6px;padding:5px 9px;margin-bottom:8px;align-items:center;gap:6px">
+      <span>Sesión:</span><select id="mEditSesionSel" style="font-size:11px;font-weight:600;border:1px solid var(--border2);border-radius:6px;padding:3px 6px;background:var(--bg)"></select>
+    </div>
     <input type="hidden" id="editIdx">
     <input type="hidden" id="storedPhoto">
     <div class="field">
@@ -1690,7 +1692,7 @@ details:not([open]) .chev{transform:rotate(-90deg)}
 // v29: nombre clave de esta entrega — cámbialo cada vez que termines un lote
 // de cambios, así en 👥 → 🛠 Panel dev se puede confirmar que el navegador
 // está cargando la versión más reciente y no una copia en caché.
-const BUILD_VERSION='Nardo';
+const BUILD_VERSION='Orquidea';
 let GAS_URL=localStorage.getItem('gastos_gas_url')||'';
 function v29TieneGasUrl(){ return !!GAS_URL; }
 function v29GuardarGasUrl(url){
@@ -2926,7 +2928,7 @@ const proy=e.proyecto?'<div class="prod" title="Vinculado desde itinerario">🧳
     const prodBadge=hijos.length?'<span class="prod-badge" onclick="v30ToggleSub(\''+esc(e.gastoId)+'\')" title="Ver productos">🧾 '+hijos.length+'</span> ':'';
     const subRows = (hijos.length && expandedRows[e.gastoId]) ? v30SubTable(hijos) : '';
     const sesArg=String(e.sesion||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-    const myActs='<button class="ibtn" onclick="openExpView('+e.rowIndex+')" title="Ver todo">👁</button><button class="ibtn" onclick="pEditPersonal('+e.rowIndex+',\''+sesArg+'\')" title="Editar en su sesión">✏️</button>';
+    const myActs='<button class="ibtn" onclick="openExpView('+e.rowIndex+')" title="Ver todo">👁</button><button class="ibtn" onclick="pEditPersonal('+e.rowIndex+',\''+sesArg+'\')" title="Editar en su sesión">✏️</button><button class="ibtn" onclick="delExp('+e.rowIndex+')" title="Eliminar">🗑</button>';
     return '<div class="erow"><span class="dc">'+fmtDate(e.fecha)+'</span><span class="cc">'+prodBadge+esc(e.concepto||'—')+prod+proy+note+'</span><span class="ac" style="text-align:right">'+amtStr+convStr+'</span><span>'+pc+'</span><span>'+tc2+'</span><span>'+cc2+'</span><span>'+pagoCel+'</span><span>'+foto+'</span><span class="row-acts">'+(esMio?myActs:((personalMode?'<button class="ibtn" onclick="pViewOriginal('+e.rowIndex+')" title="Ver original y sesión">👁</button>':'')+'<button class="ibtn" onclick="editExp('+e.rowIndex+')" title="Editar">✏️</button><button class="ibtn" onclick="delExp('+e.rowIndex+')" title="Eliminar">🗑</button>'))+'</span></div>'+subRows;
   }).join('');
 }
@@ -3746,13 +3748,36 @@ function v30ProdAdd(){
 async function saveExpense(){
   const fecha=document.getElementById('iDate').value.trim();if(!fecha){showToast('La fecha es obligatoria');return;}
   const ei=document.getElementById('editIdx').value;
-  const saveSesion=currentSaveSesion();
+  // v29: al editar, respeta la sesión elegida en el selector del modal (por
+  // default la que ya tenía el gasto) — antes se sobrescribía sola con
+  // currentSaveSesion() en cada edición, sin que el usuario lo pidiera.
+  const sesSel=document.getElementById('mEditSesionSel');
+  const saveSesion=(ei && sesSel && sesSel.value) ? sesSel.value : currentSaveSesion();
   const body={action:ei?'updateGasto':'saveGasto',fecha:fechaCompraValue(),fecha_captura:document.getElementById('iCaptura').value||localDateTimeValue(new Date()),costo:document.getElementById('iCosto').value.trim(),moneda_pago:document.getElementById('iMonedaPago').value,costo_conv:document.getElementById('iConv').value.trim(),moneda_conv:document.getElementById('iMonedaConv').value,otra_moneda:document.getElementById('iConv').value.trim(),moneda:document.getElementById('iMonedaConv').value,concepto:document.getElementById('iConc').value.trim(),
 tienda:document.getElementById('iTienda').value.trim(),
 producto:document.getElementById('iTienda').value.trim(),
 quien_paga:currentPayer,compartido:currentType,participantes:(tipoReparte(currentType)?currentParticipantes.slice():[]),pago:pagoBuild(),notas:document.getElementById('iNotas').value.trim(),categoria:document.getElementById('iCat').value,
 sesion:saveSesion};
   if(ei) body.rowIndex=ei;
+  // v29: si marcaste MSI aquí en +Gasto, esto NO se guarda como un gasto
+  // suelto — se registra como Compra a MSI de verdad (misma vista que
+  // 🗓️ Compra a MSI), para que sí entre al calendario de cuotas y a la
+  // deuda pendiente. Antes solo quedaba anotado en el método de pago sin
+  // conectarse a nada.
+  const msiCk=document.getElementById('iMsi');
+  if(!ei && msiCk && msiCk.checked){
+    const mesesMsi=parseInt(document.getElementById('iMsiMeses').value)||0;
+    if(mesesMsi<2){ showToast('Pon a cuántos meses es la MSI (mínimo 2)'); return; }
+    await pCrearMSIDesdeGasto({
+      concepto: body.concepto || 'Compra a MSI',
+      monto: parseFloat(body.costo)||0,
+      meses: mesesMsi,
+      tarjeta: document.getElementById('iTarjetaSel')?document.getElementById('iTarjetaSel').value:'',
+      inicio: body.fecha,
+      nota: body.notas
+    });
+    return;
+  }
   // v12: si hay productos, la compra necesita un GastoId propio para enlazarlos
   const prodsLimpios = prodDraft.filter(p=>p.concepto.trim()!=='');
   let gid = '';
@@ -3801,10 +3826,16 @@ function editExp(rowIndex){
 
   document.getElementById('mTitle').textContent = 'Editar gasto';
   document.getElementById('editIdx').value = rowIndex;
-  // v29: siempre muestra a qué sesión pertenece este gasto al editarlo (útil
-  // sobre todo en la vista Personal, donde ves gastos de varias sesiones mezclados).
-  const sesLbl=document.getElementById('mEditSesionLbl');
-  if(sesLbl){ sesLbl.textContent='Sesión: '+(e.sesion||activeSesion||'—'); sesLbl.style.display='block'; }
+  // v29: siempre muestra (y deja cambiar) a qué sesión pertenece este gasto —
+  // útil sobre todo en la vista Personal, donde ves gastos de varias sesiones
+  // mezclados y antes no había forma de reasignar uno mal capturado.
+  const sesLbl=document.getElementById('mEditSesionLbl'), sesSel=document.getElementById('mEditSesionSel');
+  if(sesLbl && sesSel){
+    const actual=e.sesion||activeSesion||'';
+    const opciones=[...new Set([actual, ...(SESIONES||[])])].filter(Boolean);
+    sesSel.innerHTML=opciones.map(s=>'<option value="'+esc(s)+'"'+(s===actual?' selected':'')+'>'+esc(s)+'</option>').join('');
+    sesLbl.style.display='flex';
+  }
   const delBtn=document.getElementById('bDeleteExp');
   if(delBtn) delBtn.style.display='inline-block';
 
@@ -3892,26 +3923,26 @@ if(btnGem){
 }
 
 async function delExp(rowIndex){
-  if(!confirm('¿Eliminar?'))return;
-  try{const r=await postGAS({action:'deleteGasto',rowIndex,eliminadoPor:myName()});if(r.ok){invalidateSesionCache(activeSesion);allExp=allExp.filter(e=>e.rowIndex!==rowIndex);renderAll();showToast('Eliminado · queda en 🗑 Actividad por si fue sin querer');}else showToast('Error: '+(r.error||''));}
-  catch(e){showToast('Error de red');}
+  if(!confirm('¿Eliminar?'))return false;
+  try{
+    const r=await postGAS({action:'deleteGasto',rowIndex,eliminadoPor:myName()});
+    if(!r.ok){ showToast('Error: '+(r.error||'')); return false; }
+    invalidateSesionCache(activeSesion);
+    allExp=allExp.filter(e=>e.rowIndex!==rowIndex);
+    misGastosAll=(misGastosAll||[]).filter(e=>e.rowIndex!==rowIndex);
+    if(personalMode) await pReloadMisGastos();
+    renderAll();
+    showToast('Eliminado · queda en 🗑 Actividad por si fue sin querer');
+    return true;
+  }catch(e){showToast('Error de red'); return false;}
 }
 // v29: eliminar desde dentro del modal Editar gasto (antes solo se podía
 // desde la lista — en la vista Personal esa fila ni siquiera tenía botón 🗑).
 async function deleteExpFromModal(){
   const rowIndex=parseInt(document.getElementById('editIdx').value);
   if(!rowIndex) return;
-  if(!confirm('¿Eliminar este gasto?'))return;
-  try{
-    const r=await postGAS({action:'deleteGasto', rowIndex, eliminadoPor:myName()});
-    if(!(r&&r.ok)){ showToast('Error: '+(r.error||'')); return; }
-    allExp=allExp.filter(e=>e.rowIndex!==rowIndex);
-    misGastosAll=(misGastosAll||[]).filter(e=>e.rowIndex!==rowIndex);
-    closeModal(true);
-    invalidateSesionCache(activeSesion);
-    if(personalMode){ await pReloadMisGastos(); renderAll(); } else await loadExp();
-    showToast('Eliminado · queda en 🗑 Actividad por si fue sin querer');
-  }catch(e){ showToast('Error de red'); }
+  const ok=await delExp(rowIndex);
+  if(ok) closeModal(true);
 }
 
 // ══ v9: Panel dev + editor enriquecido + lista de compras (prefijo v27) ══
@@ -5481,6 +5512,30 @@ async function pSaveItem(item){
   if(r&&r.ok){ if(!item.id) item.id=r.id; pLoaded=false; await pLoad(); pRender(); return true; }
   showToast('⚠ No se guardó: '+((r&&r.error)||'error')); return false;
 }
+// v29: cuando marcas MSI en +Gasto, se crea un item Personal 'msi' real
+// (mismo destino que 🗓️ Compra a MSI) en vez de solo anotarlo en el pago.
+async function pCrearMSIDesdeGasto(data){
+  if(!pOwner) pOwner=myName();
+  if(!pOwner){ showToast('Primero elige tu nombre en 👥 (⭐ ¿Quién eres tú?)'); return; }
+  if(!pPass) pPass=localStorage.getItem('gastos_ppass_'+pOwner)||'';
+  if(!pPass){
+    const pass=prompt('🔒 Tu contraseña personal ('+pOwner+') para registrar esta compra a MSI:','');
+    if(pass===null) return;
+    try{
+      const r=await postGAS({action:'personalAuth', owner:pOwner, pass});
+      if(!(r&&r.ok)){ showToast('⚠ '+((r&&r.error==='PASSWORD')?'Contraseña incorrecta':(r&&r.error)||'Error')); return; }
+      pPass=pass; localStorage.setItem('gastos_ppass_'+pOwner, pass);
+    }catch(e){ showToast('⚠ Error de red'); return; }
+  }
+  const hoy=new Date().toISOString().substring(0,10);
+  const item={id:'', tipo:'msi', fecha_captura:hoy, fecha_actualizacion:hoy,
+    concepto:data.concepto, monto:data.monto, meses:data.meses, tarjeta:data.tarjeta||'',
+    inicio:data.inicio||hoy, diaLimite:'', nota:data.nota||'', pagadas:{}};
+  const btn=document.getElementById('bSave'); if(btn){ btn.disabled=true; btn.textContent='Guardando…'; }
+  const ok=await pSaveItem(item);
+  if(btn){ btn.disabled=false; btn.textContent='Guardar'; }
+  if(ok){ closeModal(true); showToast('✓ Registrada como Compra a MSI · '+data.meses+' meses'); }
+}
 async function pDelItem(id){
   if(!confirm('¿Eliminar este registro personal?')) return;
   const r=await postGAS({action:'personalDelete', owner:pOwner, pass:pPass, id});
@@ -6513,7 +6568,8 @@ function pFormFieldsHTML(tipo, it){
         </select></div>`
       + F('Día límite de pago (1-31)','pfDiaLimite',it.diaLimite,'type="number" min="1" max="31" placeholder="ej. 15"')
       + F('Fecha de pago (opcional)','pfFechaPago',it.fechaPago,'type="date"')
-      + F('Categoría','pfCategoria',it.categoria,'placeholder="Servicios, suscripciones…"')
+      + F('Categoría','pfCategoria',it.categoria,'placeholder="Servicios, suscripciones…" list="list-cat-fijo"')
+      + '<datalist id="list-cat-fijo">'+[...new Set(['Servicios','Suscripciones','Renta','Transporte','Seguros','Educación','Salud','Tarjeta','Otro', ...pItemsOf('fijo').map(f=>f.categoria).filter(Boolean)])].map(c=>'<option value="'+esc(c)+'">').join('')+'</datalist>'
       + `<div class="pf-field"><label>Forma de pago</label>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             <select id="pfFormaPago" onchange="pfFormaPagoChange()" style="min-width:110px">
@@ -6621,7 +6677,9 @@ function pFormFieldsHTML(tipo, it){
       + `<div class="pf-field"><label>Tarjeta</label><select id="pfTarjeta">${pCardOptions(it.tarjeta)}</select></div>`
       + F('Fecha de compra','pfInicio',it.inicio||hoy,'type="date"')
       + `<div style="font-size:11px;color:var(--ink-3);margin:-4px 0 8px">Con la fecha de compra y el día de corte de la tarjeta calculamos cuándo será el primer cobro.</div>`
-      + F('Día límite de pago (opcional)','pfDiaLimite',it.diaLimite,'type="number" min="1" max="31" placeholder="opc."');
+      + F('Día límite de pago (opcional)','pfDiaLimite',it.diaLimite,'type="number" min="1" max="31" placeholder="opc."')
+      + TA('Notas (opcional)','pfNota',it.nota,'placeholder="Detalle…"')
+      + (it.id?`<button type="button" class="rt-btn" style="font-size:11px" onclick="pMSIActualizarRelacionados('${esc(it.id)}')">🔄 Actualizar nombre/notas en gastos relacionados</button>`:'');
   }
   if(tipo==='inversion'){
     return F('Nombre','pfInvNombre',it.nombre,'placeholder="Ej. CETES, Afore, GBM…" id="pFormFirst"')
@@ -6681,7 +6739,7 @@ async function pFormSave(){
     // v29: si viene de "registrar MSI desde conciliación" y ya sabíamos que
     // iba en la cuota N, esas cuotas llegan premarcadas como pagadas.
     const pagadasPre=(!prev && window.__msiPagadasPendiente) ? window.__msiPagadasPendiente : null;
-    item={...base, concepto:pFval('pfConcepto').trim(), monto:parseFloat(pFval('pfMonto'))||0, meses:parseInt(pFval('pfMeses'))||1, tarjeta:pFval('pfTarjeta'), inicio:pFval('pfInicio'), diaLimite:pFval('pfDiaLimite'), pagadas:{...((prev&&prev.pagadas)||{}), ...(pagadasPre||{})}};
+    item={...base, concepto:pFval('pfConcepto').trim(), monto:parseFloat(pFval('pfMonto'))||0, meses:parseInt(pFval('pfMeses'))||1, tarjeta:pFval('pfTarjeta'), inicio:pFval('pfInicio'), diaLimite:pFval('pfDiaLimite'), nota:pFval('pfNota').trim(), pagadas:{...((prev&&prev.pagadas)||{}), ...(pagadasPre||{})}};
   } else if(t==='inversion'){
     if(!pFval('pfInvNombre').trim()){ showToast('Escribe un nombre'); return; }
     item={...base, nombre:pFval('pfInvNombre').trim(), institucion:pFval('pfInstitucion').trim(), montoInicial:parseFloat(pFval('pfMontoInicial'))||0, valorActual:parseFloat(pFval('pfValorActual'))||0, fecha:pFval('pfFecha'), tasaInteres:parseFloat(pFval('pfTasaInteres'))||0, fechaFin:pFval('pfFechaFin'), nota:pFval('pfNota').trim()};
@@ -6712,6 +6770,26 @@ async function pFormSave(){
     } else showToast('✓ Guardado');
     window.__msiVincularPendiente=null; window.__msiPagadasPendiente=null; window.__msiCuotasHistoricas=null; window.__msiCardId=null;
   }
+}
+// v29: los gastos históricos creados por pCrearGastosHistoricosMSI llevan
+// "MSI <id>" en sus notas — con eso los encontramos para poder renombrarlos
+// si luego editas el nombre/notas de la compra a MSI.
+async function pMSIActualizarRelacionados(id){
+  const nuevoConcepto=pFval('pfConcepto').trim();
+  if(!nuevoConcepto){ showToast('Escribe primero el nombre'); return; }
+  const marca='MSI '+id;
+  const fuente=(personalMode?misGastosAll:allExp)||[];
+  const relacionados=fuente.filter(e=>String(e.notas||'').includes(marca));
+  if(!relacionados.length){ showToast('No hay gastos relacionados a esta MSI (todavía, o ninguna cuota ya cobrada se registró como gasto)'); return; }
+  if(!confirm('¿Actualizar el nombre de '+relacionados.length+' gasto(s) relacionados a "'+nuevoConcepto+'"?')) return;
+  for(const g of relacionados){
+    const m=/\(cuota (\d+)\)/.exec(g.concepto||'');
+    const nuevo=nuevoConcepto+(m?' (cuota '+m[1]+')':'');
+    try{ await postGAS({action:'updateGasto', rowIndex:g.rowIndex, concepto:nuevo}); }catch(e){}
+  }
+  invalidateSesionCache(activeSesion);
+  if(personalMode) await pReloadMisGastos(); else await loadExp();
+  showToast('✓ '+relacionados.length+' gasto(s) actualizado(s)');
 }
 // v29: registra como Gasto real cada cuota YA cobrada (1..N) al dar de alta
 // una MSI a medias desde conciliación — devuelve el rowIndex de la última
