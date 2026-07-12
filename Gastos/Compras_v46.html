@@ -1692,7 +1692,7 @@ details:not([open]) .chev{transform:rotate(-90deg)}
 // v29: nombre clave de esta entrega — cámbialo cada vez que termines un lote
 // de cambios, así en 👥 → 🛠 Panel dev se puede confirmar que el navegador
 // está cargando la versión más reciente y no una copia en caché.
-const BUILD_VERSION='Petunia';
+const BUILD_VERSION='Camelia';
 let GAS_URL=localStorage.getItem('gastos_gas_url')||'';
 function v29TieneGasUrl(){ return !!GAS_URL; }
 function v29GuardarGasUrl(url){
@@ -2475,7 +2475,7 @@ function switchPage(page,el){
   document.getElementById('saludView').style.display=page==='salud'?'block':'none';
   if(page==='salud') pOpenPage();
   if(page==='shopping') v28LoadShopping(); // lazy load al abrir
-  if(page==='inventario'){ v30RenderInv(); v32RenderResumen(); v33LoadInvCompartido(); v34LoadInventarios(); }
+  if(page==='inventario'){ v30RenderInv(); v34LoadInventarios().then(()=>{ v32RenderResumen(); v33LoadInvCompartido(); }); }
 }
 
 const SORT_COLS=['fecha','concepto','monto','pago','tipo','cat','foto'];
@@ -3419,7 +3419,17 @@ function openLightbox(src){document.getElementById('lbImg').src=src;document.get
 function closeLightbox(){document.getElementById('lightbox').style.display='none';}
 
 // ── Modal ─────────────────────────────────────────────────
-function openModal(){ resetModal(); document.getElementById('mTitle').textContent='Nuevo gasto'; document.getElementById('editIdx').value=''; document.getElementById('iDate').value=new Date().toISOString().split('T')[0]; document.getElementById('iCaptura').value=localDateTimeValue(new Date()); if(personalMode){ const me=myName(); if(me) setPayer(me); setType('Personal'); } const lbl=document.getElementById('mEditSesionLbl'); if(lbl) lbl.style.display='none'; const delBtn=document.getElementById('bDeleteExp'); if(delBtn) delBtn.style.display='none'; window.__movVincularPendiente=null; document.getElementById('mOverlay').style.display='flex'; }
+function openModal(){ resetModal(); document.getElementById('mTitle').textContent='Nuevo gasto'; document.getElementById('editIdx').value=''; document.getElementById('iDate').value=new Date().toISOString().split('T')[0]; document.getElementById('iCaptura').value=localDateTimeValue(new Date()); if(personalMode){ const me=myName(); if(me) setPayer(me); setType('Personal'); }
+  // v29: también en +Gasto (no solo al editar) se ve/puede elegir la sesión
+  // desde el inicio — antes solo aparecía al editar un gasto ya guardado.
+  const lbl=document.getElementById('mEditSesionLbl'), sesSel=document.getElementById('mEditSesionSel');
+  if(lbl && sesSel){
+    const actual=currentSaveSesion();
+    const opciones=[...new Set([actual, ...(SESIONES||[])])].filter(Boolean);
+    sesSel.innerHTML=opciones.map(s=>'<option value="'+esc(s)+'"'+(s===actual?' selected':'')+'>'+esc(s)+'</option>').join('');
+    lbl.style.display='flex';
+  }
+  const delBtn=document.getElementById('bDeleteExp'); if(delBtn) delBtn.style.display='none'; window.__movVincularPendiente=null; document.getElementById('mOverlay').style.display='flex'; }
 function hasUnsavedData(){ return document.getElementById('iConc').value.trim()||document.getElementById('iCosto').value.trim()||tb64; }
 function closeModal(force){ if(!force&&hasUnsavedData()){if(!confirm('¿Salir sin guardar?'))return;} document.getElementById('mOverlay').style.display='none';
   if(pReturnToPersonalAfterEdit){ pReturnToPersonalAfterEdit=false; pEnterPersonal(); }
@@ -3748,11 +3758,11 @@ function v30ProdAdd(){
 async function saveExpense(){
   const fecha=document.getElementById('iDate').value.trim();if(!fecha){showToast('La fecha es obligatoria');return;}
   const ei=document.getElementById('editIdx').value;
-  // v29: al editar, respeta la sesión elegida en el selector del modal (por
-  // default la que ya tenía el gasto) — antes se sobrescribía sola con
+  // v29: respeta la sesión elegida en el selector del modal (tanto al crear
+  // como al editar) — antes al editar se sobrescribía sola con
   // currentSaveSesion() en cada edición, sin que el usuario lo pidiera.
   const sesSel=document.getElementById('mEditSesionSel');
-  const saveSesion=(ei && sesSel && sesSel.value) ? sesSel.value : currentSaveSesion();
+  const saveSesion=(sesSel && sesSel.value) ? sesSel.value : currentSaveSesion();
   const body={action:ei?'updateGasto':'saveGasto',fecha:fechaCompraValue(),fecha_captura:document.getElementById('iCaptura').value||localDateTimeValue(new Date()),costo:document.getElementById('iCosto').value.trim(),moneda_pago:document.getElementById('iMonedaPago').value,costo_conv:document.getElementById('iConv').value.trim(),moneda_conv:document.getElementById('iMonedaConv').value,otra_moneda:document.getElementById('iConv').value.trim(),moneda:document.getElementById('iMonedaConv').value,concepto:document.getElementById('iConc').value.trim(),
 tienda:document.getElementById('iTienda').value.trim(),
 producto:document.getElementById('iTienda').value.trim(),
@@ -4146,7 +4156,7 @@ async function v34EliminarContenedor(tipo){
 async function v34CambiarContenedor(tipo, id){
   v34SetActualId(tipo, id);
   if(tipo==='lista'){ v27ShopLoaded=false; await v28LoadShopping(); }
-  else { v30RenderInv(); }
+  else { await loadExp(); v30RenderInv(); }
 }
 async function v34NuevoContenedor(tipo){
   const nombre=prompt(tipo==='inventario'?'Nombre del nuevo inventario (ej. "Despensa casa", "Bodega"):':'Nombre de la nueva lista (ej. "Costco", "Súper de la semana"):');
@@ -4611,8 +4621,14 @@ async function v30DelProd(rowIndex){
 // ── v14: Formulario único de producto ──
 let pfTarget='sheet'; // 'sheet' = inventario | 'draft' = visor del modal | 'edit' = fila existente | 'draftEdit' = línea del ticket
 let pfEditRow=null, pfDraftIdx=null, pfFotoOriginal='';
-function v31ProdForm(cfg){
+async function v31ProdForm(cfg){
   cfg=cfg||{};
+  // v29: si abres "＋ Producto a inventario" justo cuando la pestaña acaba
+  // de cargar, inventarios podía seguir vacío (aún no había resuelto
+  // v34LoadInventarios) — el selector de inventario destino no aparecía y
+  // el producto se guardaba sin inventarioId (solo visible en el
+  // predeterminado), sin importar cuál estuvieras viendo.
+  if((cfg.target||'sheet')==='sheet' && !invContenedoresLoaded){ await v34LoadInventarios(); }
   pfTarget=cfg.target||'sheet';
   pfEditRow = (cfg.editRow!=null) ? cfg.editRow : null;
   pfDraftIdx = (cfg.draftIndex!=null) ? cfg.draftIndex : null;
@@ -5663,6 +5679,13 @@ function pCardLabel(c){
   const red = c.red? (' '+c.red) : '';
   return (c.banco||'')+red+' '+tipo+term+tit;
 }
+// v29: string "TDC§Banco ····1234" que usa el campo Pago de un gasto,
+// reutilizado por todo lo que registra un gasto real desde Finanzas.
+function pPagoStrDeTarjeta(cardId){
+  const c=pCardById(cardId); if(!c) return '';
+  const label=((c.banco||'')+((c.termFisica||c.terminacion)?(' ····'+(c.termFisica||c.terminacion)):'')+(c.termVirtual?(' /····'+c.termVirtual):'')).trim();
+  return (c.ctipo||'TDC')+'§'+label;
+}
 function pCardOptions(sel){
   const cards=pItemsOf('tarjeta');
   return '<option value="">— sin tarjeta —</option>'+cards.map(c=>
@@ -6050,16 +6073,42 @@ function pToggleFijoPagado(id){
   f.pagos[mk]={monto:parseFloat(f.monto)||0, fecha:(fecha||hoy).trim()};
   pSaveItem(f);
 }
-function pAddFijoPago(id){
+async function pAddFijoPago(id){
   const f=pItems.find(x=>x.id===id); if(!f)return;
-  const periodo=prompt('Periodo a registrar (ej. 2026-04, 2026-05-Q1, abril, quincena 1):', pMesKey());
+  let periodo=prompt('Periodo a registrar (ej. 2026-04, 2026-05-Q1, abril, quincena 1):', pMesKey());
   if(periodo===null||!periodo.trim()) return;
+  periodo=periodo.trim();
+  f.pagos=f.pagos||{};
+  // v29: si ya había un pago con ese mismo periodo (típico: aceptaste el mes
+  // sugerido y ya existía uno), antes se PISABA en silencio y el segundo
+  // pago desaparecía. Ahora se ofrece un periodo alterno en vez de perderlo.
+  if(f.pagos[periodo]){
+    let i=2, alterno=periodo+'-'+i;
+    while(f.pagos[alterno]){ i++; alterno=periodo+'-'+i; }
+    if(!confirm('Ya hay un pago registrado para "'+periodo+'". ¿Guardar este como "'+alterno+'" en vez de reemplazarlo?')) return;
+    periodo=alterno;
+  }
   const hoy=new Date().toISOString().substring(0,10);
   const fecha=prompt('Fecha de pago:', hoy); if(fecha===null) return;
   const monto=prompt('Monto pagado:', f.monto||''); if(monto===null) return;
-  f.pagos=f.pagos||{};
-  f.pagos[periodo.trim()]={monto:parseFloat(monto)||0, fecha:(fecha||hoy).trim()};
-  pSaveItem(f);
+  f.pagos[periodo]={monto:parseFloat(monto)||0, fecha:(fecha||hoy).trim()};
+  // v29: también se registra como gasto real, igual que "Registrar pago" —
+  // antes esto solo quedaba anotado aquí y nunca aparecía en Gastos.
+  if(f.generaGasto!==false){
+    const ses=currentSaveSesion();
+    try{
+      await postGAS({action:'saveGasto', fecha:(fecha||hoy).trim(), fecha_captura:localDateTimeValue(new Date()),
+        costo:parseFloat(monto)||0, moneda_pago:appSettings.moneda_local,
+        concepto:(f.concepto||'Pago fijo')+' ('+periodo+')', tienda:f.concepto||'',
+        quien_paga:myName(), compartido:'Personal',
+        pago:(f.formaPago==='Tarjeta'&&f.tarjeta)?pPagoStrDeTarjeta(f.tarjeta):'',
+        categoria:f.categoria||'Servicios', notas:'Generado desde pago fijo '+f.id+' · '+periodo,
+        sesion:ses});
+      invalidateSesionCache(ses);
+      if(personalMode) await pReloadMisGastos(); else await loadExp();
+    }catch(e){}
+  }
+  await pSaveItem(f);
 }
 function pAccionFijo(id){
   const f=pItems.find(x=>x.id===id); if(!f)return;
