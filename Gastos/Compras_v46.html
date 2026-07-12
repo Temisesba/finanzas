@@ -1220,6 +1220,23 @@ details:not([open]) .chev{transform:rotate(-90deg)}
 
 
 <!-- v11: Gate de sesión (primera vez / contraseña) -->
+<!-- v29: sin URL de backend guardada, la app no intenta conectar a nada — pide configurarla -->
+<div class="overlay" id="gasUrlGate" style="display:none;z-index:310">
+  <div class="modal" style="max-width:440px">
+    <div class="mhdr"><h2>⚙️ Configurar backend</h2></div>
+    <div class="mbody">
+      <div style="font-size:13px;color:var(--ink-2);margin-bottom:10px">Esta app necesita la URL de tu Apps Script (backend) para funcionar. No viene guardada en el código — pégala aquí una vez; se queda solo en este navegador.</div>
+      <div class="field"><label>URL del backend</label>
+        <input type="text" id="gasUrlInput" placeholder="https://script.google.com/macros/s/.../exec" style="width:100%" onkeydown="if(event.key==='Enter')v29SubmitGasUrl()">
+      </div>
+      <div id="gasUrlStatus" class="rt-status" style="display:block;margin-bottom:8px"></div>
+      <div class="mfooter" style="padding:0">
+        <button class="bsv" onclick="v29SubmitGasUrl()">Guardar y continuar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="overlay" id="sessionGate" style="display:none;z-index:300">
   <div class="modal" style="max-width:400px">
     <div class="mhdr"><h2>🔐 Elegir sesión</h2></div>
@@ -1266,6 +1283,13 @@ details:not([open]) .chev{transform:rotate(-90deg)}
           <button class="notes-save-btn" onclick="v28AddName()">Agregar</button>
         </div>
         <div id="namesStatus" class="rt-status" style="display:block;margin-top:6px"></div>
+      </div>
+      <div class="field"><label>URL del backend</label>
+        <div style="display:flex;gap:8px">
+          <input type="text" id="gasUrlEditInput" placeholder="https://script.google.com/macros/s/.../exec" style="flex:1">
+          <button class="rt-btn" onclick="v29UpdateGasUrl()">Guardar</button>
+        </div>
+        <div style="font-size:11px;color:var(--ink-3);margin-top:4px">Solo se guarda en este navegador. Cámbiala aquí si tu backend se movió a otra URL.</div>
       </div>
     </div>
   </div>
@@ -1327,6 +1351,7 @@ details:not([open]) .chev{transform:rotate(-90deg)}
       </div>
       <div class="field"><label>Categoría</label><input type="text" id="pfCatInv" list="list-inv-cats" placeholder="Ej. Embutidos"></div>
       <div class="field"><label>Lugar donde se guarda</label><input type="text" id="pfUbicacion" list="list-inv-lugares" placeholder="Ej. Refri, vitrina roja, cajón 3"></div>
+      <div class="field" id="pfInventarioField" style="display:none"><label>Inventario</label><select id="pfInventarioSel" style="width:100%"></select></div>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
         <div class="field"><label>Piezas</label><input type="number" id="pfPiezas" value="1" min="0"></div>
         <div class="field"><label>Cantidad</label><input type="number" id="pfCantidad" placeholder="500"></div>
@@ -1652,7 +1677,18 @@ details:not([open]) .chev{transform:rotate(-90deg)}
 </div>
 
 <script>
-const GAS_URL='https://script.google.com/macros/s/AKfycby7JVoMBRNuu_xZKMcgvlrzpV7ksqNkeqstc2OaOpZzZVemgM4GRUl0Z1imsr5hOQNG/exec';
+// v29: la URL del backend (Apps Script) YA NO se escribe aquí — este archivo es
+// público en GitHub. Se guarda una sola vez en localStorage de tu navegador,
+// pegándola en el aviso inicial o en 👥 Sesiones y nombres → URL del backend.
+let GAS_URL=localStorage.getItem('gastos_gas_url')||'';
+function v29TieneGasUrl(){ return !!GAS_URL; }
+function v29GuardarGasUrl(url){
+  url=String(url||'').trim();
+  if(!url) return false;
+  GAS_URL=url;
+  localStorage.setItem('gastos_gas_url', url);
+  return true;
+}
 const MONEDAS=['JPY','MXN','USD','EUR','KRW','CNY','GBP','CAD','ARS','COP','BRL','—'];
 
 let allExp=[];
@@ -1871,8 +1907,15 @@ async function v29LoadAllPeople(force){
 function pSetSoy(n){ if(!n)return; localStorage.setItem('gastos_myname', n); renderNames(); v29FillSesionSelect(); showToast('⭐ Eres '+n); }
 function openPeople(){ v29FillSesionSelect(); renderNames();
   const mf=document.getElementById('miembrosField'); if(mf) mf.style.display=personalMode?'none':'';
+  const gu=document.getElementById('gasUrlEditInput'); if(gu) gu.value=GAS_URL;
   document.getElementById('peopleOverlay').style.display='flex'; }
 function closePeople(){ document.getElementById('peopleOverlay').style.display='none'; }
+function v29UpdateGasUrl(){
+  const v=document.getElementById('gasUrlEditInput').value.trim();
+  if(!v || !/^https:\/\/script\.google\.com\/macros\//.test(v)){ showToast('⚠ Pega la URL completa de Apps Script'); return; }
+  v29GuardarGasUrl(v);
+  showToast('✓ URL guardada — recarga la página si algo no conecta');
+}
 
 // v29: al cambiar de sesión/modo, limpia la vista de inmediato para nunca
 // mostrar datos de la sesión anterior mezclados con la nueva mientras carga.
@@ -2258,7 +2301,21 @@ async function v33SubirFotoFila() {
   }
 }
 
+function v29SubmitGasUrl(){
+  const v=document.getElementById('gasUrlInput').value.trim();
+  if(!v || !/^https:\/\/script\.google\.com\/macros\//.test(v)){
+    document.getElementById('gasUrlStatus').textContent='⚠ Pega la URL completa (empieza con https://script.google.com/macros/...)';
+    return;
+  }
+  v29GuardarGasUrl(v);
+  document.getElementById('gasUrlGate').style.display='none';
+  init();
+}
 async function init(){
+  if(!v29TieneGasUrl()){
+    document.getElementById('gasUrlGate').style.display='flex';
+    return; // v29: sin URL configurada, no se intenta conectar a nada
+  }
   const s=localStorage.getItem('gastos_v8_settings');
   if(s) appSettings={...appSettings,...JSON.parse(s)};
   buildCurrencySelects();
@@ -2634,7 +2691,7 @@ function renderCards(data){
     const msiMes  =(typeof pItemsOf==='function')?pItemsOf('msi').reduce((s,m)=>s+(pMSICuotaMonto(m)),0):0;
     const egresos = egSes + gastosP + fijos + msiMes;
     // Deudas: neto sesión + externas
-    const sesNet=(function(){ try{ return pPersonalNetFromRows(misGastosAll, me)||0; }catch(_){ return 0; } })();
+    const sesNet=(function(){ try{ return pMiDeudaGlobalNet()||0; }catch(_){ return 0; } })();
     const extNet=(typeof pItemsOf==='function')?pItemsOf('deuda').reduce((s,d)=>{ const a=parseFloat(d.monto)||0; return s+(d.dir==='medeben'?a:-a); },0):0;
     const net=Math.round(sesNet+extNet);
     let dl='🤝 Deudas', dv='Al día ✅';
@@ -3997,9 +4054,10 @@ async function v28LoadShopping(){
   await v29LoadDeptos();
   listas=await v34LoadContenedores('lista');
   const box=document.getElementById('listaSelectorBox'); if(box) box.innerHTML=v34SelectorHTML('lista',listas);
-  const listaId=v34ContenedorActual('lista',listas).id;
+  const listaActual=v34ContenedorActual('lista',listas);
+  const listaId=listaActual.id;
   try{
-    const r=await postGAS({action:'getShopping', sesion:currentSaveSesion(), listaId});
+    const r=await postGAS({action:'getShopping', sesion:currentSaveSesion(), listaId, esDefault:!!listaActual.def});
     shopItems = Array.isArray(r.items) ? r.items : [];
     v27ShopLoaded=true;
     if(shopItems.length===0) shopItems.push({done:false,item:'',depto:'',quien:'',tienda:'',sesion:currentSaveSesion(),alcance:'solo',listaId});
@@ -4101,8 +4159,9 @@ function v28QueueSave(){
   shopSaveTimer=setTimeout(v28SaveShopping, 800); // debounce: agrupa cambios rápidos
 }
 async function v28SaveShopping(){
+  const listaActual=v34ContenedorActual('lista',listas);
   try{
-    const r=await postGAS({action:'saveShopping', sesion:currentSaveSesion(), listaId:v34ContenedorActual('lista',listas).id, items: shopItems.filter(it=>it.item.trim()!=='' || it.depto || it.tienda)});
+    const r=await postGAS({action:'saveShopping', sesion:currentSaveSesion(), listaId:listaActual.id, esDefault:!!listaActual.def, items: shopItems.filter(it=>it.item.trim()!=='' || it.depto || it.tienda)});
     if(r.ok){ const h=new Date().toTimeString().substring(0,5); v27SetStatus('shopStatus27','✓ Guardado '+h,true); }
     else v27SetStatus('shopStatus27','⚠ '+(r.error||'Error'));
   }catch(e){ v27SetStatus('shopStatus27','⚠ Error de red — se reintenta al próximo cambio'); }
@@ -4137,10 +4196,12 @@ function v30InvData(){
       precioComp: precioComp(p.precioInd,p.cantidad,p.unidad)
     };
   });
-  // v29: solo productos del inventario con nombre actualmente seleccionado
-  // (los que no tienen inventarioId asignado se ven en cualquiera, por compatibilidad).
-  const invActualId=v34ContenedorActual('inventario',inventarios).id;
-  if(invActualId) list=list.filter(p=>!p.inventarioId || p.inventarioId===invActualId);
+  // v29: solo productos del inventario con nombre actualmente seleccionado.
+  // Los que no tienen inventarioId (todo lo capturado antes de esta función)
+  // se ven en el PREDETERMINADO — no en cualquiera, si no un inventario nuevo
+  // se vería lleno de lo viejo y nunca se sentiría "vacío y propio".
+  const invActual=v34ContenedorActual('inventario',inventarios);
+  if(invActual.id) list=list.filter(p=>p.inventarioId===invActual.id || (!p.inventarioId && invActual.def));
   if(invFilter==='inventario') list=list.filter(p=>!p.esCot && (p.inventario||'SI')!=='NA' && String(p.queda??'')!=='0');
   else if(invFilter==='cotizacion') list=list.filter(p=>p.esCot);
   else if(invFilter==='prioritarios'){ const st=v31StarredNames(); list=list.filter(p=>st.has(normTxt(p.concepto))); }
@@ -4319,7 +4380,7 @@ function v35EditProd(rowIndex){
     tienda:p.tienda||'', codigo:p.codigo||'',
     esCot:p.compartido==='Cotizacion',
     inventario:(p.inventario||'SI')!=='NA',
-    prioritario:p.prioritario, queda:p.queda,
+    prioritario:p.prioritario, queda:p.queda, inventarioId:p.inventarioId||'',
     foto:p.fotoProducto||''});
   document.getElementById('pfTitle').textContent='✏️ Editar: '+p.concepto;
 }
@@ -4427,6 +4488,14 @@ function v31ProdForm(cfg){
   document.getElementById('pfQueda').value=(cfg.queda!=null&&cfg.queda!=='')?String(cfg.queda):'';
   document.getElementById('pfInv').checked=cfg.inventario!==false;
   document.getElementById('pfStar').checked = cfg.prioritario==='SI'||cfg.prioritario===true;
+  // v29: al agregar/editar DIRECTO en inventario, deja elegir a cuál inventario va
+  // (por default el que estás viendo ahora mismo, no forzosamente el predeterminado)
+  const pfInvField=document.getElementById('pfInventarioField');
+  if((pfTarget==='sheet'||pfTarget==='edit') && inventarios && inventarios.length>1){
+    pfInvField.style.display='';
+    const curId=cfg.inventarioId || v34ContenedorActual('inventario',inventarios).id;
+    document.getElementById('pfInventarioSel').innerHTML=inventarios.map(c=>'<option value="'+esc(c.id)+'"'+(c.id===curId?' selected':'')+'>'+esc(c.nombre)+(c.def?' ⭐':'')+'</option>').join('');
+  } else { pfInvField.style.display='none'; }
   v33FotoClear();
   pfFotoOriginal = cfg.foto||'';
   if(cfg.foto){ v34UsarFoto(cfg.foto, true); }
@@ -4472,7 +4541,7 @@ async function v31ProdFormSubmit(){
     codigo:document.getElementById('pfCodigo').value.trim(),
     queda:document.getElementById('pfQueda').value||'',
     prioritario:document.getElementById('pfStar').checked?'SI':'',
-    inventarioId:v34ContenedorActual('inventario',inventarios).id
+    inventarioId:(document.getElementById('pfInventarioField').style.display!=='none' && document.getElementById('pfInventarioSel').value) || v34ContenedorActual('inventario',inventarios).id
   };
   if(pfFoto.b64){ prod.fotoBase64=pfFoto.b64; prod.fotoMime=pfFoto.mime; }
   else if(pfFotoUrl){ prod.fotoUrl=pfFotoUrl; }
@@ -4488,7 +4557,7 @@ async function v31ProdFormSubmit(){
       precioInd:prod.precioInd, caducidad:prod.caducidad,
       tienda:document.getElementById('pfTienda').value.trim(),
       codigo:prod.codigo, inventario:prod.inventario,
-      queda:prod.queda, prioritario:prod.prioritario};
+      queda:prod.queda, prioritario:prod.prioritario, inventarioId:prod.inventarioId};
     // Cotización: solo tocamos "compartido" si el checkbox CAMBIÓ
     const pAct=allProds.find(x=>x.rowIndex===pfEditRow);
     const eraCot=!!(pAct && pAct.compartido==='Cotizacion');
@@ -5499,8 +5568,7 @@ function pProximosMiniHTML(){
   pItemsOf('tarjeta').filter(c=>c.ctipo==='TDC' && !(c.pagos||{})[mk]).forEach(c=>rows.push({fecha:pFechaMesDia(mk,c.diaLimite), txt:'💳 '+pCardLabel(c)}));
   rows.sort((a,b)=>(a.fecha||'9999').localeCompare(b.fecha||'9999'));
   // v29: siempre visible junto a próximos pagos, sin importar el filtro de Gastos activo
-  const me=myName();
-  const sesNet=(function(){ try{ return pPersonalNetFromRows(misGastosAll||[], me)||0; }catch(_){ return 0; } })();
+  const sesNet=(function(){ try{ return pMiDeudaGlobalNet()||0; }catch(_){ return 0; } })();
   const extNet=pItemsOf('deuda').reduce((s,d)=>{ const a=parseFloat(d.monto)||0; return s+(d.dir==='medeben'?a:-a); },0);
   const net=Math.round(sesNet+extNet);
   const deudaTxt=net>0?('💰 Te deben <strong>'+curSym()+net.toLocaleString()+'</strong>'):(net<0?('⚠️ Debes <strong>'+curSym()+Math.abs(net).toLocaleString()+'</strong>'):'✅ Deudas al día');
@@ -5583,15 +5651,23 @@ function pRenderResumen(){
 }
 
 // ── INVERSIONES (resumen dentro de Resumen) ──
-//  Proyección a vencimiento con interés compuesto anual sobre el monto inicial.
+//  Proyección con interés compuesto anual. Si hay fecha de fin, calcula
+//  exactamente a esa fecha (desde el inicio de la inversión). Si no, siempre
+//  muestra una proyección "a 1 año desde hoy" sobre el VALOR ACTUAL, para que
+//  el campo sirva aunque no sepas todavía cuándo vence.
 function pInversionMontoFinal(i){
   const tasa=parseFloat(i.tasaInteres)||0;
-  if(!tasa || !i.fechaFin || !i.fecha) return null;
-  const ini=new Date(i.fecha+'T12:00:00'), fin=new Date(i.fechaFin+'T12:00:00');
-  const years=(fin-ini)/(365.25*86400000);
-  if(years<=0) return null;
-  const base=parseFloat(i.montoInicial)||0;
-  return base*Math.pow(1+tasa/100, years);
+  if(!tasa) return null;
+  if(i.fechaFin && i.fecha){
+    const ini=new Date(i.fecha+'T12:00:00'), fin=new Date(i.fechaFin+'T12:00:00');
+    const years=(fin-ini)/(365.25*86400000);
+    if(years>0){
+      const base=parseFloat(i.montoInicial)||0;
+      return {monto:base*Math.pow(1+tasa/100, years), label:'al vencer ('+i.fechaFin+')'};
+    }
+  }
+  const base=parseFloat(i.valorActual)||parseFloat(i.montoInicial)||0;
+  return {monto:base*(1+tasa/100), label:'proyectado a 1 año'};
 }
 function pRenderInversionesResumen(){
   const items=pItemsOf('inversion');
@@ -5605,7 +5681,7 @@ function pRenderInversionesResumen(){
       <div style="flex:1;min-width:0">
         <div style="font-weight:600;font-size:12.5px">${esc(i.nombre||'—')}${i.institucion?(' · '+esc(i.institucion)):''}</div>
         <div style="font-size:10px;color:var(--ink-3)">invertido ${pMoney(i.montoInicial)}${g?(' · '+(g>0?'+':'')+pMoney(g)):''}${i.tasaInteres?(' · '+esc(i.tasaInteres)+'%/año'):''}</div>
-        ${montoFinal?'<div style="font-size:10px;color:var(--shared);font-weight:600">al vencer ('+esc(i.fechaFin)+'): '+pMoney(montoFinal)+'</div>':''}
+        ${montoFinal?'<div style="font-size:10px;color:var(--shared);font-weight:600">'+esc(montoFinal.label)+': '+pMoney(montoFinal.monto)+'</div>':''}
       </div>
       <div style="font-family:var(--mono);font-weight:700">${pMoney(i.valorActual)}</div>
       <button class="rt-btn" onclick="pOpenForm('inversion','${esc(i.id)}')">✏️</button>
@@ -5624,52 +5700,28 @@ function pRenderInversionesResumen(){
 }
 
 // ── DEUDAS ──
-// v29: neto de deuda por sesión (positivo=te deben, negativo=debes), usando
-// el mismo cálculo ya validado que el resumen general (pPersonalNetFromRows)
-// pero corrido sobre cada sesión por separado en vez del total agregado.
-// (Antes se intentaba desglosar por CONTRAPARTE individual repartiendo cada
-// entrada entre "participantes", pero esos números no coincidían con el
-// veredicto de la sesión — que hace una simplificación GLOBAL de mínimos
-// pagos entre todos los miembros, no una cuenta persona-a-persona. Mostrar
-// solo el neto por sesión evita esa contradicción.)
-function pDeudasPorSesion(){
-  const me=myName();
-  const porSes={};
-  (misGastosAll||[]).forEach(e=>{ const ses=e.sesion||'Personal'; (porSes[ses]=porSes[ses]||[]).push(e); });
-  const bySes={};
-  Object.keys(porSes).forEach(ses=>{ bySes[ses]=Math.round(pPersonalNetFromRows(porSes[ses], me)); });
-  return bySes;
+// v29 (3ª vez): el desglose por sesión/contraparte ahora viene DIRECTO del
+// backend (misDeudasPorSesion, calculado en getMisGastos con acceso a los
+// miembros reales de cada sesión). Las dos versiones anteriores lo intentaban
+// reconstruir en el cliente con datos parciales y nunca coincidían del todo
+// con el neto — esta usa exactamente los mismos arreglos que ya calculan
+// miParte, así que neto y desglose SIEMPRE suman igual, por construcción.
+//  Neto GLOBAL (todas las sesiones) a partir de la misma fuente autoritativa.
+function pMiDeudaGlobalNet(){
+  let net=0;
+  Object.values(misDeudasPorSesion||{}).forEach(det=>{ Object.values(det||{}).forEach(v=>{ net+=v; }); });
+  return net;
 }
-//  v29: desglose por CONTRAPARTE dentro de cada sesión, con el mismo signo ya
-//  corregido que pPersonalNetFromRows (Devolución = mismo sentido que Préstamo).
-//  En una sesión de 2 personas esto SIEMPRE suma exacto al neto de arriba (no
-//  hay tercero por el que enrutar). En sesiones de 3+ es una atribución cruda
-//  por entrada, no la simplificación mínima del veredicto — puede no agrupar
-//  igual, pero nunca contradice el signo (a quién le debes / quién te debe).
-function pDeudasPorSesionDetalle(){
-  const me=myName();
+function pDeudasPorSesion(){
   const bySes={};
-  const addTo=(ses,who,amt)=>{ if(!who||who===me||!amt) return; if(!bySes[ses]) bySes[ses]={}; bySes[ses][who]=(bySes[ses][who]||0)+amt; };
-  (misGastosAll||[]).forEach(e=>{
-    const ses=e.sesion||'Personal';
-    const comp=e.compartido, a=parseFloat(e.costo)||0, mi=parseFloat(e.miParte)||0;
-    const q=e.quien_paga;
-    const parts=(Array.isArray(e.participantes)&&e.participantes.length)?e.participantes:null;
-    if(comp==='Compartido'){
-      if(q===me){
-        const otros=parts?parts.filter(p=>p!==me):[];
-        const n=(parts?parts.length:0)||1;
-        otros.forEach(p=>addTo(ses,p,a/n));
-      } else addTo(ses,q,-mi);
-    } else if(comp==='Prestamo' || comp==='Devolucion'){
-      if(q===me){
-        const deudores=parts?parts.filter(p=>p!==me):[];
-        const n=deudores.length||1;
-        deudores.forEach(p=>addTo(ses,p,a/n));
-      } else addTo(ses,q,-(mi||a));
-    }
+  Object.keys(misDeudasPorSesion||{}).forEach(ses=>{
+    const det=misDeudasPorSesion[ses]||{};
+    bySes[ses]=Math.round(Object.values(det).reduce((s,v)=>s+v,0));
   });
   return bySes;
+}
+function pDeudasPorSesionDetalle(){
+  return misDeudasPorSesion||{};
 }
 function pRenderDeudasSesionHTML(){
   const bySes=pDeudasPorSesion();
@@ -5868,7 +5920,7 @@ function pRenderTarjetas(){
       </div>`;
     }
     // Datos sensibles (ocultos hasta pedir contraseña de datos sensibles)
-    const sensibles=[vField('CLABE',c.clabe),vField('Núm. física',c.numFisica),vField('Núm. virtual',c.numVirtual),vField('PIN',c.pin)].filter(Boolean).join(' ');
+    const sensibles=[vField('CLABE',c.clabe),vField('Núm. física',c.numFisica),vField('Vence física',c.venceFisica),vField('Núm. virtual',c.numVirtual),vField('Vence virtual',c.venceVirtual),vField('PIN',c.pin)].filter(Boolean).join(' ');
     const sensiblesHtml=sensibles?`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">${sensibles}</div>`:'';
     // Comisiones/intereses (solo si hay algo capturado)
     const feeParts=[];
@@ -6195,13 +6247,19 @@ function pReadFileBase64(file){
     r.readAsDataURL(file);
   });
 }
+function pMostrarSubirPdf(){
+  const w=pF('pfPdfSubirWrap'); if(w) w.style.display='';
+  const t=pF('pfPdfTieneUno'); if(t) t.style.display='none';
+}
 async function pLeerEstadoIA(){
   const btn=(typeof event!=='undefined'&&event&&event.target)?event.target:null; if(btn){ btn.disabled=true; btn.textContent='Leyendo…'; }
   try{
     const file=(pF('pfPdfFile')&&pF('pfPdfFile').files&&pF('pfPdfFile').files[0])||null;
     const transcript=pFval('pfTranscript');
     const base64=file?await pReadFileBase64(file):'';
-    const r=await postGAS({action:'leerEstadoCuenta', owner:pOwner, pass:pPass, base64, mimeType:file?(file.type||'application/pdf'):'', transcript});
+    // v29: si no elegiste un archivo nuevo pero ya hay un PDF guardado, se lee ESE
+    const pdfUrl=(!file && !transcript) ? pFval('pfPdfUrl') : '';
+    const r=await postGAS({action:'leerEstadoCuenta', owner:pOwner, pass:pPass, base64, mimeType:file?(file.type||'application/pdf'):'', transcript, pdfUrl});
     if(!(r&&r.ok)) throw new Error((r&&r.error)||'No se pudo leer');
     const x=r.result||{};
     if(x.total!=null) pF('pfTotal').value=x.total;
@@ -6323,6 +6381,10 @@ function pFormFieldsHTML(tipo, it){
             ${F('Nº completo — física','pfNumFis',it.numFisica,'placeholder="16 dígitos" autocomplete="off"')}
             ${F('Nº completo — virtual','pfNumVir',it.numVirtual,'placeholder="16 dígitos" autocomplete="off"')}
           </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            ${F('Vencimiento — física (MM/AA)','pfVenceFis',it.venceFisica,'placeholder="12/28" maxlength="5" autocomplete="off"')}
+            ${F('Vencimiento — virtual (MM/AA)','pfVenceVir',it.venceVirtual,'placeholder="12/28" maxlength="5" autocomplete="off"')}
+          </div>
           ${F('PIN (opcional)','pfPin',it.pin,'placeholder="4 dígitos" autocomplete="off"')}
           <div style="font-size:10px;color:var(--ink-3)">Se guardan tal cual en tu Sheet privado. En la lista de tarjetas se ven ocultos hasta que pongas tu contraseña de datos sensibles (distinta de tu contraseña personal).</div>
           </div>
@@ -6332,8 +6394,15 @@ function pFormFieldsHTML(tipo, it){
     const c=pCardById(it.tarjeta)||pItemsOf('tarjeta')[0]||{};
     const mk=it.mes||pMesKey();
     const cy=c.id?pCicloTarjeta(c,mk):{label:'—'};
-    const pdfLink=it.pdfUrl?`<a href="${esc(it.pdfUrl)}" target="_blank" class="rt-btn" style="text-decoration:none;font-size:11px">📄 Ver PDF actual</a>`:'';
-    return `<div class="pf-field"><label>Subir PDF${it.pdfUrl?' (ya hay uno — sube otro para reemplazarlo)':''}</label><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><input type="file" id="pfPdfFile" accept="application/pdf" style="flex:1;min-width:160px">${pdfLink}</div></div>`
+    const pdfEstado = it.pdfUrl
+      ? `<div class="pf-field"><label>PDF</label><div id="pfPdfTieneUno" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px">
+          <span style="color:var(--shared);font-weight:600">✓ Ya tienes un PDF subido</span>
+          <a href="${esc(it.pdfUrl)}" target="_blank" class="rt-btn" style="text-decoration:none;font-size:11px">👁 Ver</a>
+          <button type="button" class="rt-btn" style="font-size:11px" onclick="pMostrarSubirPdf()">🗑 Quitar y subir otro</button>
+        </div></div>`
+      : '';
+    return pdfEstado
+      + `<div class="pf-field" id="pfPdfSubirWrap" style="${it.pdfUrl?'display:none':''}"><label>Subir PDF</label><input type="file" id="pfPdfFile" accept="application/pdf" style="width:100%"></div>`
       + `<div style="display:flex;gap:8px;flex-wrap:wrap;margin:-2px 0 10px 0">
           <button type="button" class="rt-btn" style="font-weight:600;color:var(--personal);border-color:var(--personal)" onclick="pLeerEstadoIA()">🤖 Leer con IA</button>
           <button type="button" class="rt-btn" onclick="pAutoMatchFormMovs()">🔎 Auto-identificar</button>
@@ -6405,7 +6474,7 @@ async function pFormSave(){
     item={...base, concepto:pFval('pfConcepto').trim(), tipoPago, monto:parseFloat(pFval('pfMonto'))||0, frecuencia:pFval('pfFrecuencia')||'mensual', diaLimite:pFval('pfDiaLimite'), fechaPago:pFval('pfFechaPago'), categoria:pFval('pfCategoria').trim(), formaPago:pFval('pfFormaPago'), tarjeta:(pFval('pfFormaPago')==='Tarjeta'?pFval('pfTarjeta'):''), generaGasto:(tipoPago==='tarjeta'?false:(pFval('pfGeneraGasto')!=='no')), nota:pFval('pfNota').trim(), pagos:(prev&&prev.pagos)||{}};
   } else if(t==='tarjeta'){
     if(!pFval('pfBanco').trim() && !pFval('pfNombre').trim()){ showToast('Pon al menos alias o banco'); return; }
-    item={...base, nombre:pFval('pfNombre').trim(), titular:pFval('pfTitular').trim(), banco:pFval('pfBanco').trim(), ctipo:pFval('pfCtipo'), termFisica:pFval('pfTermFis').trim(), termVirtual:pFval('pfTermVir').trim(), diaCorte:pFval('pfDiaCorte'), diaDisponible:pFval('pfDiaDisponible'), diaLimite:pFval('pfDiaLimite'), creditoMax:parseFloat(pFval('pfCreditoMax'))||0, interesAnual:parseFloat(pFval('pfInteres'))||0, comisionTardio:parseFloat(pFval('pfComisionTardio'))||0, comisionInactividad:parseFloat(pFval('pfComisionInactividad'))||0, requisitoMinimo:pFval('pfRequisitoMinimo').trim(), clabe:pFval('pfClabe').trim(), numFisica:pFval('pfNumFis').trim(), numVirtual:pFval('pfNumVir').trim(), pin:pFval('pfPin').trim(), nota:pFval('pfNotaTarj').trim()};
+    item={...base, nombre:pFval('pfNombre').trim(), titular:pFval('pfTitular').trim(), banco:pFval('pfBanco').trim(), ctipo:pFval('pfCtipo'), termFisica:pFval('pfTermFis').trim(), termVirtual:pFval('pfTermVir').trim(), diaCorte:pFval('pfDiaCorte'), diaDisponible:pFval('pfDiaDisponible'), diaLimite:pFval('pfDiaLimite'), creditoMax:parseFloat(pFval('pfCreditoMax'))||0, interesAnual:parseFloat(pFval('pfInteres'))||0, comisionTardio:parseFloat(pFval('pfComisionTardio'))||0, comisionInactividad:parseFloat(pFval('pfComisionInactividad'))||0, requisitoMinimo:pFval('pfRequisitoMinimo').trim(), clabe:pFval('pfClabe').trim(), numFisica:pFval('pfNumFis').trim(), numVirtual:pFval('pfNumVir').trim(), venceFisica:pFval('pfVenceFis').trim(), venceVirtual:pFval('pfVenceVir').trim(), pin:pFval('pfPin').trim(), nota:pFval('pfNotaTarj').trim()};
   } else if(t==='estado'){
     if(!pFval('pfTarjeta')){ showToast('Elige tarjeta'); return; }
     const prev=pFormId?pItems.find(x=>x.id===pFormId):null;
@@ -6656,6 +6725,7 @@ let personalMode = false;
 
 // Toggle de cabecera: activa/desactiva la vista personal
 let misGastosAll=[]; // v45: mis gastos de todas las sesiones
+let misDeudasPorSesion={}; // v29: {sesion:{contraparte:neto}} — calculado en el backend, misma fuente que miParte
 async function pReloadMisGastos(){
   if(!pOwner) pOwner=myName();
   if(!pOwner) return;
@@ -6663,12 +6733,14 @@ async function pReloadMisGastos(){
   try{
     const r=await postGAS({action:'getMisGastos', owner:pOwner, pass:pPass});
     misGastosAll=(r&&r.ok&&Array.isArray(r.gastos))?r.gastos:[];
-  }catch(e){ misGastosAll=[]; }
+    misDeudasPorSesion=(r&&r.ok&&r.debtsBySession)?r.debtsBySession:{};
+  }catch(e){ misGastosAll=[]; misDeudasPorSesion={}; }
 }
 // v29: contraseña de datos sensibles (CLABE, número completo, PIN de tarjetas) —
 // SEPARADA de la contraseña personal. Se guarda en sessionStorage (se olvida
 // al cerrar la pestaña, a propósito, para que no quede guardada en el dispositivo).
 async function vEnsure(){
+  if(!pOwner) pOwner=myName(); // v29: por si se llama antes de que Personal termine de inicializar pOwner
   if(vPass) return true;
   const cached=sessionStorage.getItem('gastos_vpass_'+pOwner);
   if(cached){ vPass=cached; return true; }
@@ -6843,7 +6915,7 @@ function pRenderMiLista(){
 </script>
 
 <!-- v34: Formulario del módulo Personal -->
-<div class="overlay" id="pFormOverlay" style="display:none;z-index:165;align-items:flex-start" onclick="if(event.target.id==='pFormOverlay')pCloseForm(false)">
+<div class="overlay" id="pFormOverlay" style="display:none;z-index:296;align-items:flex-start" onclick="if(event.target.id==='pFormOverlay')pCloseForm(false)">
   <div class="modal" style="max-width:460px;width:100%;margin:16px auto">
     <div class="mhdr" style="display:flex;align-items:center;justify-content:space-between;padding:15px 18px;border-bottom:1px solid var(--border)">
       <h2 id="pFormTitle" style="margin:0;font-size:16px">Nuevo</h2>
