@@ -1049,8 +1049,6 @@ details:not([open]) .chev{transform:rotate(-90deg)}
       <label>Cat:</label>
       <select id="catSelect" onchange="renderAll()" style="min-width:140px"><option value="">Todas</option></select>
       <button class="btn-clr" id="btnClearColFilters" style="display:none" onclick="clearColFilters()">✕ Filtros col.</button>
-      <div class="sep-line"></div>
-      <button class="btn-clr" onclick="v29QuickMSI()" title="Registrar una compra a meses sin intereses">🗓️ MSI</button>
     </div>
     <div class="search-bar">
       <div class="search-wrap">
@@ -1063,6 +1061,7 @@ details:not([open]) .chev{transform:rotate(-90deg)}
 <button class="ftab shr-t on" id="fltCompartido" data-f="Compartido" onclick="setFilter('Compartido',this)">🤝 Compartido</button>
       <button class="ftab lon-t" id="fltPrestamo" data-f="Prestamo" onclick="setFilter('Prestamo',this)">💸 Préstamo/↩️</button>
       <button class="ftab cot-t" id="fltCotizacion" data-f="Cotizacion" onclick="setFilter('Cotizacion',this)">💬 Cotización</button>
+      <button class="ftab" id="fltMSI" data-f="MSI" onclick="setFilter('MSI',this)">🗓️ MSI</button>
       <span id="personFilters"><!-- v10: dinámico --></span>
     </div>
 
@@ -1692,7 +1691,7 @@ details:not([open]) .chev{transform:rotate(-90deg)}
 // v29: nombre clave de esta entrega — cámbialo cada vez que termines un lote
 // de cambios, así en 👥 → 🛠 Panel dev se puede confirmar que el navegador
 // está cargando la versión más reciente y no una copia en caché.
-const BUILD_VERSION='Dalia';
+const BUILD_VERSION='Edelweiss';
 let GAS_URL=localStorage.getItem('gastos_gas_url')||'';
 function v29TieneGasUrl(){ return !!GAS_URL; }
 function v29GuardarGasUrl(url){
@@ -2646,6 +2645,9 @@ function getFilteredBase(){
   }
   else if(activeF==='Prestamo')   data=data.filter(e=>e.compartido==='Prestamo'||e.compartido==='Devolucion');
   else if(activeF==='Cotizacion') data=data.filter(e=>e.compartido==='Cotizacion'||e.quien_paga==='Cotizacion');
+  // v29: gastos ligados a una compra a MSI — las cuotas ya cobradas que se
+  // registraron como gasto real llevan "MSI <id>" en notas.
+  else if(activeF==='MSI') data=data.filter(e=>/\bMSI [A-Za-z0-9_-]/.test(e.notas||'')||/§MSI/.test(e.pago||''));
   else if(activeF.startsWith('P:')){const _n=activeF.slice(2);data=data.filter(e=>e.compartido==='Personal'&&e.quien_paga===_n);}
   else if(activeF.startsWith('S:')){const _s=activeF.slice(2);data=data.filter(e=>(e.sesion||'')===_s);} // v29: filtrar Personal por sesión de origen
   if(q) data=data.filter(e=>norm(e.concepto).includes(q)||norm(e.notas).includes(q)||norm(e.categoria).includes(q)||norm(e.quien_paga).includes(q)||norm(e.tienda||'').includes(q));
@@ -2694,13 +2696,14 @@ function renderCards(data){
     const me=myName();
     // v29: si hay un filtro Compartido/Préstamo/Cotización/Solo-personales activo,
     // las tarjetas reflejan ESE filtro en vez de siempre el resumen general.
-    if(activeF==='Compartido'||activeF==='Prestamo'||activeF==='Cotizacion'||activeF.startsWith('P:')||activeF.startsWith('S:')){
+    if(activeF==='Compartido'||activeF==='Prestamo'||activeF==='Cotizacion'||activeF==='MSI'||activeF.startsWith('P:')||activeF.startsWith('S:')){
       let tot=0, miParte=0;
       data.forEach(e=>{ tot+=(parseFloat(e.costo)||0); miParte+=(e.miParte!==undefined?(parseFloat(e.miParte)||0):(parseFloat(e.costo)||0)); });
       let l0='Total vista';
       if(activeF==='Compartido') l0='🤝 Total compartido';
       else if(activeF==='Prestamo') l0='💸 Total préstamos';
       else if(activeF==='Cotizacion') l0='💬 Total cotizado';
+      else if(activeF==='MSI') l0='🗓️ Total en MSI';
       else if(activeF.startsWith('P:')) l0='👤 Personales';
       else if(activeF.startsWith('S:')) l0='🗂️ '+activeF.slice(2);
       const L=[l0,'Mi parte','Registros','—'];
@@ -2870,6 +2873,7 @@ function updateContextNote(){
   if(activeF==='Compartido')parts.push('🤝 <strong>Compartido</strong>');
   else if(activeF==='Prestamo')parts.push('💸 <strong>Préstamos / Devoluciones</strong>');
   else if(activeF==='Cotizacion')parts.push('💬 <strong>Cotizaciones</strong>');
+  else if(activeF==='MSI')parts.push('🗓️ <strong>Compras a MSI</strong>');
   else if(activeF.startsWith('P:')){const _n=activeF.slice(2);parts.push(pEmoji(_n)+' <strong>Personal '+esc(_n)+'</strong>');}
   if(colFilters.quien_paga!==null) parts.push('Pagó: <strong>'+(colFilters.quien_paga.length?colFilters.quien_paga.join(', '):'ninguno')+'</strong>');
   if(colFilters.compartido!==null) parts.push('Tipo: <strong>'+(colFilters.compartido.length?colFilters.compartido.join(', '):'ninguno')+'</strong>');
@@ -5821,7 +5825,12 @@ function pRenderResumen(){
   // vas a pagar pero aún no) — entra en "Debo" y se resta sola conforme marcas
   // cuotas como pagadas.
   const msiPendienteTotal=pItemsOf('msi').reduce((s,m)=>s+pMSIPendiente(m),0);
-  const meDeben=meDebenExt, debo=deboExt+msiPendienteTotal;
+  // v29: el total de arriba antes solo sumaba deudas externas — si además
+  // debías/te debían dentro de una sesión (ej. "Japón"), ese neto no
+  // aparecía aquí, dando la impresión de que faltaba dinero por contar.
+  const sesNetTotal=(function(){ try{ return pMiDeudaGlobalNet()||0; }catch(_){ return 0; } })();
+  const sesMeDeben=sesNetTotal>0?sesNetTotal:0, sesDebo=sesNetTotal<0?-sesNetTotal:0;
+  const meDeben=meDebenExt+sesMeDeben, debo=deboExt+msiPendienteTotal+sesDebo;
   const saldoBase=pSaldoBase();
   const saldo=saldoBase+ingresos-gastos-fijosMes-msiMes;
   const mk=pMesKey();
@@ -5848,8 +5857,8 @@ function pRenderResumen(){
   </div>`;
 
   return command+`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:16px">
-    ${card('var(--shared-bg)','var(--shared-bdr)','var(--shared)','💰 Me deben', pMoney(meDeben), 'deudas registradas')}
-    ${card('var(--temis-bg)','var(--temis-bdr)','var(--temis)','⚠️ Debo', pMoney(debo), msiPendienteTotal?('externas '+pMoney(deboExt)+' + MSI '+pMoney(msiPendienteTotal)):'deudas registradas')}
+    ${card('var(--shared-bg)','var(--shared-bdr)','var(--shared)','💰 Me deben', pMoney(meDeben), sesMeDeben?('externas '+pMoney(meDebenExt)+' + sesiones '+pMoney(sesMeDeben)):'deudas registradas')}
+    ${card('var(--temis-bg)','var(--temis-bdr)','var(--temis)','⚠️ Debo', pMoney(debo), (msiPendienteTotal||sesDebo)?('externas '+pMoney(deboExt)+' + MSI '+pMoney(msiPendienteTotal)+' + sesiones '+pMoney(sesDebo)):'deudas registradas')}
     ${card('var(--lot-bg)','var(--lot-bdr)','var(--lot)','📈 Ingresos (reg.)', pMoney(ingresos), '')}
     ${card('var(--surface2)','var(--border2)','var(--ink)','🧮 Saldo estimado', pMoney(saldo), 'inicial '+pMoney(saldoBase)+' + ingresos − gastos − fijos − MSI')}
   </div>
@@ -6081,11 +6090,12 @@ async function pAddFijoPago(id){
   f.pagos=f.pagos||{};
   // v29: si ya había un pago con ese mismo periodo (típico: aceptaste el mes
   // sugerido y ya existía uno), antes se PISABA en silencio y el segundo
-  // pago desaparecía. Ahora se ofrece un periodo alterno en vez de perderlo.
+  // pago desaparecía. Ahora, en vez de preguntar, deja coexistir ambos con
+  // un periodo alterno automático — puedes registrar tantos pagos del mismo
+  // mes como quieras (ej. pagos parciales, quincenas).
   if(f.pagos[periodo]){
     let i=2, alterno=periodo+'-'+i;
     while(f.pagos[alterno]){ i++; alterno=periodo+'-'+i; }
-    if(!confirm('Ya hay un pago registrado para "'+periodo+'". ¿Guardar este como "'+alterno+'" en vez de reemplazarlo?')) return;
     periodo=alterno;
   }
   const hoy=new Date().toISOString().substring(0,10);
@@ -6165,10 +6175,14 @@ function pRenderTarjetasMSISolo(){
 }
 function pRenderTarjetas(){
   if(pTarjMSIView) return pRenderTarjetasMSISolo();
-  const items=pItemsOf('tarjeta');
+  // v29: en sesión compartida, ver las tarjetas de TODOS los miembros (antes
+  // solo mostraba las tuyas — entrabas a la sesión de "Lot & Temis" y solo
+  // veías tus propias tarjetas, nunca las de Lot). sesionCards ya trae las
+  // de todos los miembros de la sesión activa (cargado en loadSesionCards).
+  const items=(sesionCards&&sesionCards.length)?sesionCards:pItemsOf('tarjeta');
   const mk=pMesKey();
   const rows=items.map(c=>{
-    const cy=pCicloTarjeta(c,mk);
+    const esMia=!c.titular || c.titular===pOwner || c.titular===myName();
     const proxVenc=c.diaLimite?pProximaFecha(c.diaLimite):'';
     const fechas=`<div style="display:flex;flex-wrap:wrap;gap:4px 12px;font-size:11px;color:var(--ink-3)">`
       +`<span>📅 Corte: <strong>${esc(c.diaCorte||'—')}</strong></span>`
@@ -6188,12 +6202,11 @@ function pRenderTarjetas(){
         <div style="height:5px;background:var(--surface2);border-radius:3px;overflow:hidden;margin-top:2px"><div style="width:${pct}%;height:100%;background:${pct>80?'var(--temis)':'var(--shared)'}"></div></div>
       </div>`;
     }
-    // Datos sensibles (ocultos hasta pedir contraseña de datos sensibles).
-    // v29: el PIN ya NO se puede revelar aquí en la lista, ni enmascarado ni
-    // en claro — solo se ve/edita entrando a ✏️ Editar (que ya pide la
-    // contraseña de datos sensibles cada vez, ver pOpenForm).
-    const sensibles=[vField('CLABE',c.clabe),vField('Núm. física',c.numFisica),vField('Vence física',c.venceFisica),vField('Núm. virtual',c.numVirtual),vField('Vence virtual',c.venceVirtual)].filter(Boolean).join(' ');
-    const sensiblesHtml=sensibles?`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">${sensibles}</div>`:'';
+    // v29: los datos sensibles (CLABE, números, vencimientos, PIN) ya NO se
+    // ven aquí en la lista en absoluto — solo dentro de ✏️ Editar (que ya
+    // pide la contraseña de datos sensibles cada vez, ver pOpenForm). Ahí
+    // también hay botón de copiar para cada campo.
+    const sensiblesHtml='';
     // Comisiones/intereses (solo si hay algo capturado)
     const feeParts=[];
     if(c.interesAnual) feeParts.push('Interés '+esc(c.interesAnual)+'%/año');
@@ -6206,15 +6219,14 @@ function pRenderTarjetas(){
     <div style="display:flex;align-items:center;gap:10px">
       <button type="button" onclick="pToggleCardCollapse('${esc(cardId)}',this)" style="background:none;border:none;cursor:pointer;font-size:13px;color:var(--ink-3);padding:2px 4px;flex-shrink:0">▸</button>
       <div style="flex:1;min-width:0">
-        <div style="font-weight:800;font-size:14px">${pCardTipoEmoji(c)} ${esc(pCardLabel(c))}</div>
-        <div style="font-size:11px;color:var(--ink-3)">${esc(c.nombre||'')} · Periodo: ${esc(cy.label)}</div>
+        <div style="font-weight:800;font-size:14px">${pCardTipoEmoji(c)} ${esc(pCardLabel(c))}${esMia?'':' <span class="chip" style="font-size:9px;font-weight:600">👤 '+esc(c.titular||'?')+'</span>'}</div>
+        <div style="font-size:11px;color:var(--ink-3)">${esc(c.nombre||'')}</div>
       </div>
     </div>
     <div class="tarj-btn-scroll" style="display:flex;gap:6px;margin-top:8px;overflow-x:auto;-webkit-overflow-scrolling:touch;flex-wrap:nowrap">
         ${pCardPagoBtn(c)}
         <button class="rt-btn" style="font-weight:700;flex-shrink:0" onclick="pOpenEstado('${esc(c.id)}','')">＋ Estado</button>
-        <button class="rt-btn" style="flex-shrink:0" onclick="pOpenForm('tarjeta','${esc(c.id)}')">✏️</button>
-        <button class="shop-del" style="flex-shrink:0" onclick="pDelItem('${esc(c.id)}')">🗑</button>
+        ${esMia?'<button class="rt-btn" style="flex-shrink:0" onclick="pOpenForm(\'tarjeta\',\''+esc(c.id)+'\')">✏️</button><button class="shop-del" style="flex-shrink:0" onclick="pDelItem(\''+esc(c.id)+'\')">🗑</button>':''}
     </div>
     <div id="${esc(cardId)}" style="display:none">
     ${fechas}
@@ -6595,17 +6607,6 @@ async function pLeerEstadoIA(){
 }
 
 // Abre el formulario para crear (id vacío) o editar (id existente)
-// v29: acceso rápido a "+MSI" desde la barra de Gastos, sin tener que entrar
-// primero a Finanzas → Tarjetas. Asegura que pItems (owner/pass ya deben
-// estar listos por el login normal de la app) esté cargado antes de abrir
-// el form, para que el selector de tarjeta tenga opciones.
-async function v29QuickMSI(){
-  if(!pOwner) pOwner=myName();
-  if(!pOwner){ showToast('Primero elige tu nombre (👥)'); return; }
-  if(!pPass) pPass=localStorage.getItem('gastos_ppass_'+pOwner) || '';
-  if(!pLoaded || !pItems.length) await pLoad();
-  pOpenForm('msi','');
-}
 async function pOpenForm(tipo, id){
   const item = id ? pItems.find(x=>x.id===id) : {tipo};
   // v29: si la tarjeta ya tiene datos sensibles guardados, pide la
@@ -6633,6 +6634,10 @@ function pCloseForm(force){
 function pFormFieldsHTML(tipo, it){
   it=it||{};
   const F=(label,id,val,attrs)=>`<div class="pf-field"><label>${label}</label><input id="${id}" value="${esc(val||'')}" ${attrs||''}></div>`;
+  // v29: como CLABE/número/PIN ya no se pueden ver ni copiar desde la lista
+  // de tarjetas (solo aquí, en Editar), este campo trae su propio botón de
+  // copiar — útil sobre todo desde el celular.
+  const FCopy=(label,id,val,attrs)=>`<div class="pf-field"><label>${label}</label><div style="display:flex;gap:6px"><input id="${id}" value="${esc(val||'')}" ${attrs||''} style="flex:1"><button type="button" class="rt-btn" style="font-size:11px;flex-shrink:0" onclick="pCopiarCampo('${id}')">📋</button></div></div>`;
   const TA=(label,id,val,attrs)=>`<div class="pf-field"><label>${label}</label><textarea id="${id}" ${attrs||''}>${esc(val||'')}</textarea></div>`;
   const hoy=new Date().toISOString().substring(0,10);
   if(tipo==='ingreso'||tipo==='gasto'){
@@ -6650,6 +6655,8 @@ function pFormFieldsHTML(tipo, it){
         </div><input type="hidden" id="pfDir" value="${dir}"></div>`
       + F('Persona','pfPersona',it.persona,'placeholder="Nombre" id="pFormFirst"')
       + F('Monto (¥)','pfMonto',it.monto,'type="number" placeholder="0"')
+      + F('Fecha en que prestó/le prestaron','pfFecha',it.fecha||hoy,'type="date"')
+      + `<div style="font-size:11px;color:var(--ink-3);margin:-4px 0 8px">Desde esta fecha cuenta para tu estado de cuenta y tus deudas.</div>`
       + F('Fecha de pago acordada (opcional)','pfFechaPago',it.fechaPago,'type="date"')
       + F('Nota (opcional)','pfNota',it.nota,'placeholder="Detalle…"');
   }
@@ -6716,17 +6723,17 @@ function pFormFieldsHTML(tipo, it){
         </details>`
       + `<details style="margin-top:6px"><summary style="cursor:pointer;font-size:11px;font-weight:600;color:var(--personal)"><span class="chev">▾</span> 🔒 Datos sensibles (CLABE, número, PIN — piden contraseña aparte)</summary>
           <div style="margin-top:8px">
-          ${F('CLABE (opcional)','pfClabe',it.clabe,'placeholder="18 dígitos" autocomplete="off"')}
+          ${FCopy('CLABE (opcional)','pfClabe',it.clabe,'placeholder="18 dígitos" autocomplete="off"')}
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-            ${F('Nº completo — física','pfNumFis',it.numFisica,'placeholder="16 dígitos" autocomplete="off"')}
-            ${F('Nº completo — virtual','pfNumVir',it.numVirtual,'placeholder="16 dígitos" autocomplete="off"')}
+            ${FCopy('Nº completo — física','pfNumFis',it.numFisica,'placeholder="16 dígitos" autocomplete="off"')}
+            ${FCopy('Nº completo — virtual','pfNumVir',it.numVirtual,'placeholder="16 dígitos" autocomplete="off"')}
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
             ${F('Vencimiento — física (MM/AA)','pfVenceFis',it.venceFisica,'placeholder="12/28" maxlength="5" autocomplete="off"')}
             ${F('Vencimiento — virtual (MM/AA)','pfVenceVir',it.venceVirtual,'placeholder="12/28" maxlength="5" autocomplete="off"')}
           </div>
-          ${F('PIN (opcional)','pfPin',it.pin,'placeholder="4 dígitos" autocomplete="off"')}
-          <div style="font-size:10px;color:var(--ink-3)">Se guardan tal cual en tu Sheet privado. En la lista de tarjetas se ven ocultos hasta que pongas tu contraseña de datos sensibles (distinta de tu contraseña personal).</div>
+          ${FCopy('PIN (opcional)','pfPin',it.pin,'placeholder="4 dígitos" autocomplete="off"')}
+          <div style="font-size:10px;color:var(--ink-3)">Se guardan tal cual en tu Sheet privado. Ya NO se muestran en la lista de tarjetas — solo aquí, en Editar (pide tu contraseña de datos sensibles cada vez).</div>
           </div>
         </details>`;
   }
@@ -6809,7 +6816,7 @@ async function pFormSave(){
     item={...base, concepto:pFval('pfConcepto').trim(), monto:parseFloat(pFval('pfMonto'))||0, fecha:pFval('pfFecha'), nota:pFval('pfNota').trim()};
   } else if(t==='deuda'){
     if(!pFval('pfPersona').trim()){ showToast('¿Con quién?'); return; }
-    item={...base, dir:pFval('pfDir'), persona:pFval('pfPersona').trim(), monto:parseFloat(pFval('pfMonto'))||0, fechaPago:pFval('pfFechaPago'), nota:pFval('pfNota').trim()};
+    item={...base, dir:pFval('pfDir'), persona:pFval('pfPersona').trim(), monto:parseFloat(pFval('pfMonto'))||0, fecha:pFval('pfFecha')||hoy, fechaPago:pFval('pfFechaPago'), nota:pFval('pfNota').trim()};
   } else if(t==='fijo'){
     if(!pFval('pfConcepto').trim()){ showToast('Escribe un concepto'); return; }
     const prev=prevItem;
@@ -6866,6 +6873,23 @@ async function pFormSave(){
         if(mEl && eEl){ mEl.value=String(item.id); eEl.value='ignorado'; try{ row.replaceWith(pRowFromEl(pMovRowHTMLObjFromRow(row))); }catch(_){} }
         showToast('✓ Guardado');
       }
+    } else if(t==='deuda' && !prevItem){
+      // v29: una deuda externa nueva también se registra como gasto real
+      // (con su fecha de origen), para que aparezca en Gastos y en el
+      // filtro Préstamo/Devolución — antes solo vivía en el listado de
+      // Deudas, invisible desde Gastos.
+      const ses=currentSaveSesion();
+      try{
+        await postGAS({action:'saveGasto', fecha:item.fecha, fecha_captura:localDateTimeValue(new Date()),
+          costo:item.monto, moneda_pago:appSettings.moneda_local,
+          concepto:(item.dir==='medeben'?'Le presté a ':'Me prestó ')+item.persona,
+          tienda:item.persona, quien_paga:myName(),
+          compartido:item.dir==='medeben'?'Prestamo':'Devolucion', participantes:[item.persona],
+          categoria:'Préstamos', notas:(item.nota?item.nota+' · ':'')+'DEUDA '+item.id,
+          sesion:ses});
+        invalidateSesionCache(ses);
+        if(personalMode) await pReloadMisGastos(); else await loadExp();
+      }catch(e){}
     } else showToast('✓ Guardado');
     window.__msiVincularPendiente=null; window.__msiPagadasPendiente=null; window.__msiCuotasHistoricas=null; window.__msiCardId=null;
   }
@@ -7182,6 +7206,12 @@ async function vRevelar(btn, campo, valor){
   btn.style.display='none';
   span.style.display='inline';
   const cp=field.querySelector('.vault-copy'); if(cp) cp.style.display='inline-flex';
+}
+// v29: copiar directo desde un input del formulario (CLABE/número/PIN en
+// Editar tarjeta) — reusa la misma lógica de portapapeles que vCopiar.
+async function pCopiarCampo(inputId){
+  const el=document.getElementById(inputId); if(!el||!el.value) return;
+  await vCopiar(null, el.value);
 }
 async function vCopiar(btn, valor){
   try{
