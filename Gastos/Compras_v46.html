@@ -1049,6 +1049,8 @@ details:not([open]) .chev{transform:rotate(-90deg)}
       <label>Cat:</label>
       <select id="catSelect" onchange="renderAll()" style="min-width:140px"><option value="">Todas</option></select>
       <button class="btn-clr" id="btnClearColFilters" style="display:none" onclick="clearColFilters()">✕ Filtros col.</button>
+      <div class="sep-line"></div>
+      <button class="btn-clr" onclick="v29QuickMSI()" title="Registrar una compra a meses sin intereses">🗓️ MSI</button>
     </div>
     <div class="search-bar">
       <div class="search-wrap">
@@ -1731,10 +1733,12 @@ function buildPersonFilters(){
   const c=document.getElementById('personFilters'); if(!c)return;
   if(personalMode){
     const me=myName();
+    const sesiones=[...new Set((misGastosAll||[]).map(e=>e.sesion).filter(Boolean))].sort();
     c.innerHTML = '<button class="ftab" data-f="Compartido" onclick="setFilter(\'Compartido\',this)">🤝 Compartido</button>'
       +'<button class="ftab" data-f="Prestamo" onclick="setFilter(\'Prestamo\',this)">💸 Préstamo/↩️</button>'
       +'<button class="ftab" data-f="Cotizacion" onclick="setFilter(\'Cotizacion\',this)">💬 Cotización</button>'
-      +(me?'<button class="ftab" data-f="P:'+esc(me)+'" onclick="setFilter(\'P:'+esc(me)+'\',this)">👤 Solo personales</button>':'');
+      +(me?'<button class="ftab" data-f="P:'+esc(me)+'" onclick="setFilter(\'P:'+esc(me)+'\',this)">👤 Solo personales</button>':'')
+      +sesiones.map(s=>'<button class="ftab" data-f="S:'+esc(s)+'" onclick="setFilter(\'S:'+esc(s)+'\',this)">🗂️ '+esc(s)+'</button>').join('');
     return;
   }
   c.innerHTML = PEOPLE.map(n=>{
@@ -2621,6 +2625,7 @@ function getFilteredBase(){
   else if(activeF==='Prestamo')   data=data.filter(e=>e.compartido==='Prestamo'||e.compartido==='Devolucion');
   else if(activeF==='Cotizacion') data=data.filter(e=>e.compartido==='Cotizacion'||e.quien_paga==='Cotizacion');
   else if(activeF.startsWith('P:')){const _n=activeF.slice(2);data=data.filter(e=>e.compartido==='Personal'&&e.quien_paga===_n);}
+  else if(activeF.startsWith('S:')){const _s=activeF.slice(2);data=data.filter(e=>(e.sesion||'')===_s);} // v29: filtrar Personal por sesión de origen
   if(q) data=data.filter(e=>norm(e.concepto).includes(q)||norm(e.notas).includes(q)||norm(e.categoria).includes(q)||norm(e.quien_paga).includes(q)||norm(e.tienda||'').includes(q));
   // v42: filtro por método de pago
   if(pagoFilter){ data=data.filter(e=>{ const pg=pagoParse(e.pago); return pg && pg.tipo===pagoFilter; }); }
@@ -2667,7 +2672,7 @@ function renderCards(data){
     const me=myName();
     // v29: si hay un filtro Compartido/Préstamo/Cotización/Solo-personales activo,
     // las tarjetas reflejan ESE filtro en vez de siempre el resumen general.
-    if(activeF==='Compartido'||activeF==='Prestamo'||activeF==='Cotizacion'||activeF.startsWith('P:')){
+    if(activeF==='Compartido'||activeF==='Prestamo'||activeF==='Cotizacion'||activeF.startsWith('P:')||activeF.startsWith('S:')){
       let tot=0, miParte=0;
       data.forEach(e=>{ tot+=(parseFloat(e.costo)||0); miParte+=(e.miParte!==undefined?(parseFloat(e.miParte)||0):(parseFloat(e.costo)||0)); });
       let l0='Total vista';
@@ -2675,6 +2680,7 @@ function renderCards(data){
       else if(activeF==='Prestamo') l0='💸 Total préstamos';
       else if(activeF==='Cotizacion') l0='💬 Total cotizado';
       else if(activeF.startsWith('P:')) l0='👤 Personales';
+      else if(activeF.startsWith('S:')) l0='🗂️ '+activeF.slice(2);
       const L=[l0,'Mi parte','Registros','—'];
       const V=[fy(tot),fy(miParte),data.length+'',''];
       ['sl-0','sl-1','sl-2','sl-3'].forEach((id,i)=>document.getElementById(id).textContent=L[i]);
@@ -2693,7 +2699,8 @@ function renderCards(data){
     // Deudas: neto sesión + externas
     const sesNet=(function(){ try{ return pMiDeudaGlobalNet()||0; }catch(_){ return 0; } })();
     const extNet=(typeof pItemsOf==='function')?pItemsOf('deuda').reduce((s,d)=>{ const a=parseFloat(d.monto)||0; return s+(d.dir==='medeben'?a:-a); },0):0;
-    const net=Math.round(sesNet+extNet);
+    const msiPend=(typeof pItemsOf==='function')?pItemsOf('msi').reduce((s,m)=>s+pMSIPendiente(m),0):0;
+    const net=Math.round(sesNet+extNet-msiPend);
     let dl='🤝 Deudas', dv='Al día ✅';
     if(net>0){ dl='💰 Me deben'; dv=fy(net); } else if(net<0){ dl='⚠️ Debo'; dv=fy(-net); }
     const saldo=ingresos-egresos;
@@ -5570,7 +5577,8 @@ function pProximosMiniHTML(){
   // v29: siempre visible junto a próximos pagos, sin importar el filtro de Gastos activo
   const sesNet=(function(){ try{ return pMiDeudaGlobalNet()||0; }catch(_){ return 0; } })();
   const extNet=pItemsOf('deuda').reduce((s,d)=>{ const a=parseFloat(d.monto)||0; return s+(d.dir==='medeben'?a:-a); },0);
-  const net=Math.round(sesNet+extNet);
+  const msiPend=pItemsOf('msi').reduce((s,m)=>s+pMSIPendiente(m),0);
+  const net=Math.round(sesNet+extNet-msiPend);
   const deudaTxt=net>0?('💰 Te deben <strong>'+curSym()+net.toLocaleString()+'</strong>'):(net<0?('⚠️ Debes <strong>'+curSym()+Math.abs(net).toLocaleString()+'</strong>'):'✅ Deudas al día');
   return '<div style="font-size:12px;margin-bottom:4px">'+deudaTxt+'</div><strong>Próximos pagos</strong>'+(rows.slice(0,4).map(r=>'<div style="font-size:12px;margin-top:2px">'+(r.fecha?fmtDate(r.fecha):'—')+' · '+esc(r.txt)+'</div>').join('')||'<div style="font-size:12px;color:var(--shared);margin-top:2px">Sin pendientes este mes.</div>');
 }
@@ -5603,7 +5611,11 @@ function pRenderResumen(){
   // Deudas externas
   let meDebenExt=0, deboExt=0;
   pItemsOf('deuda').forEach(d=>{ const a=parseFloat(d.monto)||0; if(d.dir==='medeben')meDebenExt+=a; else deboExt+=a; });
-  const meDeben=meDebenExt, debo=deboExt;
+  // v29: lo que falta de pagar en compras a MSI también es deuda (dinero que
+  // vas a pagar pero aún no) — entra en "Debo" y se resta sola conforme marcas
+  // cuotas como pagadas.
+  const msiPendienteTotal=pItemsOf('msi').reduce((s,m)=>s+pMSIPendiente(m),0);
+  const meDeben=meDebenExt, debo=deboExt+msiPendienteTotal;
   const saldoBase=pSaldoBase();
   const saldo=saldoBase+ingresos-gastos-fijosMes-msiMes;
   const mk=pMesKey();
@@ -5631,7 +5643,7 @@ function pRenderResumen(){
 
   return command+`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:16px">
     ${card('var(--shared-bg)','var(--shared-bdr)','var(--shared)','💰 Me deben', pMoney(meDeben), 'deudas registradas')}
-    ${card('var(--temis-bg)','var(--temis-bdr)','var(--temis)','⚠️ Debo', pMoney(debo), 'deudas registradas')}
+    ${card('var(--temis-bg)','var(--temis-bdr)','var(--temis)','⚠️ Debo', pMoney(debo), msiPendienteTotal?('externas '+pMoney(deboExt)+' + MSI '+pMoney(msiPendienteTotal)):'deudas registradas')}
     ${card('var(--lot-bg)','var(--lot-bdr)','var(--lot)','📈 Ingresos (reg.)', pMoney(ingresos), '')}
     ${card('var(--surface2)','var(--border2)','var(--ink)','🧮 Saldo estimado', pMoney(saldo), 'inicial '+pMoney(saldoBase)+' + ingresos − gastos − fijos − MSI')}
   </div>
@@ -5964,35 +5976,55 @@ function pRenderTarjetas(){
 }
 // ── MSI (meses sin intereses) ──
 function pMSICuotaMonto(m){ const meses=parseInt(m.meses)||1; return (parseFloat(m.monto)||0)/meses; }
+// v29: cada cuota lleva su fecha REAL de cobro, calculada desde la fecha de
+// compra y el día de corte de la tarjeta asignada — no solo el número de mes.
+// Ej. compra el 7 de julio, corte el 10: la compra ya alcanzó ese corte, así
+// que el cobro 1 es el 10 de julio; el cobro 2 el 10 de agosto, etc. Si la
+// tarjeta no tiene corte capturado, usa la fecha de compra tal cual cada mes.
 function pMSICuotas(m){
   const meses=parseInt(m.meses)||1; const cuota=pMSICuotaMonto(m);
-  const start=m.inicio? new Date(m.inicio+'T12:00:00') : new Date();
+  const compra=m.inicio? new Date(m.inicio+'T12:00:00') : new Date();
+  const card=pCardById(m.tarjeta);
+  const corte=card?parseInt(card.diaCorte)||0:0;
+  let primerCobro;
+  if(corte){
+    primerCobro=new Date(compra.getFullYear(), compra.getMonth(), Math.min(corte,new Date(compra.getFullYear(),compra.getMonth()+1,0).getDate()));
+    if(primerCobro<compra) primerCobro=new Date(compra.getFullYear(), compra.getMonth()+1, corte);
+  } else primerCobro=compra;
   const pagadas=m.pagadas||{};
   const arr=[];
   for(let k=0;k<meses;k++){
-    const dt=new Date(start.getFullYear(), start.getMonth()+k, 1);
+    const dt=new Date(primerCobro.getFullYear(), primerCobro.getMonth()+k, primerCobro.getDate());
     const key=dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0');
-    const diaLim=m.diaLimite?parseInt(m.diaLimite):null;
-    let dias=null;
-    if(diaLim){ const obj=new Date(dt.getFullYear(),dt.getMonth(),diaLim); dias=Math.round((obj-new Date())/86400000); }
-    arr.push({idx:k+1, key, monto:cuota, pagada:!!pagadas[key], dias});
+    const fecha=dt.toISOString().substring(0,10);
+    const dias=Math.round((dt-new Date())/86400000);
+    arr.push({idx:k+1, key, fecha, monto:cuota, pagada:!!pagadas[key], dias});
   }
   return arr;
 }
+//  Total de cuotas AÚN NO pagadas de una compra a MSI (lo que falta por pagar).
+function pMSIPendiente(m){ return pMSICuotas(m).filter(q=>!q.pagada).reduce((s,q)=>s+q.monto,0); }
 function pMSIRowHTML(m){
   const cuotas=pMSICuotas(m);
   const pagadasN=cuotas.filter(q=>q.pagada).length;
-  const cuotasHtml=cuotas.map(q=>`<button class="rt-btn" style="font-size:10px;padding:3px 7px;${q.pagada?'background:var(--shared-bg);color:var(--shared);border-color:var(--shared-bdr)':''}" onclick="pToggleMSICuota('${esc(m.id)}','${q.key}')" title="${q.key}">${q.idx}${q.pagada?' ✓':''}</button>`).join('');
+  const pendiente=pMSIPendiente(m);
+  const cuotasHtml=cuotas.map(q=>`<div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:10.5px;${q.pagada?'color:var(--ink-3)':''}">
+      <button class="rt-btn" style="font-size:9px;padding:1px 5px;${q.pagada?'background:var(--shared-bg);color:var(--shared);border-color:var(--shared-bdr)':''}" onclick="pToggleMSICuota('${esc(m.id)}','${q.key}')" title="Clic para marcar pagada/pendiente">${q.pagada?'✓':q.idx}</button>
+      <span>Pago ${q.idx}: ${fmtDate(q.fecha)}</span><span style="margin-left:auto;font-family:var(--mono)">${pMoney(q.monto)}</span>
+    </div>`).join('');
   return `<div style="padding:9px;border:1px solid var(--border);border-radius:9px;margin-bottom:6px;background:var(--surface2)">
       <div style="display:flex;align-items:center;gap:8px">
         <div style="flex:1;min-width:0">
           <div style="font-weight:600;font-size:12.5px">🗓️ ${esc(m.concepto||'—')}</div>
-          <div style="font-size:11px;color:var(--ink-3)">${pMoney(m.monto)} a ${m.meses} MSI = ${pMoney(pMSICuotaMonto(m))}/mes · ${pagadasN}/${m.meses} pagadas</div>
+          <div style="font-size:11px;color:var(--ink-3)">Compra: ${m.inicio?fmtDate(m.inicio):'—'} · ${pMoney(m.monto)} a ${m.meses} MSI = ${pMoney(pMSICuotaMonto(m))}/mes · ${pagadasN}/${m.meses} pagadas</div>
+          ${pendiente?'<div style="font-size:11px;color:var(--temis);font-weight:600">Pendiente por pagar: '+pMoney(pendiente)+'</div>':'<div style="font-size:11px;color:var(--shared);font-weight:600">✓ Liquidado</div>'}
         </div>
         <button class="rt-btn" onclick="pOpenForm('msi','${esc(m.id)}')">✏️</button>
         <button class="shop-del" onclick="pDelItem('${esc(m.id)}')">🗑</button>
       </div>
-      <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px">${cuotasHtml}</div>
+      <details style="margin-top:6px"><summary style="cursor:pointer;font-size:10.5px;color:var(--ink-3)"><span class="chev">▾</span> Ver calendario de pagos</summary>
+        <div style="margin-top:4px">${cuotasHtml}</div>
+      </details>
     </div>`;
 }
 //  MSI de una tarjeta específica (anidado dentro de su bloque en Tarjetas).
@@ -6275,6 +6307,17 @@ async function pLeerEstadoIA(){
 }
 
 // Abre el formulario para crear (id vacío) o editar (id existente)
+// v29: acceso rápido a "+MSI" desde la barra de Gastos, sin tener que entrar
+// primero a Finanzas → Tarjetas. Asegura que pItems (owner/pass ya deben
+// estar listos por el login normal de la app) esté cargado antes de abrir
+// el form, para que el selector de tarjeta tenga opciones.
+async function v29QuickMSI(){
+  if(!pOwner) pOwner=myName();
+  if(!pOwner){ showToast('Primero elige tu nombre (👥)'); return; }
+  if(!pPass) pPass=localStorage.getItem('gastos_ppass_'+pOwner) || '';
+  if(!pLoaded || !pItems.length) await pLoad();
+  pOpenForm('msi','');
+}
 function pOpenForm(tipo, id){
   pFormTipo=tipo; pFormId=id||'';
   const item = id ? pItems.find(x=>x.id===id) : {tipo};
