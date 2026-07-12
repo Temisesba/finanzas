@@ -1692,7 +1692,7 @@ details:not([open]) .chev{transform:rotate(-90deg)}
 // v29: nombre clave de esta entrega — cámbialo cada vez que termines un lote
 // de cambios, así en 👥 → 🛠 Panel dev se puede confirmar que el navegador
 // está cargando la versión más reciente y no una copia en caché.
-const BUILD_VERSION='Dalia';
+const BUILD_VERSION='Amapola';
 let GAS_URL=localStorage.getItem('gastos_gas_url')||'';
 function v29TieneGasUrl(){ return !!GAS_URL; }
 function v29GuardarGasUrl(url){
@@ -6580,7 +6580,25 @@ function pVincularConfirmar(btn){
   const nuevo=pRowFromEl(pMovRowHTMLObjFromRow(row));
   row.replaceWith(nuevo);
   pop.remove();
+  pRefrescarConciliacionStats();
   showToast('🔗 Vinculado');
+}
+// v29: recalcula y repinta solo los recuadros (Estimado app/Estado de
+// cuenta/no intereses/Diferencia) del panel de Conciliación tras
+// vincular/desvincular una fila — antes solo se actualizaban al guardar y
+// reabrir, así que vincular un movimiento "no se veía reflejado".
+function pRefrescarConciliacionStats(){
+  if(!pConciliacionActual) return;
+  const e=pItems.find(x=>x.id===pConciliacionActual.id); if(!e) return;
+  const grid=document.getElementById('conciliacionStats'); if(!grid) return;
+  e.movimientos=pMovsFromRows('pcMovRows');
+  const co=pConciliacionEstado(e);
+  const stat=(t,v,col)=>`<div style="background:var(--surface2);border-radius:9px;padding:9px 11px"><div style="font-size:10px;color:var(--ink-3);text-transform:uppercase;letter-spacing:.06em">${t}</div><div style="font-family:var(--mono);font-weight:700;font-size:14px;${col?('color:'+col):''}">${v}</div></div>`;
+  grid.innerHTML=stat('Estimado app', pMoney(co.totalApp))
+    +stat('Estado de cuenta', pMoney(co.totalReal))
+    +stat('Pago para no generar intereses', pMoney(co.noIntereses))
+    +stat('Diferencia', pMoney(Math.abs(co.dif)), co.dif?'var(--temis)':'var(--shared)')
+    +stat('Estado', pEstadoLabel(co.estado), pEstadoColor(co.estado));
 }
 // v29: un movimiento del estado de cuenta que en realidad es uno de tus
 // pagos fijos (típico: te enteras que ya se cobró hasta que llega el
@@ -6594,6 +6612,7 @@ function pDesvincularMovRow(btn){
   const m=pMovRowHTMLObjFromRow(row);
   m.gastoId=''; m.msiId=''; m.estado='pendiente';
   row.replaceWith(pRowFromEl(m));
+  pRefrescarConciliacionStats();
   showToast('Desvinculado');
 }
 // v29: búsqueda igual que "vincular con gasto existente" — escribes y
@@ -7388,17 +7407,30 @@ function pGastosDeTarjetaMes(c, mk){
 function pConciliacionEstado(e){
   const c=pCardById(e.tarjeta)||{};
   const gs=pGastosDeTarjetaMes(c,e.mes||pMesKey());
-  const totalApp=gs.reduce((s,g)=>s+(parseFloat(g.costo)||0),0);
-  const totalReal=parseFloat(e.total)||0;
-  const dif=Math.round(totalReal-totalApp);
   const movs=e.movimientos||[];
+  // v29: un movimiento ya vinculado/identificado a un gasto cuenta en el
+  // Estimado app aunque ese gasto no traiga el "pago" tageado a esta
+  // tarjeta+ciclo (ej. se capturó con otro método y luego se concilió aquí
+  // mismo) — antes vincular un movimiento no cambiaba en nada el estimado.
+  const fuente=(personalMode?misGastosAll:allExp)||[];
+  const yaContados=new Set(gs.map(g=>String(g.rowIndex)));
+  const vinculadosExtra=movs.filter(m=>m.estado==='identificado' && m.gastoId && !yaContados.has(String(m.gastoId)))
+    .map(m=>fuente.find(g=>String(g.rowIndex)===String(m.gastoId))).filter(Boolean);
+  const totalApp=gs.reduce((s,g)=>s+(parseFloat(g.costo)||0),0)+vinculadosExtra.reduce((s,g)=>s+(parseFloat(g.costo)||0),0);
+  const totalReal=parseFloat(e.total)||0;
+  // v29: la diferencia que importa es contra el PAGO PARA NO GENERAR
+  // INTERESES (lo que realmente hay que cubrir), no contra el Total del
+  // estado — ese total puede incluir saldos/MSI de otros meses.
+  const noIntereses=parseFloat(e.noIntereses)||0;
+  const metaPago=noIntereses||totalReal;
+  const dif=Math.round(metaPago-totalApp);
   const counts={identificado:0,posible:0,no_identificado:0,ignorado:0,pendiente:0};
   movs.forEach(m=>{ const st=m.estado||'pendiente'; counts[counts[st]!==undefined?st:'pendiente']++; });
   let estado=e.estado||'pendiente';
   if(Math.abs(dif)<=1 && counts.no_identificado===0 && counts.pendiente===0) estado='conciliado';
   else if(counts.identificado>0 || counts.posible>0) estado='parcial';
   if(Math.abs(dif)>1) estado='diferencia';
-  return {card:c,gastos:gs,totalApp,totalReal,dif,movs,counts,estado};
+  return {card:c,gastos:gs,totalApp,totalReal,noIntereses,dif,movs,counts,estado};
 }
 function pEstadoColor(st){ return st==='conciliado'?'var(--shared)':(st==='diferencia'?'var(--temis)':(st==='parcial'?'var(--loan)':'var(--ink-3)')); }
 function pOpenEstado(cardId,id){
@@ -7453,9 +7485,10 @@ function pOpenConciliacion(estadoId){
   body.innerHTML=`
     <div style="font-size:13px;font-weight:700;margin-bottom:2px">${esc(pCardLabel(co.card))} · ${esc(e.mes||'—')}</div>
     <div style="font-size:11px;color:var(--ink-3);margin-bottom:10px">El pago completo de tarjeta NO se registra como gasto; solo los movimientos que envíes abajo.</div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px;margin-bottom:12px">
+    <div id="conciliacionStats" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px;margin-bottom:12px">
       ${stat('Estimado app', pMoney(co.totalApp))}
       ${stat('Estado de cuenta', pMoney(co.totalReal))}
+      ${stat('Pago para no generar intereses', pMoney(co.noIntereses))}
       ${stat('Diferencia', pMoney(Math.abs(co.dif)), co.dif?'var(--temis)':'var(--shared)')}
       ${stat('Estado', pEstadoLabel(co.estado), pEstadoColor(co.estado))}
     </div>
