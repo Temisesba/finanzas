@@ -1700,7 +1700,7 @@ details:not([open]) .chev{transform:rotate(-90deg)}
 // v29: nombre clave de esta entrega — cámbialo cada vez que termines un lote
 // de cambios, así en 👥 → 🛠 Panel dev se puede confirmar que el navegador
 // está cargando la versión más reciente y no una copia en caché.
-const BUILD_VERSION='Tulipan';
+const BUILD_VERSION='Alelí';
 let GAS_URL=localStorage.getItem('gastos_gas_url')||'';
 function v29TieneGasUrl(){ return !!GAS_URL; }
 function v29GuardarGasUrl(url){
@@ -3995,19 +3995,36 @@ async function pVincularGastoAFijo(){
   }
   if(!pLoaded || !pItems.length){ try{ await pLoad(); }catch(e){} }
   const fijos=pItemsOf('fijo');
-  if(!fijos.length){ showToast('No tienes pagos fijos registrados todavía'); return; }
   const btn=document.getElementById('mVincularFijoBtn');
   const existente=btn.nextElementSibling;
   if(existente && existente.classList.contains('mov-vincular-pop')){ existente.remove(); return; }
   const pop=document.createElement('div');
   pop.className='mov-vincular-pop';
   pop.style.cssText='padding:8px;background:var(--surface2);border-radius:8px;margin:6px 0 8px;font-size:11px';
-  pop.innerHTML='<div style="margin-bottom:5px;color:var(--ink-3)">¿Cuál pago fijo corresponde a este gasto? Escribe para buscar:</div>'
+  // v29: si el pago fijo que buscas todavía no existe (típico: es la
+  // primera vez que ves este cargo), antes había que salir, crearlo en
+  // Pagos fijos y volver a vincular. Ahora "➕ Crear nuevo pago fijo" lo
+  // crea sin salir de aquí y vincula solo al guardar.
+  pop.innerHTML='<div style="margin-bottom:5px;color:var(--ink-3)">¿Cuál pago fijo corresponde a este gasto? Escribe para buscar (o crea uno nuevo si no existe):</div>'
     +'<input type="text" placeholder="Buscar por nombre…" oninput="pFiltrarVincularOpts(this)" style="width:100%;margin-bottom:6px;font-size:11px;padding:5px 7px;border:1px solid var(--border2);border-radius:6px;background:var(--bg)">'
     +'<input type="hidden" class="vincular-elegido" value="">'
-    +'<div class="vincular-opts" style="max-height:180px;overflow-y:auto;display:flex;flex-direction:column;gap:2px">'+fijos.map(pFijoOptRow).join('')+'</div>'
-    +'<div style="display:flex;gap:6px;margin-top:6px"><button type="button" class="rt-btn" style="font-size:10px;font-weight:600" onclick="pVincularGastoAFijoConfirmar(this)">Vincular</button><button type="button" class="rt-btn" style="font-size:10px" onclick="this.closest(\'.mov-vincular-pop\').remove()">Cancelar</button></div>';
+    +(fijos.length?'<div class="vincular-opts" style="max-height:180px;overflow-y:auto;display:flex;flex-direction:column;gap:2px">'+fijos.map(pFijoOptRow).join('')+'</div>':'<div style="color:var(--ink-3);padding:2px 0 4px">No tienes pagos fijos registrados todavía.</div>')
+    +'<div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">'+(fijos.length?'<button type="button" class="rt-btn" style="font-size:10px;font-weight:600" onclick="pVincularGastoAFijoConfirmar(this)">Vincular</button>':'')
+    +'<button type="button" class="rt-btn" style="font-size:10px;font-weight:600" onclick="pCrearFijoDesdeVincular(this,\'gasto\')">➕ Crear nuevo pago fijo</button>'
+    +'<button type="button" class="rt-btn" style="font-size:10px" onclick="this.closest(\'.mov-vincular-pop\').remove()">Cancelar</button></div>';
   btn.insertAdjacentElement('afterend', pop);
+}
+// v29: crea un pago fijo nuevo directo desde un popup de "vincular" (sin
+// salir del gasto/movimiento que lo disparó) y lo deja vinculado solo al
+// guardarlo — ver hook en pFormSave() (window.__fijoVincularPendiente).
+function pCrearFijoDesdeVincular(btn, origen){
+  const pop=btn.closest('.mov-vincular-pop');
+  const buscarInput=pop.querySelector('input[type="text"]');
+  const nombrePrellenado=buscarInput?buscarInput.value.trim():'';
+  window.__fijoVincularPendiente=(origen==='mov')?{origen:'mov', row:pop.previousElementSibling}:{origen:'gasto'};
+  pop.remove();
+  pOpenForm('fijo','');
+  if(nombrePrellenado) setTimeout(()=>{ const el=pF('pfConcepto'); if(el) el.value=nombrePrellenado; },0);
 }
 async function pVincularGastoAFijoConfirmar(btn){
   const pop=btn.closest('.mov-vincular-pop');
@@ -6664,15 +6681,16 @@ function pFijoOptRow(f){
 function pMovComoFijo(btn){
   const row=btn.closest('.mov-grid');
   const fijos=pItemsOf('fijo');
-  if(!fijos.length){ showToast('No tienes pagos fijos registrados todavía'); return; }
   const pop=document.createElement('div');
   pop.className='mov-vincular-pop';
   pop.style.cssText='padding:8px;background:var(--surface2);border-radius:8px;margin:2px 0 6px;font-size:11px';
-  pop.innerHTML='<div style="margin-bottom:5px;color:var(--ink-3)">¿Cuál de tus pagos fijos es este movimiento? Escribe para buscar:</div>'
+  pop.innerHTML='<div style="margin-bottom:5px;color:var(--ink-3)">¿Cuál de tus pagos fijos es este movimiento? Escribe para buscar (o crea uno nuevo si no existe):</div>'
     +'<input type="text" placeholder="Buscar por nombre…" oninput="pFiltrarVincularOpts(this)" style="width:100%;margin-bottom:6px;font-size:11px;padding:5px 7px;border:1px solid var(--border2);border-radius:6px;background:var(--bg)">'
     +'<input type="hidden" class="vincular-elegido" value="">'
-    +'<div class="vincular-opts" style="max-height:180px;overflow-y:auto;display:flex;flex-direction:column;gap:2px">'+fijos.map(pFijoOptRow).join('')+'</div>'
-    +'<div style="display:flex;gap:6px;margin-top:6px"><button type="button" class="rt-btn" style="font-size:10px;font-weight:600" onclick="pMovComoFijoConfirmar(this)">Usar este pago fijo</button><button type="button" class="rt-btn" style="font-size:10px" onclick="this.closest(\'.mov-vincular-pop\').remove()">Cancelar</button></div>';
+    +(fijos.length?'<div class="vincular-opts" style="max-height:180px;overflow-y:auto;display:flex;flex-direction:column;gap:2px">'+fijos.map(pFijoOptRow).join('')+'</div>':'<div style="color:var(--ink-3);padding:2px 0 4px">No tienes pagos fijos registrados todavía.</div>')
+    +'<div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">'+(fijos.length?'<button type="button" class="rt-btn" style="font-size:10px;font-weight:600" onclick="pMovComoFijoConfirmar(this)">Usar este pago fijo</button>':'')
+    +'<button type="button" class="rt-btn" style="font-size:10px;font-weight:600" onclick="pCrearFijoDesdeVincular(this,\'mov\')">➕ Crear nuevo pago fijo</button>'
+    +'<button type="button" class="rt-btn" style="font-size:10px" onclick="this.closest(\'.mov-vincular-pop\').remove()">Cancelar</button></div>';
   row.insertAdjacentElement('afterend', pop);
 }
 function pMovComoFijoConfirmar(btn){
@@ -7258,6 +7276,36 @@ async function pFormSave(){
         const mEl=row.querySelector&&row.querySelector('.mov-msi'), eEl=row.querySelector&&row.querySelector('.mov-estado');
         if(mEl && eEl){ mEl.value=String(item.id); eEl.value='ignorado'; try{ row.replaceWith(pRowFromEl(pMovRowHTMLObjFromRow(row))); }catch(_){} }
         showToast('✓ Guardado');
+      }
+    } else if(t==='fijo' && window.__fijoVincularPendiente){
+      // v29: pago fijo creado sobre la marcha desde un popup de "vincular"
+      // (no existía todavía) — se completa el vínculo con lo que lo disparó
+      // en vez de dejarlo suelto y obligarte a volver a buscarlo.
+      const pend=window.__fijoVincularPendiente; window.__fijoVincularPendiente=null;
+      if(pend.origen==='gasto'){
+        const dEl=document.getElementById('iDate'), cEl=document.getElementById('iCosto'), ncEl=document.getElementById('iConc');
+        const fecha=(dEl&&dEl.value)||hoy;
+        const costo=parseFloat(cEl&&cEl.value)||parseFloat(item.monto)||0;
+        const mk=fecha.substring(0,7);
+        item.pagos=item.pagos||{};
+        item.pagos[mk]={monto:costo, fecha, gastoRef:(ncEl&&ncEl.value)||''};
+        await pSaveItem(item);
+        showToast('✓ Pago fijo creado y vinculado a este gasto');
+      } else if(pend.origen==='mov' && pend.row){
+        const row=pend.row;
+        const m=pMovRowHTMLObjFromRow(row);
+        const cardId=pFval('pfTarjeta')||(pConciliacionActual&&pConciliacionActual.tarjeta)||'';
+        const c=pCardById(cardId)||{};
+        openModal();
+        document.getElementById('iDate').value=m.fecha||hoy;
+        document.getElementById('iCosto').value=parseFloat(m.monto)||parseFloat(item.monto)||0;
+        document.getElementById('iConc').value=item.concepto||'Pago fijo';
+        document.getElementById('iCat').value=item.categoria||'Servicios';
+        document.getElementById('iNotas').value='Desde estado de cuenta · '+pCardLabel(c);
+        const mm=document.getElementById('iMetodo'); if(mm && cardId){ mm.value='Tarjeta'; onMetodoChange(); const s=document.getElementById('iTarjetaSel'); if(s){ s.value=cardId; onTarjetaSelChange(); } }
+        window.__movVincularPendiente=row;
+        window.__pagoFijoPendiente=item.id;
+        showToast('✓ Pago fijo creado — revisa y guarda el gasto para vincularlo');
       }
     } else if(t==='deuda' && !prevItem){
       // v29: una deuda externa nueva también se registra como gasto real
