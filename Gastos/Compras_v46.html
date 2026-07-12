@@ -3965,7 +3965,7 @@ function v29OpenDeptos(){
 }
 // v29: grupos de sesiones que comparten items 🔗 de la lista de compras
 async function v29OpenListaGrupos(){
-  const mia=currentSaveSesion();
+  const mia=activeSesion;
   document.getElementById('listaGruposSesion').textContent=mia;
   let grupos={};
   try{ const r=await postGAS({action:'getListaGrupos'}); grupos=(r&&r.grupos)||{}; }catch(e){}
@@ -3979,7 +3979,7 @@ async function v29OpenListaGrupos(){
   document.getElementById('listaGruposOverlay').style.display='flex';
 }
 async function v29SaveListaGrupos(){
-  const mia=currentSaveSesion();
+  const mia=activeSesion;
   let grupos={};
   try{ grupos=JSON.parse(document.getElementById('listaGruposOverlay').dataset.grupos||'{}'); }catch(e){}
   const checks=[...document.querySelectorAll('#listaGruposBody input[type=checkbox]:checked')].map(c=>c.value);
@@ -4008,18 +4008,28 @@ async function v29SaveDeptos(){
 }
 // v29: contenedores con nombre (varias listas / varios inventarios por sesión)
 let listas=[], inventarios=[];
+// v29: Inventario Y Lista de compras SIEMPRE son de la sesión activa (igual
+// que allProds, que viene de loadExp()/activeSesion sin importar el modo
+// Personal) — si aquí usábamos currentSaveSesion() (que cambia a
+// "Personal-<tú>" en modo Personal), el contenedor y los productos/items se
+// guardaban bajo una sesión que la vista normal nunca lee, y por eso "no se
+// veía nada" aunque sí estuviera bien guardado en el Sheet. Si de verdad
+// quieres una lista/inventario 100% tuyo, entra con tu sesión personal como
+// sesión ACTIVA (no con el toggle de modo Personal, que es solo para ver tu
+// resumen de Finanzas agregado entre sesiones).
+function v34SesionDe(tipo){ return activeSesion; }
 async function v34LoadContenedores(tipo){
   try{
-    const r=await postGAS({action:'getContenedores', tipo, sesion:currentSaveSesion()});
+    const r=await postGAS({action:'getContenedores', tipo, sesion:v34SesionDe(tipo)});
     return (r&&r.ok&&Array.isArray(r.contenedores))?r.contenedores:[{id:'',nombre:tipo==='inventario'?'Inventario principal':'Lista principal',def:true}];
   }catch(e){ return [{id:'',nombre:tipo==='inventario'?'Inventario principal':'Lista principal',def:true}]; }
 }
 async function v34SaveContenedores(tipo, contenedores){
-  try{ await postGAS({action:'saveContenedores', tipo, sesion:currentSaveSesion(), contenedores}); }
+  try{ await postGAS({action:'saveContenedores', tipo, sesion:v34SesionDe(tipo), contenedores}); }
   catch(e){ showToast('⚠ No se pudo guardar'); }
 }
-function v34ActualId(tipo){ return localStorage.getItem('gastos_'+tipo+'_actual_'+currentSaveSesion())||''; }
-function v34SetActualId(tipo,id){ localStorage.setItem('gastos_'+tipo+'_actual_'+currentSaveSesion(), id); }
+function v34ActualId(tipo){ return localStorage.getItem('gastos_'+tipo+'_actual_'+v34SesionDe(tipo))||''; }
+function v34SetActualId(tipo,id){ localStorage.setItem('gastos_'+tipo+'_actual_'+v34SesionDe(tipo), id); }
 function v34ContenedorActual(tipo, contenedores){
   const id=v34ActualId(tipo);
   return contenedores.find(c=>c.id===id) || contenedores.find(c=>c.def) || contenedores[0] || {id:'',nombre:'—'};
@@ -4091,10 +4101,10 @@ async function v28LoadShopping(){
   const listaActual=v34ContenedorActual('lista',listas);
   const listaId=listaActual.id;
   try{
-    const r=await postGAS({action:'getShopping', sesion:currentSaveSesion(), listaId, esDefault:!!listaActual.def});
+    const r=await postGAS({action:'getShopping', sesion:activeSesion, listaId, esDefault:!!listaActual.def});
     shopItems = Array.isArray(r.items) ? r.items : [];
     v27ShopLoaded=true;
-    if(shopItems.length===0) shopItems.push({done:false,item:'',depto:'',quien:'',tienda:'',sesion:currentSaveSesion(),alcance:'solo',listaId});
+    if(shopItems.length===0) shopItems.push({done:false,item:'',depto:'',quien:'',tienda:'',sesion:activeSesion,alcance:'solo',listaId});
     v28RenderShop();
     v31RenderSugs(); // v13: chips de "se te está acabando"
     v32RenderRebuy(); // v16: 🔁 ciclos de recompra
@@ -4120,7 +4130,7 @@ function v28RenderShop(){
     const el=document.getElementById('sh-'+col);
     if(el) el.textContent = shopSort.col===col ? (shopSort.dir===1?' ▲':' ▼') : '';
   });
-  const mia=currentSaveSesion();
+  const mia=activeSesion;
   c.innerHTML = shopItems.map((it,i)=>{
     const ajena=it.sesion && it.sesion!==mia;
     const badge=ajena?'<span class="chip" style="font-size:9px;padding:1px 5px" title="Compartido desde '+esc(it.sesion)+'">🔗 '+esc(it.sesion)+'</span>':'';
@@ -4160,13 +4170,13 @@ function v28ShopItemKey(ev, i){
   ev.preventDefault();
   shopItems[i].item = ev.target.value; // captura lo escrito
   // Enter: agrega fila nueva debajo y enfoca (autosave incluido)
-  shopItems.splice(i+1, 0, {done:false,item:'',depto:shopItems[i].depto||'',quien:'',tienda:shopItems[i].tienda||'',sesion:currentSaveSesion(),alcance:shopItems[i].alcance||'solo',listaId:v34ContenedorActual('lista',listas).id});
+  shopItems.splice(i+1, 0, {done:false,item:'',depto:shopItems[i].depto||'',quien:'',tienda:shopItems[i].tienda||'',sesion:activeSesion,alcance:shopItems[i].alcance||'solo',listaId:v34ContenedorActual('lista',listas).id});
   v28RenderShop();
   const nx=document.getElementById('shopItem-'+(i+1)); if(nx) nx.focus();
   v28QueueSave();
 }
 function v28ShopAdd(){
-  shopItems.push({done:false,item:'',depto:'',quien:'',tienda:'',sesion:currentSaveSesion(),alcance:'solo',listaId:v34ContenedorActual('lista',listas).id});
+  shopItems.push({done:false,item:'',depto:'',quien:'',tienda:'',sesion:activeSesion,alcance:'solo',listaId:v34ContenedorActual('lista',listas).id});
   v28RenderShop();
   const nx=document.getElementById('shopItem-'+(shopItems.length-1)); if(nx) nx.focus();
   v28QueueSave();
@@ -4194,7 +4204,7 @@ function v28QueueSave(){
 }
 async function v28SaveShopping(){
   const listaActual=v34ContenedorActual('lista',listas);
-  const mia=currentSaveSesion();
+  const mia=activeSesion;
   try{
     // v29: los items "ajenos" (vistos por membresía automática de otra sesión,
     // ej. Personal-Lot viendo la lista de "Lot & Temis") son de solo lectura
@@ -4333,7 +4343,7 @@ let sharedProds=[], invSharedLoaded=false;
 async function v33LoadInvCompartido(){
   if(invSharedLoaded) return;
   try{
-    const r=await postGAS({action:'getInventarioCompartido', sesion:currentSaveSesion()});
+    const r=await postGAS({action:'getInventarioCompartido', sesion:activeSesion});
     sharedProds=(r&&r.ok&&Array.isArray(r.productos))?r.productos:[];
     invSharedLoaded=true;
     v30RenderInv();
@@ -4667,7 +4677,12 @@ async function v31ProdFormSubmit(){
   const st=document.getElementById('invStatus');
   if(st) st.textContent='● Guardando…';
   try{
-    const saveSesion=currentSaveSesion();
+    // v29: agregar directo a Inventario siempre es de la sesión ACTIVA (no
+    // currentSaveSesion(), que en modo Personal apunta a "Personal-<tú>" —
+    // una sesión distinta a la que lee allProds/loadExp(), causando que el
+    // producto recién guardado invalidara el caché equivocado y nunca
+    // apareciera aunque sí quedara bien guardado en el Sheet).
+    const saveSesion=activeSesion;
     const r=await postGAS({action:'saveProductos', sesion:saveSesion, compraId:'', replace:false,
       tienda:prod.tienda||document.getElementById('pfTienda').value.trim(), fecha:new Date().toISOString().split('T')[0], quien:myName(),
       productos:[prod]});
@@ -5520,7 +5535,8 @@ function pCardLabel(c){
   else if(tf) term=' ····'+tf;
   else if(tv) term=' 📱····'+tv;
   const tit = c.titular? (' ('+c.titular+')') : '';
-  return (c.banco||'')+' '+tipo+term+tit;
+  const red = c.red? (' '+c.red) : '';
+  return (c.banco||'')+red+' '+tipo+term+tit;
 }
 function pCardOptions(sel){
   const cards=pItemsOf('tarjeta');
@@ -6030,16 +6046,17 @@ function pRenderTarjetas(){
       ${pCardAlarmaChip(c)}
     </div>
     ${creditoHtml}${feesHtml}${sensiblesHtml}
-    ${pRenderEstadosTarjeta(c)}${pMSIDeTarjeta(c.id)}
+    ${pRenderEstadosTarjeta(c)}
     </div></div>`;
   }).join('') || '<div style="color:var(--ink-3);font-size:13px;padding:20px;text-align:center">Sin tarjetas. Agrega tus TDC/TDD para elegirlas al pagar.</div>';
-  const sinTarjeta=pItemsOf('msi').filter(m=>!m.tarjeta);
-  const msiSinTarjeta=sinTarjeta.length?`<div style="margin-top:14px"><div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-3);margin-bottom:6px">🗓️ MSI sin tarjeta asignada</div>${sinTarjeta.map(pMSIRowHTML).join('')}</div>`:'';
+  // v29: las compras a MSI ya NO se listan aquí (ni por tarjeta ni "sin
+  // tarjeta") — viven solo en el apartado "🗓️ Ver compras a MSI" para no
+  // duplicar la misma info en dos lugares de Tarjetas.
   return `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
       <button class="rt-btn" style="font-weight:600" onclick="pOpenForm('tarjeta','')">＋ Nueva tarjeta</button>
       <button class="rt-btn" onclick="pOpenForm('msi','')">＋ Compra a MSI</button>
       <button class="rt-btn" onclick="pToggleTarjMSIView()">🗓️ Ver compras a MSI</button>
-    </div>${rows}${msiSinTarjeta}`;
+    </div>${rows}`;
 }
 // ── MSI (meses sin intereses) ──
 function pMSICuotaMonto(m){ const meses=parseInt(m.meses)||1; return (parseFloat(m.monto)||0)/meses; }
@@ -6093,12 +6110,6 @@ function pMSIRowHTML(m){
         <div style="margin-top:4px">${cuotasHtml}</div>
       </details>
     </div>`;
-}
-//  MSI de una tarjeta específica (anidado dentro de su bloque en Tarjetas).
-function pMSIDeTarjeta(cardId){
-  const items=pItemsOf('msi').filter(m=>m.tarjeta===cardId);
-  if(!items.length) return '';
-  return `<div style="margin-top:8px"><div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-3);margin-bottom:4px">Compras a MSI</div>${items.map(pMSIRowHTML).join('')}</div>`;
 }
 function pToggleMSICuota(id,key){
   const m=pItems.find(x=>x.id===id); if(!m)return;
@@ -6252,16 +6263,28 @@ function pMovComoMSI(btn){
   const m=pMovRowHTMLObjFromRow(row);
   const cardId=pFval('pfTarjeta')||(pConciliacionActual&&pConciliacionActual.tarjeta)||'';
   const meses=parseInt(prompt('¿A cuántos meses es esta compra a MSI? (ej. 3, 6, 12)','12'))||1;
+  // v29: si este cobro NO es la primera cuota (ej. ya vas en la 3 de 12),
+  // pregunta el número para calcular hacia atrás la fecha de la 1ª cuota —
+  // así el calendario completo (1ª a última) queda bien desde el principio.
+  const numCuota=Math.min(meses, parseInt(prompt('¿Qué cuota es este cobro? (ej. 1 si es la primera, 3 si ya va en la 3 de '+meses+')','1'))||1);
+  let fechaPrimeraCuota=m.fecha||new Date().toISOString().substring(0,10);
+  if(numCuota>1){
+    const d=new Date(fechaPrimeraCuota+'T12:00:00');
+    d.setMonth(d.getMonth()-(numCuota-1));
+    fechaPrimeraCuota=d.toISOString().substring(0,10);
+  }
   pOpenForm('msi','');
   setTimeout(()=>{
     const cuota=parseFloat(m.monto)||0;
     if(pF('pfConcepto')) pF('pfConcepto').value=m.descripcion||'';
     if(pF('pfMonto')) pF('pfMonto').value=Math.round(cuota*meses); // total sugerido = esta cuota × meses; ajústalo si ya llevaba pagadas
     if(pF('pfMeses')) pF('pfMeses').value=meses;
-    if(pF('pfInicio')) pF('pfInicio').value=m.fecha||new Date().toISOString().substring(0,10);
+    if(pF('pfInicio')) pF('pfInicio').value=fechaPrimeraCuota;
     if(cardId && pF('pfTarjeta')) pF('pfTarjeta').value=cardId;
   },0);
-  showToast('Revisa el TOTAL sugerido (esta cuota × '+meses+') y guarda. Luego marca este movimiento como "Ignorado" — ya queda como MSI, no como gasto suelto.');
+  showToast(numCuota>1
+    ? ('Cuota '+numCuota+' de '+meses+' — se calculó la fecha de la 1ª cuota hacia atrás. Revisa el TOTAL y marca las cuotas 1 a '+(numCuota-1)+' como pagadas en el calendario tras guardar.')
+    : ('Revisa el TOTAL sugerido (esta cuota × '+meses+') y guarda. Luego marca este movimiento como "Ignorado" — ya queda como MSI, no como gasto suelto.'));
 }
 function pAddEstadoMov(){
   const host=pF('pfMovRows'); if(!host)return;
@@ -6471,6 +6494,9 @@ function pFormFieldsHTML(tipo, it){
           <button type="button" class="tbtn ${ct==='TDC'?'sel':''}" id="ptC" onclick="pTarjTipo('TDC')">💳 Crédito (TDC)</button>
           <button type="button" class="tbtn ${ct==='TDD'?'sel':''}" id="ptD" onclick="pTarjTipo('TDD')">🏦 Débito (TDD)</button>
         </div><input type="hidden" id="pfCtipo" value="${ct}"></div>`
+      + `<div class="pf-field"><label>Red</label><select id="pfRed">
+          ${['','Visa','Mastercard','American Express','Otra'].map(x=>'<option value="'+x+'"'+((it.red||'')===x?' selected':'')+'>'+(x||'—')+'</option>').join('')}
+        </select></div>`
       + `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
           ${F('💳 Terminación física','pfTermFis',it.termFisica||it.terminacion,'placeholder="1234" maxlength="4"')}
           ${F('📱 Terminación virtual','pfTermVir',it.termVirtual,'placeholder="5678" maxlength="4"')}
@@ -6591,7 +6617,7 @@ async function pFormSave(){
     item={...base, concepto:pFval('pfConcepto').trim(), tipoPago, monto:parseFloat(pFval('pfMonto'))||0, frecuencia:pFval('pfFrecuencia')||'mensual', diaLimite:pFval('pfDiaLimite'), fechaPago:pFval('pfFechaPago'), categoria:pFval('pfCategoria').trim(), formaPago:pFval('pfFormaPago'), tarjeta:(pFval('pfFormaPago')==='Tarjeta'?pFval('pfTarjeta'):''), generaGasto:(tipoPago==='tarjeta'?false:(pFval('pfGeneraGasto')!=='no')), nota:pFval('pfNota').trim(), pagos:(prev&&prev.pagos)||{}};
   } else if(t==='tarjeta'){
     if(!pFval('pfBanco').trim() && !pFval('pfTarjNombre').trim()){ showToast('Pon al menos alias o banco'); return; }
-    item={...base, nombre:pFval('pfTarjNombre').trim(), titular:pFval('pfTitular').trim(), banco:pFval('pfBanco').trim(), ctipo:pFval('pfCtipo'), termFisica:pFval('pfTermFis').trim(), termVirtual:pFval('pfTermVir').trim(), diaCorte:pFval('pfDiaCorte'), diaDisponible:pFval('pfDiaDisponible'), diaLimite:pFval('pfDiaLimite'), creditoMax:parseFloat(pFval('pfCreditoMax'))||0, interesAnual:parseFloat(pFval('pfInteres'))||0, comisionTardio:parseFloat(pFval('pfComisionTardio'))||0, comisionInactividad:parseFloat(pFval('pfComisionInactividad'))||0, requisitoMinimo:pFval('pfRequisitoMinimo').trim(), clabe:pFval('pfClabe').trim(), numFisica:pFval('pfNumFis').trim(), numVirtual:pFval('pfNumVir').trim(), venceFisica:pFval('pfVenceFis').trim(), venceVirtual:pFval('pfVenceVir').trim(), pin:pFval('pfPin').trim(), nota:pFval('pfNotaTarj').trim()};
+    item={...base, nombre:pFval('pfTarjNombre').trim(), titular:pFval('pfTitular').trim(), banco:pFval('pfBanco').trim(), ctipo:pFval('pfCtipo'), red:pFval('pfRed'), termFisica:pFval('pfTermFis').trim(), termVirtual:pFval('pfTermVir').trim(), diaCorte:pFval('pfDiaCorte'), diaDisponible:pFval('pfDiaDisponible'), diaLimite:pFval('pfDiaLimite'), creditoMax:parseFloat(pFval('pfCreditoMax'))||0, interesAnual:parseFloat(pFval('pfInteres'))||0, comisionTardio:parseFloat(pFval('pfComisionTardio'))||0, comisionInactividad:parseFloat(pFval('pfComisionInactividad'))||0, requisitoMinimo:pFval('pfRequisitoMinimo').trim(), clabe:pFval('pfClabe').trim(), numFisica:pFval('pfNumFis').trim(), numVirtual:pFval('pfNumVir').trim(), venceFisica:pFval('pfVenceFis').trim(), venceVirtual:pFval('pfVenceVir').trim(), pin:pFval('pfPin').trim(), nota:pFval('pfNotaTarj').trim()};
   } else if(t==='estado'){
     if(!pFval('pfTarjeta')){ showToast('Elige tarjeta'); return; }
     const prev=pFormId?pItems.find(x=>x.id===pFormId):null;
@@ -6872,11 +6898,13 @@ async function vEnsure(){
 }
 async function vRevelar(btn, campo, valor){
   if(!(await vEnsure())) return;
-  const span=btn.closest('.vault-field').querySelector('.vault-val');
-  span.textContent=valor;
+  const field=btn.closest('.vault-field');
+  const span=field.querySelector('.vault-val');
+  span.textContent=campo+': '+valor;
+  const masked=field.querySelector('.vault-masked'); if(masked) masked.style.display='none';
   btn.style.display='none';
   span.style.display='inline';
-  const cp=btn.closest('.vault-field').querySelector('.vault-copy'); if(cp) cp.style.display='inline-flex';
+  const cp=field.querySelector('.vault-copy'); if(cp) cp.style.display='inline-flex';
 }
 async function vCopiar(btn, valor){
   try{
@@ -6886,13 +6914,14 @@ async function vCopiar(btn, valor){
   }catch(e){ showToast('⚠ No se pudo copiar'); }
 }
 //  Campo enmascarado con botón revelar (pide vEnsure) + copiar (aparece tras revelar).
+// v29: antes se mostraba un preview con los últimos 4 dígitos SIN pedir
+// contraseña (y el PIN completo se adivinaba fácil por ser solo 4 dígitos
+// tapados) — ahora no se muestra ningún dígito real hasta desbloquear.
 function vField(label, valor){
   if(!valor) return '';
-  const masked = valor.length>4 ? ('•'.repeat(Math.max(valor.length-4,4))+valor.slice(-4)) : '••••';
   const valEsc = esc(valor).replace(/'/g,"\\'");
   return `<span class="vault-field" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;background:var(--surface2);border-radius:6px;padding:3px 7px">
-    <span style="color:var(--ink-3)">${esc(label)}:</span>
-    <span class="vault-masked" style="font-family:var(--mono)">${esc(masked)}</span>
+    <span class="vault-masked" style="color:var(--ink-3)">🔒 ${esc(label)}</span>
     <span class="vault-val" style="display:none;font-family:var(--mono)"></span>
     <button type="button" class="rt-btn" style="font-size:9px;padding:1px 5px" onclick="vRevelar(this,'${esc(label)}','${valEsc}')">👁</button>
     <button type="button" class="rt-btn vault-copy" style="font-size:9px;padding:1px 5px;display:none" onclick="vCopiar(this,'${valEsc}')">📋</button>
