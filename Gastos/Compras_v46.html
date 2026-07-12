@@ -1691,7 +1691,7 @@ details:not([open]) .chev{transform:rotate(-90deg)}
 // v29: nombre clave de esta entrega — cámbialo cada vez que termines un lote
 // de cambios, así en 👥 → 🛠 Panel dev se puede confirmar que el navegador
 // está cargando la versión más reciente y no una copia en caché.
-const BUILD_VERSION='Fresia';
+const BUILD_VERSION='Girasol';
 let GAS_URL=localStorage.getItem('gastos_gas_url')||'';
 function v29TieneGasUrl(){ return !!GAS_URL; }
 function v29GuardarGasUrl(url){
@@ -3816,7 +3816,10 @@ sesion:saveSesion};
           return out;
         })});
     }
-    if(!ei && window.__pagoFijoPendiente){ const f=pItems.find(x=>x.id===window.__pagoFijoPendiente); if(f){ const mk=pMesKey(); f.pagos=f.pagos||{}; f.pagos[mk]={monto:parseFloat(f.monto)||0, fecha:fecha, gastoRef:body.concepto||''}; await pSaveItem(f); } window.__pagoFijoPendiente=''; }
+    // v29: usa el mes de la FECHA del gasto (no siempre "hoy") — así un
+    // pago fijo detectado en un estado de cuenta de otro mes marca el mes
+    // correcto como pagado, no el mes actual.
+    if(!ei && window.__pagoFijoPendiente){ const f=pItems.find(x=>x.id===window.__pagoFijoPendiente); if(f){ const mk=(body.fecha||'').substring(0,7)||pMesKey(); f.pagos=f.pagos||{}; f.pagos[mk]={monto:parseFloat(f.monto)||0, fecha:fecha, gastoRef:body.concepto||''}; await pSaveItem(f); } window.__pagoFijoPendiente=''; }
     // v29: si este gasto nuevo vino de "➕ Registrar como nuevo gasto" en conciliación, vincula la fila sola
     if(!ei && r.rowIndex && window.__movVincularPendiente){
       const mrow=window.__movVincularPendiente;
@@ -5997,6 +6000,10 @@ function pRenderFijos(){
   const filtros=[['todos','Todos'],['pendientes','Pendientes'],['pagados','Pagados'],['vencidos','Vencidos'],['tarjetas','Tarjetas'],['servicios','Servicios'],['suscripciones','Suscripciones']];
   const chips=`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">${filtros.map(([k,l])=>`<button class="rt-btn" style="font-size:11px;${pFijoFiltro===k?'font-weight:700;border-color:var(--personal);color:var(--personal)':''}" onclick="pSetFijoFiltro('${k}')">${esc(l)}</button>`).join('')}</div>`;
   const items=pItemsOf('fijo').filter(f=>pFijoPasaFiltro(f,mk));
+  // v29: suma de lo que se está viendo con el filtro activo — antes no había
+  // forma de saber "cuánto es en total" sin sumar a mano.
+  const totalFiltro=items.reduce((s,f)=>s+(parseFloat(f.monto)||0),0);
+  const sumaHtml=items.length?`<div style="font-size:12px;color:var(--ink-3);margin-bottom:10px">Suma de esta vista (<strong>${items.length}</strong>): <strong style="color:var(--ink);font-family:var(--mono)">${pMoney(totalFiltro)}</strong></div>`:'';
   const rows=items.map(f=>{
     const pagado=(f.pagos||{})[mk]; const dias=pDiasPara(f.diaLimite);
     const card=pCardById(f.tarjeta);
@@ -6027,7 +6034,7 @@ function pRenderFijos(){
       </div>
     </div>`;
   }).join('') || '<div style="color:var(--ink-3);font-size:13px;padding:20px;text-align:center">Sin pagos fijos con este filtro.</div>';
-  return `<button class="rt-btn" style="font-weight:600;margin-bottom:12px" onclick="pOpenForm('fijo','')">＋ Nuevo pago fijo</button>${chips}${rows}
+  return `<button class="rt-btn" style="font-weight:600;margin-bottom:12px" onclick="pOpenForm('fijo','')">＋ Nuevo pago fijo</button>${chips}${sumaHtml}${rows}
     <details style="margin-top:14px"><summary style="cursor:pointer;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-3)"><span class="chev">▾</span> 📅 Historial completo por mes</summary>
       <div style="margin-top:8px">${pRenderHistorialMensual()}</div>
     </details>`;
@@ -6039,9 +6046,12 @@ function pRenderHistorialMensual(){
   pItemsOf('fijo').forEach(f=>Object.keys(f.pagos||{}).forEach(k=>months.add(k)));
   const list=[...months].sort().reverse().slice(0,12);
   return list.map(mk=>{
+    // v29: suma de pagos fijos de ese mes (lo ya pagado usa el monto
+    // registrado ese mes; lo pendiente usa el monto esperado).
+    const totalMes=pItemsOf('fijo').reduce((s,f)=>{ const p=(f.pagos||{})[mk]; const monto=(p&&typeof p==='object')?(parseFloat(p.monto)||0):(parseFloat(f.monto)||0); return s+monto; },0);
     const fijos=pItemsOf('fijo').map(f=>{ const st=pEstadoPagoMes(f,mk); return '<div>• '+esc(f.concepto||'Pago fijo')+': <span style="color:'+st.col+';font-weight:600">'+st.txt+'</span></div>'; }).join('');
     const edos=pItemsOf('estado').filter(e=>e.mes===mk).map(e=>{ const c=pCardById(e.tarjeta)||{}; const co=pConciliacionEstado(e); return '<div>• '+esc(pCardLabel(c))+': <span style="color:'+pEstadoColor(co.estado)+';font-weight:600">'+pEstadoLabel(co.estado)+'</span>'+(co.dif?(' · dif '+pMoney(Math.abs(co.dif))):'')+'</div>'; }).join('') || '<div style="color:var(--ink-3)">• Sin estados de cuenta cargados</div>';
-    return `<div style="padding:12px;border:1px solid var(--border);border-radius:10px;margin-bottom:10px;background:var(--surface)"><div style="font-weight:700;margin-bottom:6px">📅 ${esc(mk)}</div><div style="font-size:12px;line-height:1.6">${fijos}${edos}</div></div>`;
+    return `<div style="padding:12px;border:1px solid var(--border);border-radius:10px;margin-bottom:10px;background:var(--surface)"><div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px"><strong class="chip" style="font-size:12px;background:var(--surface2);border:1px solid var(--border2)">📅 ${esc(pMesLabelCorto(mk))}</strong><strong style="font-family:var(--mono);font-size:12px">${pMoney(totalMes)}</strong></div><div style="font-size:12px;line-height:1.6">${fijos}${edos}</div></div>`;
   }).join('');
 }
 function pToggleFijoPagado(id){
@@ -6329,12 +6339,20 @@ function pMovRowsHTML(movs){
     + arr.map(pMovRowHTML).join('')
     + '</div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px"><button type="button" class="rt-btn" style="font-size:11px" onclick="pAddEstadoMov()">＋ Movimiento</button><button type="button" class="rt-btn" style="font-size:11px" onclick="pAutoMatchFormMovs()">🔎 Auto-identificar</button></div></div>';
 }
+// v29: iconos cortos para el select de estado del movimiento — antes era
+// puro texto largo (Pendiente de revisar, Parcialmente conciliado…), ahora
+// se ve un check/ícono de un vistazo incluso con el select cerrado.
+function pMovEstadoIcon(s){
+  return ({pendiente:'⏳ Pendiente', identificado:'✅ Identificado', posible:'🤔 Posible', no_identificado:'❌ No identif.', ignorado:'🚫 Ignorado'})[s]||('⏳ '+(s||'Pendiente'));
+}
 function pMovRowHTML(m){
   m=m||{estado:'pendiente'};
-  const opts=['pendiente','identificado','posible','no_identificado','ignorado'].map(s=>'<option value="'+s+'"'+((m.estado||'pendiente')===s?' selected':'')+'>'+pEstadoLabel(s)+'</option>').join('');
-  const link=m.gastoId?'<button type="button" class="shop-del" title="Ver gasto vinculado" onclick="pOpenLinkedGasto(\''+esc(m.gastoId)+'\')">↗</button>'
-    :m.msiId?'<button type="button" class="shop-del" title="Ver compra a MSI vinculada" onclick="pOpenForm(\'msi\',\''+esc(m.msiId)+'\')">↗🗓️</button>'
-    :'<button type="button" class="rt-btn" style="font-size:10px;padding:2px 5px" title="Vincular con gasto existente" onclick="pVincularMovRow(this)">🔗</button><button type="button" class="rt-btn" style="font-size:10px;padding:2px 5px" title="Registrar como nuevo gasto" onclick="pRegistrarMovComoGasto(this)">➕</button><button type="button" class="rt-btn" style="font-size:10px;padding:2px 5px" title="Este movimiento es una compra a meses (MSI) — crearla desde aquí" onclick="pMovComoMSI(this)">🗓️</button>';
+  const opts=['pendiente','identificado','posible','no_identificado','ignorado'].map(s=>'<option value="'+s+'"'+((m.estado||'pendiente')===s?' selected':'')+'>'+pMovEstadoIcon(s)+'</option>').join('');
+  // v29: una vez vinculado (gasto o MSI), deja desvincular sin perder el
+  // gasto/MSI ya creado — antes solo se podía "ver", no deshacer el enlace.
+  const link=m.gastoId?'<button type="button" class="shop-del" title="Ver gasto vinculado" onclick="pOpenLinkedGasto(\''+esc(m.gastoId)+'\')">↗</button><button type="button" class="rt-btn" style="font-size:10px;padding:2px 5px" title="Desvincular (no borra el gasto, solo esta fila)" onclick="pDesvincularMovRow(this)">↩️</button>'
+    :m.msiId?'<button type="button" class="shop-del" title="Ver compra a MSI vinculada" onclick="pOpenForm(\'msi\',\''+esc(m.msiId)+'\')">↗🗓️</button><button type="button" class="rt-btn" style="font-size:10px;padding:2px 5px" title="Desvincular (no borra la MSI, solo esta fila)" onclick="pDesvincularMovRow(this)">↩️</button>'
+    :'<button type="button" class="rt-btn" style="font-size:10px;padding:2px 5px" title="Vincular con gasto existente" onclick="pVincularMovRow(this)">🔗</button><button type="button" class="rt-btn" style="font-size:10px;padding:2px 5px" title="Registrar como nuevo gasto" onclick="pRegistrarMovComoGasto(this)">➕</button><button type="button" class="rt-btn" style="font-size:10px;padding:2px 5px" title="Este movimiento es una compra a meses (MSI) — crearla desde aquí" onclick="pMovComoMSI(this)">🗓️</button><button type="button" class="rt-btn" style="font-size:10px;padding:2px 5px" title="Este movimiento es uno de tus pagos fijos — vincularlo" onclick="pMovComoFijo(this)">🔁</button>';
   return '<div class="mov-grid"><input type="date" class="mov-fecha" value="'+esc(m.fecha||'')+'"><input class="mov-desc" value="'+esc(m.descripcion||'')+'" placeholder="Comercio"><input type="number" class="mov-monto" value="'+esc(m.monto||'')+'" placeholder="0"><input class="mov-cat" value="'+esc(m.categoria||'')+'" placeholder="Categoría"><select class="mov-estado">'+opts+'</select><span style="display:flex;gap:2px;flex-wrap:wrap"><input type="hidden" class="mov-gasto" value="'+esc(m.gastoId||'')+'"><input type="hidden" class="mov-msi" value="'+esc(m.msiId||'')+'">'+link+'<button type="button" class="shop-del" onclick="this.closest(\'.mov-grid\').remove()">🗑</button></span></div>';
 }
 //  Vincular con gasto existente: sugiere el mejor match automático, pero si no
@@ -6391,6 +6409,54 @@ function pVincularConfirmar(btn){
   row.replaceWith(nuevo);
   pop.remove();
   showToast('🔗 Vinculado');
+}
+// v29: un movimiento del estado de cuenta que en realidad es uno de tus
+// pagos fijos (típico: te enteras que ya se cobró hasta que llega el
+// estado) — eliges cuál, se registra como gasto real Y ese pago fijo queda
+// marcado como pagado ese mes, todo en un solo paso.
+// v29: quita el vínculo (gasto/MSI) de esta fila del estado de cuenta, sin
+// borrar el gasto/MSI que ya se creó — vuelve a "pendiente" para poder
+// vincularla de nuevo si te equivocaste.
+function pDesvincularMovRow(btn){
+  const row=btn.closest('.mov-grid');
+  const m=pMovRowHTMLObjFromRow(row);
+  m.gastoId=''; m.msiId=''; m.estado='pendiente';
+  row.replaceWith(pRowFromEl(m));
+  showToast('Desvinculado');
+}
+function pMovComoFijo(btn){
+  const row=btn.closest('.mov-grid');
+  const fijos=pItemsOf('fijo');
+  if(!fijos.length){ showToast('No tienes pagos fijos registrados todavía'); return; }
+  const opts='<option value="">— elegir pago fijo —</option>'+fijos.map(f=>'<option value="'+esc(f.id)+'">'+esc(f.concepto||'Pago fijo')+' · '+pMoney(f.monto)+'</option>').join('');
+  const pop=document.createElement('div');
+  pop.className='mov-vincular-pop';
+  pop.style.cssText='padding:8px;background:var(--surface2);border-radius:8px;margin:2px 0 6px;font-size:11px';
+  pop.innerHTML='<div style="margin-bottom:5px;color:var(--ink-3)">¿Cuál de tus pagos fijos es este movimiento?</div>'
+    +'<select style="width:100%;margin-bottom:6px;font-size:11px">'+opts+'</select>'
+    +'<div style="display:flex;gap:6px"><button type="button" class="rt-btn" style="font-size:10px;font-weight:600" onclick="pMovComoFijoConfirmar(this)">Usar este pago fijo</button><button type="button" class="rt-btn" style="font-size:10px" onclick="this.closest(\'.mov-vincular-pop\').remove()">Cancelar</button></div>';
+  row.insertAdjacentElement('afterend', pop);
+}
+function pMovComoFijoConfirmar(btn){
+  const pop=btn.closest('.mov-vincular-pop');
+  const fijoId=pop.querySelector('select').value;
+  if(!fijoId){ showToast('Elige un pago fijo'); return; }
+  const f=pItems.find(x=>x.id===fijoId); if(!f) return;
+  const row=pop.previousElementSibling;
+  const m=pMovRowHTMLObjFromRow(row);
+  const cardId=pFval('pfTarjeta')||(pConciliacionActual&&pConciliacionActual.tarjeta)||'';
+  const c=pCardById(cardId)||{};
+  openModal(); // limpia window.__movVincularPendiente/__pagoFijoPendiente — se vuelven a poner después
+  document.getElementById('iDate').value=m.fecha||new Date().toISOString().substring(0,10);
+  document.getElementById('iCosto').value=Math.round(m.monto||f.monto||0);
+  document.getElementById('iConc').value=f.concepto||'Pago fijo';
+  document.getElementById('iCat').value=f.categoria||'Servicios';
+  document.getElementById('iNotas').value='Desde estado de cuenta · '+pCardLabel(c);
+  const mm=document.getElementById('iMetodo'); if(mm && cardId){ mm.value='Tarjeta'; onMetodoChange(); const s=document.getElementById('iTarjetaSel'); if(s){ s.value=cardId; onTarjetaSelChange(); } }
+  window.__movVincularPendiente=row; // vincula (↗) la fila al gasto nuevo
+  window.__pagoFijoPendiente=fijoId; // marca ese pago fijo como pagado ese mes
+  pop.remove();
+  showToast('Revisa y guarda; se vinculará con "'+(f.concepto||'pago fijo')+'" y quedará marcado como pagado');
 }
 function pMovRowHTMLObjFromRow(row){
   return {
@@ -6931,14 +6997,22 @@ function pTarjetaCargado(cardId, mk){
   return tot;
 }
 // v42: ¿el "pago" de un gasto corresponde a esta tarjeta? (match por banco/terminación)
+// v29: el match por SOLO banco (sin terminación) causaba que, si tenías 2+
+// tarjetas del mismo banco, un gasto se contara en el estado de cuenta de
+// AMBAS — ahora la terminación manda, y "banco solo" solo cuenta si es tu
+// única tarjeta de ese banco (sin ambigüedad posible).
 function pPagoEsTarjeta(pagoStr, c){
   const pg=pagoParse(pagoStr); if(!pg||!pg.tarjeta) return false;
   const t=pg.tarjeta.toLowerCase();
   const banco=(c.banco||'').toLowerCase();
   const tf=(c.termFisica||c.terminacion||''), tv=(c.termVirtual||'');
-  if(banco && t.includes(banco)) return true;
   if(tf && t.includes(tf)) return true;
   if(tv && t.includes(tv)) return true;
+  if(banco && t.includes(banco)){
+    const todas=(typeof sesionCards!=='undefined' && sesionCards && sesionCards.length)?sesionCards:((typeof pItemsOf==='function')?pItemsOf('tarjeta'):[]);
+    const mismoBanco=todas.filter(x=>(x.banco||'').toLowerCase()===banco);
+    if(mismoBanco.length<=1) return true;
+  }
   return false;
 }
 // Gastos de la sesión activa pagados con esta tarjeta
@@ -7116,10 +7190,16 @@ async function pConciliacionGuardar(){
 function pRegistrarDiferencia(estadoId){
   const e=pItems.find(x=>x.id===estadoId); if(!e)return;
   const co=pConciliacionEstado(e);
-  if(!(co.dif>1)){ showToast('No hay diferencia positiva para registrar'); return; }
+  // v29: la diferencia a registrar se compara contra el PAGO PARA NO GENERAR
+  // INTERESES (e.noIntereses), no contra el Total del estado (saldo / total
+  // de cargos) — ese total puede incluir MSI/saldos que no corresponden a
+  // "lo que falta identificar este ciclo".
+  const noIntereses=parseFloat(e.noIntereses)||0;
+  const dif=Math.round(noIntereses-co.totalApp);
+  if(!(dif>1)){ showToast('No hay diferencia positiva para registrar (contra el pago para no generar intereses)'); return; }
   openModal();
   document.getElementById('iDate').value=new Date().toISOString().substring(0,10);
-  document.getElementById('iCosto').value=Math.round(co.dif);
+  document.getElementById('iCosto').value=dif;
   document.getElementById('iConc').value='Gasto no identificado / diferencia de estado de cuenta';
   document.getElementById('iCat').value='Por revisar';
   document.getElementById('iNotas').value='Diferencia estado '+(e.mes||'')+' · '+pCardLabel(co.card)+' · estadoId '+e.id;
