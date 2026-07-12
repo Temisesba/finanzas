@@ -1293,6 +1293,11 @@ details:not([open]) .chev{transform:rotate(-90deg)}
         </div>
         <div style="font-size:11px;color:var(--ink-3);margin-top:4px">Solo se guarda en este navegador. Cámbiala aquí si tu backend se movió a otra URL.</div>
       </div>
+      <div class="field"><label>🛠 Panel dev</label>
+        <div style="font-size:12px;color:var(--ink-3);background:var(--surface2);border:1px solid var(--border2);border-radius:8px;padding:8px 10px">
+          Versión: <strong id="devBuildName">—</strong>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -1325,7 +1330,7 @@ details:not([open]) .chev{transform:rotate(-90deg)}
 </div>
 
 <!-- v14: Formulario de producto -->
-<div class="overlay" id="prodFormOverlay" style="display:none;z-index:160" onclick="if(event.target.id==='prodFormOverlay')this.style.display='none'">
+<div class="overlay" id="prodFormOverlay" style="display:none;z-index:298" onclick="if(event.target.id==='prodFormOverlay')this.style.display='none'">
   <div class="modal" style="max-width:440px">
     <div class="mhdr"><h2 id="pfTitle">＋ Producto a inventario</h2><button class="mclose" onclick="document.getElementById('prodFormOverlay').style.display='none'">✕</button></div>
     <div class="mbody">
@@ -1682,6 +1687,10 @@ details:not([open]) .chev{transform:rotate(-90deg)}
 // v29: la URL del backend (Apps Script) YA NO se escribe aquí — este archivo es
 // público en GitHub. Se guarda una sola vez en localStorage de tu navegador,
 // pegándola en el aviso inicial o en 👥 Sesiones y nombres → URL del backend.
+// v29: nombre clave de esta entrega — cámbialo cada vez que termines un lote
+// de cambios, así en 👥 → 🛠 Panel dev se puede confirmar que el navegador
+// está cargando la versión más reciente y no una copia en caché.
+const BUILD_VERSION='Rosa';
 let GAS_URL=localStorage.getItem('gastos_gas_url')||'';
 function v29TieneGasUrl(){ return !!GAS_URL; }
 function v29GuardarGasUrl(url){
@@ -1912,6 +1921,7 @@ function pSetSoy(n){ if(!n)return; localStorage.setItem('gastos_myname', n); ren
 function openPeople(){ v29FillSesionSelect(); renderNames();
   const mf=document.getElementById('miembrosField'); if(mf) mf.style.display=personalMode?'none':'';
   const gu=document.getElementById('gasUrlEditInput'); if(gu) gu.value=GAS_URL;
+  const bv=document.getElementById('devBuildName'); if(bv) bv.textContent=BUILD_VERSION;
   document.getElementById('peopleOverlay').style.display='flex'; }
 function closePeople(){ document.getElementById('peopleOverlay').style.display='none'; }
 function v29UpdateGasUrl(){
@@ -2336,12 +2346,17 @@ async function init(){
     console.log("Error en la carga inicial:", e);
   }
 
-  // v29: al recargar, volver exactamente a la sesión/modo y pestaña donde estabas
+  // v29: al recargar, volver exactamente a la sesión/modo y pestaña donde estabas.
+  // Fijamos pSection ANTES de cambiar de página para que el primer render ya
+  // sea el correcto (evita el "flash" de Resumen y la carrera con pOpenPage/
+  // pAuthAndLoad, que también llaman a pRender() de forma asíncrona).
   try{
-    if(localStorage.getItem('gastos_personalMode')==='1' && myName()){
-      await pEnterPersonal();
-    }
     const savedPage=localStorage.getItem('gastos_currentPage');
+    const savedSection=localStorage.getItem('gastos_pSection');
+    if(savedPage==='salud' && savedSection) pSection=savedSection;
+    if(localStorage.getItem('gastos_personalMode')==='1' && myName()){
+      await pEnterPersonal(savedPage && savedPage!=='gastos'); // v29: si vamos a restaurar otra pestaña, no forzar Gastos primero
+    }
     if(savedPage && savedPage!=='gastos'){
       const btn=[...document.querySelectorAll('.ptab')].find(b=>{
         const txt=b.textContent||'';
@@ -2349,15 +2364,14 @@ async function init(){
       });
       if(btn && (savedPage!=='salud' || btn.style.display!=='none')) switchPage(savedPage, btn);
     }
-    if(savedPage==='salud'){
-      const savedSection=localStorage.getItem('gastos_pSection');
-      if(savedSection){
-        const sbtn=[...document.querySelectorAll('#pTabs .ptab2')].find(b=>{
-          const txt=b.textContent||'';
-          return (savedSection==='deudas'&&/Deudas/.test(txt))||(savedSection==='fijos'&&/Pagos fijos/.test(txt))||(savedSection==='tarjetas'&&/Tarjetas/.test(txt))||(savedSection==='movs'&&/Ingresos/.test(txt))||(savedSection==='resumen'&&/Resumen/.test(txt));
-        });
-        if(sbtn) pSetSection(savedSection, sbtn);
-      }
+    if(savedPage==='salud' && savedSection){
+      const sbtn=[...document.querySelectorAll('#pTabs .ptab2')].find(b=>{
+        const txt=b.textContent||'';
+        return (savedSection==='deudas'&&/Deudas/.test(txt))||(savedSection==='fijos'&&/Pagos fijos/.test(txt))||(savedSection==='tarjetas'&&/Tarjetas/.test(txt))||(savedSection==='movs'&&/Ingresos/.test(txt))||(savedSection==='resumen'&&/Resumen/.test(txt));
+      });
+      // pSection ya quedó fijo arriba; solo falta resaltar el botón correcto
+      // (pRender() se dispara solo vía pOpenPage/pAuthAndLoad más arriba).
+      if(sbtn){ document.querySelectorAll('#pTabs .ptab2').forEach(b=>b.classList.remove('on')); sbtn.classList.add('on'); }
     }
   }catch(e){}
 }
@@ -2621,7 +2635,13 @@ function getFilteredBase(){
   if(from) data=data.filter(e=>e.fecha>=from);
   if(to)   data=data.filter(e=>e.fecha<=to);
   if(cat)  data=data.filter(e=>e.categoria===cat);
-  if(activeF==='Compartido') data=data.filter(e=>e.compartido==='Compartido');
+  // v29: en Personal, "Compartido" solo muestra lo de OTRAS sesiones (lo de tu
+  // sesión activa ya lo ves en la vista normal de esa sesión); Préstamo y
+  // Cotización sí deben verse sin importar la sesión de origen.
+  if(activeF==='Compartido'){
+    data=data.filter(e=>e.compartido==='Compartido');
+    if(personalMode) data=data.filter(e=>(e.sesion||'')!==activeSesion);
+  }
   else if(activeF==='Prestamo')   data=data.filter(e=>e.compartido==='Prestamo'||e.compartido==='Devolucion');
   else if(activeF==='Cotizacion') data=data.filter(e=>e.compartido==='Cotizacion'||e.quien_paga==='Cotizacion');
   else if(activeF.startsWith('P:')){const _n=activeF.slice(2);data=data.filter(e=>e.compartido==='Personal'&&e.quien_paga===_n);}
@@ -2871,7 +2891,10 @@ function renderAll(){
 
 function renderList(data){
   const list=document.getElementById('expList');
-  const derived = personalMode ? pDerivedRowsHTML() : '';
+  // v29: las filas derivadas (fijos/MSI/deudas) no tienen "compartido" ni
+  // sesión propios — solo tiene sentido mostrarlas sin ningún filtro activo,
+  // si no, aparecían siempre sin importar el chip de filtro elegido.
+  const derived = (personalMode && activeF==='all') ? pDerivedRowsHTML() : '';
   if(!data.length && !derived){list.innerHTML='<div class="empty-st">Sin gastos en esta vista.</div>';return;}
   const me=myName();
   list.innerHTML = derived + data.map(e=>{
@@ -3745,7 +3768,11 @@ sesion:saveSesion};
         tienda:body.tienda, fecha:body.fecha, quien:currentPayer,
         productos: prodsLimpios.map(p=>{
           const c=v34Catalogo()[normTxt(p.concepto)];
-          const out={concepto:p.concepto.trim(),marca:p.marca||'',notas:p.notas||'',categoria:p.categoria||'',ubicacion:p.ubicacion||'',piezas:p.piezas,cantidad:p.cantidad,unidad:p.unidad,precioInd:p.precioInd,caducidad:p.caducidad,inventario:p.inventario?'SI':'NA',codigo:p.codigo||'',queda:p.queda??'',inventarioId:v34ContenedorActual('inventario',inventarios).id};
+          // v29: si al agregar/editar la línea del ticket elegiste un inventario
+          // explícito (p.inventarioId), respétalo; si no tocaste nada, va al
+          // PREDETERMINADO (no al que estás viendo ahora mismo — ese criterio
+          // es solo para cuando agregas directo desde Inventario).
+          const out={concepto:p.concepto.trim(),marca:p.marca||'',notas:p.notas||'',categoria:p.categoria||'',ubicacion:p.ubicacion||'',piezas:p.piezas,cantidad:p.cantidad,unidad:p.unidad,precioInd:p.precioInd,caducidad:p.caducidad,inventario:p.inventario?'SI':'NA',codigo:p.codigo||'',queda:p.queda??'',inventarioId:p.inventarioId||(inventarios.find(c=>c.def)||inventarios[0]||{}).id||''};
           if(p.fotoBase64){ out.fotoBase64=p.fotoBase64; out.fotoMime=p.fotoMime; }
           else if(p.fotoUrl){ out.fotoUrl=p.fotoUrl; }
           else if(c&&c.foto){ out.fotoUrl=c.foto; } // hereda del catálogo solo si no eligió una propia
@@ -4167,8 +4194,14 @@ function v28QueueSave(){
 }
 async function v28SaveShopping(){
   const listaActual=v34ContenedorActual('lista',listas);
+  const mia=currentSaveSesion();
   try{
-    const r=await postGAS({action:'saveShopping', sesion:currentSaveSesion(), listaId:listaActual.id, esDefault:!!listaActual.def, items: shopItems.filter(it=>it.item.trim()!=='' || it.depto || it.tienda)});
+    // v29: los items "ajenos" (vistos por membresía automática de otra sesión,
+    // ej. Personal-Lot viendo la lista de "Lot & Temis") son de solo lectura
+    // aquí — si los reenviamos, el backend los duplicaría (ya se preservan
+    // solos como filas ajenas al guardar).
+    const propios=shopItems.filter(it=>(!it.sesion || it.sesion===mia) && (it.item.trim()!=='' || it.depto || it.tienda));
+    const r=await postGAS({action:'saveShopping', sesion:mia, listaId:listaActual.id, esDefault:!!listaActual.def, items: propios});
     if(r.ok){ const h=new Date().toTimeString().substring(0,5); v27SetStatus('shopStatus27','✓ Guardado '+h,true); }
     else v27SetStatus('shopStatus27','⚠ '+(r.error||'Error'));
   }catch(e){ v27SetStatus('shopStatus27','⚠ Error de red — se reintenta al próximo cambio'); }
@@ -4495,12 +4528,16 @@ function v31ProdForm(cfg){
   document.getElementById('pfQueda').value=(cfg.queda!=null&&cfg.queda!=='')?String(cfg.queda):'';
   document.getElementById('pfInv').checked=cfg.inventario!==false;
   document.getElementById('pfStar').checked = cfg.prioritario==='SI'||cfg.prioritario===true;
-  // v29: al agregar/editar DIRECTO en inventario, deja elegir a cuál inventario va
-  // (por default el que estás viendo ahora mismo, no forzosamente el predeterminado)
+  // v29: deja elegir a cuál inventario va, en cualquier flujo de agregar/editar
+  // producto. Al agregar/editar DIRECTO en inventario, por default el que
+  // estás viendo ahora mismo; al agregar desde un ticket de gasto, por
+  // default el predeterminado (así sabes que "si no tocas nada" va ahí).
   const pfInvField=document.getElementById('pfInventarioField');
-  if((pfTarget==='sheet'||pfTarget==='edit') && inventarios && inventarios.length>1){
+  if(inventarios && inventarios.length>1){
     pfInvField.style.display='';
-    const curId=cfg.inventarioId || v34ContenedorActual('inventario',inventarios).id;
+    const curId=cfg.inventarioId || ((pfTarget==='sheet'||pfTarget==='edit')
+      ? v34ContenedorActual('inventario',inventarios).id
+      : ((inventarios.find(c=>c.def)||inventarios[0]).id));
     document.getElementById('pfInventarioSel').innerHTML=inventarios.map(c=>'<option value="'+esc(c.id)+'"'+(c.id===curId?' selected':'')+'>'+esc(c.nombre)+(c.def?' ⭐':'')+'</option>').join('');
   } else { pfInvField.style.display='none'; }
   v33FotoClear();
@@ -4587,7 +4624,7 @@ async function v31ProdFormSubmit(){
         Object.assign(pAct,{concepto:prod.concepto, marca:prod.marca, notas:prod.notas,
           piezas:prod.piezas, cantidad:prod.cantidad, unidad:prod.unidad,
           precioInd:prod.precioInd, caducidad:prod.caducidad, tienda:body.tienda, categoria:prod.categoria, ubicacion:prod.ubicacion,
-          codigo:prod.codigo, inventario:prod.inventario, queda:prod.queda, prioritario:prod.prioritario});
+          codigo:prod.codigo, inventario:prod.inventario, queda:prod.queda, prioritario:prod.prioritario, inventarioId:prod.inventarioId});
         if(body.compartido!==undefined) pAct.compartido=body.compartido;
         if(body.fotoProducto!==undefined) pAct.fotoProducto=body.fotoProducto;
       }
@@ -4610,7 +4647,7 @@ async function v31ProdFormSubmit(){
       categoria:prod.categoria, ubicacion:prod.ubicacion,
       piezas:prod.piezas, cantidad:prod.cantidad, unidad:prod.unidad,
       precioInd:prod.precioInd, caducidad:prod.caducidad,
-      inventario:prod.inventario!=='NA', codigo:prod.codigo, queda:prod.queda});
+      inventario:prod.inventario!=='NA', codigo:prod.codigo, queda:prod.queda, inventarioId:prod.inventarioId});
     if(pfFoto.b64){ d.fotoBase64=pfFoto.b64; d.fotoMime=pfFoto.mime; d.fotoUrl=''; }
     else if(pfFotoUrl){ d.fotoUrl=pfFotoUrl; d.fotoBase64=''; d.fotoMime=''; }
     else { d.fotoUrl=''; d.fotoBase64=''; d.fotoMime=''; }
@@ -4622,7 +4659,7 @@ async function v31ProdFormSubmit(){
 
   document.getElementById('prodFormOverlay').style.display='none';
   if(pfTarget==='draft'){
-    prodDraft.push({concepto:prod.concepto,marca:prod.marca,notas:prod.notas,categoria:prod.categoria,ubicacion:prod.ubicacion,piezas:prod.piezas,cantidad:prod.cantidad,unidad:prod.unidad,precioInd:prod.precioInd,caducidad:prod.caducidad,inventario:prod.inventario!=='NA',codigo:prod.codigo||'',queda:prod.queda||'',fotoBase64:prod.fotoBase64||'',fotoMime:prod.fotoMime||'',fotoUrl:prod.fotoUrl||''});
+    prodDraft.push({concepto:prod.concepto,marca:prod.marca,notas:prod.notas,categoria:prod.categoria,ubicacion:prod.ubicacion,piezas:prod.piezas,cantidad:prod.cantidad,unidad:prod.unidad,precioInd:prod.precioInd,caducidad:prod.caducidad,inventario:prod.inventario!=='NA',codigo:prod.codigo||'',queda:prod.queda||'',fotoBase64:prod.fotoBase64||'',fotoMime:prod.fotoMime||'',fotoUrl:prod.fotoUrl||'',inventarioId:prod.inventarioId||''});
     v30RenderProdDraft();
     showToast('＋ '+nombre+' agregado al ticket');
     return;
@@ -4635,7 +4672,12 @@ async function v31ProdFormSubmit(){
       tienda:prod.tienda||document.getElementById('pfTienda').value.trim(), fecha:new Date().toISOString().split('T')[0], quien:myName(),
       productos:[prod]});
     invalidateSesionCache(saveSesion);
-    if(personalMode){ await pReloadMisGastos(); } else await loadExp();
+    // v29: allProds (inventario) viene de loadExp()/applyRowsFromGAS, NO de
+    // pReloadMisGastos() — si solo recargábamos lo personal, el producto
+    // recién guardado en otro inventario nunca aparecía sin refrescar la
+    // página, aunque ya estuviera bien guardado en el sheet.
+    await loadExp();
+    if(personalMode) await pReloadMisGastos();
     v30RenderInv();
     if(r&&r.fotoError){ showToast('⚠ Producto guardado pero la FOTO no: '+r.fotoError); }
     if(st){ st.textContent='✓ '+nombre+' agregado'; setTimeout(()=>st.textContent='',2000); }
@@ -5757,11 +5799,17 @@ function pRenderDeudasSesionHTML(){
       +(quienes?'<div style="margin-top:3px;font-size:11px">'+quienes+'</div>':'')
       +'</div>';
   }).join('');
+  // v29: apartado aparte para lo que corresponde a compras a MSI — no es
+  // deuda DE SESIÓN (es personal, contigo mismo/tu tarjeta), así que no se
+  // mezcla en el neto por sesión, pero pediste verlo junto al resto de deudas.
+  const msiPendTotal=pItemsOf('msi').reduce((s,m)=>s+pMSIPendiente(m),0);
+  const msiHtml=msiPendTotal?`<div style="flex:1;min-width:120px;background:var(--surface2);border:1px solid var(--border2);border-radius:9px;padding:9px"><div style="font-size:10px;color:var(--ink-3)">🗓️ Pendiente en MSI</div><div style="font-family:var(--mono);font-weight:700">${pMoney(msiPendTotal)}</div></div>`:'';
   return `<div style="margin-bottom:14px">
     <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-3);margin-bottom:6px">🤝 Deudas de sesión</div>
     <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap">
       <div style="flex:1;min-width:120px;background:var(--shared-bg);border:1px solid var(--shared-bdr);border-radius:9px;padding:9px"><div style="font-size:10px;color:var(--shared)">Total te deben</div><div style="font-family:var(--mono);font-weight:700;color:var(--shared)">${pMoney(totMeDeben)}</div></div>
       <div style="flex:1;min-width:120px;background:var(--temis-bg);border:1px solid var(--temis-bdr);border-radius:9px;padding:9px"><div style="font-size:10px;color:var(--temis)">Total debes</div><div style="font-family:var(--mono);font-weight:700;color:var(--temis)">${pMoney(totDebo)}</div></div>
+      ${msiHtml}
     </div>
     ${rows}
   </div>`;
@@ -5907,7 +5955,25 @@ function pToggleCardCollapse(id, btn){
   el.style.display=collapsed?'':'none';
   btn.textContent=collapsed?'▾':'▸';
 }
+let pTarjMSIView=false; // v29: botón "🗓️ Ver compras a MSI" dentro de Tarjetas
+function pToggleTarjMSIView(){ pTarjMSIView=!pTarjMSIView; pRender(); }
+function pRenderTarjetasMSISolo(){
+  const items=pItemsOf('tarjeta');
+  const grupos=items.map(c=>{
+    const msi=pItemsOf('msi').filter(m=>m.tarjeta===c.id);
+    if(!msi.length) return '';
+    return `<div style="margin-bottom:14px"><div style="font-size:11px;font-weight:700;margin-bottom:6px">${pCardTipoEmoji(c)} ${esc(pCardLabel(c))}</div>${msi.map(pMSIRowHTML).join('')}</div>`;
+  }).join('');
+  const sinTarjeta=pItemsOf('msi').filter(m=>!m.tarjeta);
+  const msiSinTarjeta=sinTarjeta.length?`<div style="margin-bottom:14px"><div style="font-size:11px;font-weight:700;color:var(--ink-3);margin-bottom:6px">🗓️ Sin tarjeta asignada</div>${sinTarjeta.map(pMSIRowHTML).join('')}</div>`:'';
+  const cuerpo=(grupos+msiSinTarjeta) || '<div style="color:var(--ink-3);font-size:13px;padding:20px;text-align:center">No tienes compras a MSI registradas.</div>';
+  return `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+      <button class="rt-btn" onclick="pToggleTarjMSIView()">← Volver a tarjetas</button>
+      <button class="rt-btn" onclick="pOpenForm('msi','')">＋ Compra a MSI</button>
+    </div>${cuerpo}`;
+}
 function pRenderTarjetas(){
+  if(pTarjMSIView) return pRenderTarjetasMSISolo();
   const items=pItemsOf('tarjeta');
   const mk=pMesKey();
   const rows=items.map(c=>{
@@ -5972,6 +6038,7 @@ function pRenderTarjetas(){
   return `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
       <button class="rt-btn" style="font-weight:600" onclick="pOpenForm('tarjeta','')">＋ Nueva tarjeta</button>
       <button class="rt-btn" onclick="pOpenForm('msi','')">＋ Compra a MSI</button>
+      <button class="rt-btn" onclick="pToggleTarjMSIView()">🗓️ Ver compras a MSI</button>
     </div>${rows}${msiSinTarjeta}`;
 }
 // ── MSI (meses sin intereses) ──
@@ -6318,9 +6385,15 @@ async function v29QuickMSI(){
   if(!pLoaded || !pItems.length) await pLoad();
   pOpenForm('msi','');
 }
-function pOpenForm(tipo, id){
-  pFormTipo=tipo; pFormId=id||'';
+async function pOpenForm(tipo, id){
   const item = id ? pItems.find(x=>x.id===id) : {tipo};
+  // v29: si la tarjeta ya tiene datos sensibles guardados, pide la
+  // contraseña de datos sensibles ANTES de abrir Editar — antes se veían
+  // sin pedir nada con solo tocar el lápiz.
+  if(tipo==='tarjeta' && item && (item.clabe||item.numFisica||item.numVirtual||item.pin)){
+    if(!(await vEnsure())){ showToast('🔒 Necesitas la contraseña de datos sensibles para editar esta tarjeta'); return; }
+  }
+  pFormTipo=tipo; pFormId=id||'';
   pF('pFormTitle').textContent = (id?'Editar ':'Nuevo ')+ (P_TIPOS[tipo]?P_TIPOS[tipo].emoji+' '+P_TIPOS[tipo].label:'registro');
   pF('pFormFields').innerHTML = pFormFieldsHTML(tipo, item||{tipo});
   pF('pFormOverlay').style.display='flex';
@@ -6391,7 +6464,7 @@ function pFormFieldsHTML(tipo, it){
   }
   if(tipo==='tarjeta'){
     const ct=it.ctipo||'TDC';
-    return F('Alias','pfNombre',it.nombre,'placeholder="Ej. Nu principal" id="pFormFirst"')
+    return F('Alias','pfTarjNombre',it.nombre,'placeholder="Ej. Nu principal" id="pFormFirst"')
       + F('Titular (de quién es)','pfTitular',it.titular||myName(),'placeholder="Ej. Temis, Lot…"')
       + F('Banco','pfBanco',it.banco,'placeholder="Nu, HSBC, Citibanamex, Hey, Stori…"')
       + `<div class="pf-field"><label>Tipo</label><div style="display:flex;gap:8px">
@@ -6477,11 +6550,12 @@ function pFormFieldsHTML(tipo, it){
       + F('Monto TOTAL (¥)','pfMonto',it.monto,'type="number" placeholder="0"')
       + F('Nº de meses','pfMeses',it.meses,'type="number" min="1" placeholder="3, 6, 12…"')
       + `<div class="pf-field"><label>Tarjeta</label><select id="pfTarjeta">${pCardOptions(it.tarjeta)}</select></div>`
-      + F('Fecha de la 1ª cuota','pfInicio',it.inicio||hoy,'type="date"')
+      + F('Fecha de compra','pfInicio',it.inicio||hoy,'type="date"')
+      + `<div style="font-size:11px;color:var(--ink-3);margin:-4px 0 8px">Con la fecha de compra y el día de corte de la tarjeta calculamos cuándo será el primer cobro.</div>`
       + F('Día límite de pago (opcional)','pfDiaLimite',it.diaLimite,'type="number" min="1" max="31" placeholder="opc."');
   }
   if(tipo==='inversion'){
-    return F('Nombre','pfNombre',it.nombre,'placeholder="Ej. CETES, Afore, GBM…" id="pFormFirst"')
+    return F('Nombre','pfInvNombre',it.nombre,'placeholder="Ej. CETES, Afore, GBM…" id="pFormFirst"')
       + F('Institución (opcional)','pfInstitucion',it.institucion,'placeholder="Ej. GBM, Banco, Binance…"')
       + F('Monto invertido inicial (¥)','pfMontoInicial',it.montoInicial,'type="number" placeholder="0"')
       + F('Valor actual (¥)','pfValorActual',it.valorActual!==undefined?it.valorActual:it.montoInicial,'type="number" placeholder="0"')
@@ -6516,8 +6590,8 @@ async function pFormSave(){
     const tipoPago=pFval('pfTipoPago')||'recurrente';
     item={...base, concepto:pFval('pfConcepto').trim(), tipoPago, monto:parseFloat(pFval('pfMonto'))||0, frecuencia:pFval('pfFrecuencia')||'mensual', diaLimite:pFval('pfDiaLimite'), fechaPago:pFval('pfFechaPago'), categoria:pFval('pfCategoria').trim(), formaPago:pFval('pfFormaPago'), tarjeta:(pFval('pfFormaPago')==='Tarjeta'?pFval('pfTarjeta'):''), generaGasto:(tipoPago==='tarjeta'?false:(pFval('pfGeneraGasto')!=='no')), nota:pFval('pfNota').trim(), pagos:(prev&&prev.pagos)||{}};
   } else if(t==='tarjeta'){
-    if(!pFval('pfBanco').trim() && !pFval('pfNombre').trim()){ showToast('Pon al menos alias o banco'); return; }
-    item={...base, nombre:pFval('pfNombre').trim(), titular:pFval('pfTitular').trim(), banco:pFval('pfBanco').trim(), ctipo:pFval('pfCtipo'), termFisica:pFval('pfTermFis').trim(), termVirtual:pFval('pfTermVir').trim(), diaCorte:pFval('pfDiaCorte'), diaDisponible:pFval('pfDiaDisponible'), diaLimite:pFval('pfDiaLimite'), creditoMax:parseFloat(pFval('pfCreditoMax'))||0, interesAnual:parseFloat(pFval('pfInteres'))||0, comisionTardio:parseFloat(pFval('pfComisionTardio'))||0, comisionInactividad:parseFloat(pFval('pfComisionInactividad'))||0, requisitoMinimo:pFval('pfRequisitoMinimo').trim(), clabe:pFval('pfClabe').trim(), numFisica:pFval('pfNumFis').trim(), numVirtual:pFval('pfNumVir').trim(), venceFisica:pFval('pfVenceFis').trim(), venceVirtual:pFval('pfVenceVir').trim(), pin:pFval('pfPin').trim(), nota:pFval('pfNotaTarj').trim()};
+    if(!pFval('pfBanco').trim() && !pFval('pfTarjNombre').trim()){ showToast('Pon al menos alias o banco'); return; }
+    item={...base, nombre:pFval('pfTarjNombre').trim(), titular:pFval('pfTitular').trim(), banco:pFval('pfBanco').trim(), ctipo:pFval('pfCtipo'), termFisica:pFval('pfTermFis').trim(), termVirtual:pFval('pfTermVir').trim(), diaCorte:pFval('pfDiaCorte'), diaDisponible:pFval('pfDiaDisponible'), diaLimite:pFval('pfDiaLimite'), creditoMax:parseFloat(pFval('pfCreditoMax'))||0, interesAnual:parseFloat(pFval('pfInteres'))||0, comisionTardio:parseFloat(pFval('pfComisionTardio'))||0, comisionInactividad:parseFloat(pFval('pfComisionInactividad'))||0, requisitoMinimo:pFval('pfRequisitoMinimo').trim(), clabe:pFval('pfClabe').trim(), numFisica:pFval('pfNumFis').trim(), numVirtual:pFval('pfNumVir').trim(), venceFisica:pFval('pfVenceFis').trim(), venceVirtual:pFval('pfVenceVir').trim(), pin:pFval('pfPin').trim(), nota:pFval('pfNotaTarj').trim()};
   } else if(t==='estado'){
     if(!pFval('pfTarjeta')){ showToast('Elige tarjeta'); return; }
     const prev=pFormId?pItems.find(x=>x.id===pFormId):null;
@@ -6537,8 +6611,8 @@ async function pFormSave(){
     const prev=prevItem;
     item={...base, concepto:pFval('pfConcepto').trim(), monto:parseFloat(pFval('pfMonto'))||0, meses:parseInt(pFval('pfMeses'))||1, tarjeta:pFval('pfTarjeta'), inicio:pFval('pfInicio'), diaLimite:pFval('pfDiaLimite'), pagadas:(prev&&prev.pagadas)||{}};
   } else if(t==='inversion'){
-    if(!pFval('pfNombre').trim()){ showToast('Escribe un nombre'); return; }
-    item={...base, nombre:pFval('pfNombre').trim(), institucion:pFval('pfInstitucion').trim(), montoInicial:parseFloat(pFval('pfMontoInicial'))||0, valorActual:parseFloat(pFval('pfValorActual'))||0, fecha:pFval('pfFecha'), tasaInteres:parseFloat(pFval('pfTasaInteres'))||0, fechaFin:pFval('pfFechaFin'), nota:pFval('pfNota').trim()};
+    if(!pFval('pfInvNombre').trim()){ showToast('Escribe un nombre'); return; }
+    item={...base, nombre:pFval('pfInvNombre').trim(), institucion:pFval('pfInstitucion').trim(), montoInicial:parseFloat(pFval('pfMontoInicial'))||0, valorActual:parseFloat(pFval('pfValorActual'))||0, fecha:pFval('pfFecha'), tasaInteres:parseFloat(pFval('pfTasaInteres'))||0, fechaFin:pFval('pfFechaFin'), nota:pFval('pfNota').trim()};
   }
   btnBusy('Guardando…');
   const ok=await pSaveItem(item);
@@ -6824,7 +6898,7 @@ function vField(label, valor){
     <button type="button" class="rt-btn vault-copy" style="font-size:9px;padding:1px 5px;display:none" onclick="vCopiar(this,'${valEsc}')">📋</button>
   </span>`;
 }
-async function pEnterPersonal(){
+async function pEnterPersonal(skipGastosSwitch){
   pOwner = myName();
   if(!pOwner){ showToast('Primero elige tu nombre en 👥 (⭐ ¿Quién eres tú?)'); openPeople(); return; }
   // Contraseña personal AL ENTRAR (no en Salud)
@@ -6849,8 +6923,10 @@ async function pEnterPersonal(){
   // Traer mis gastos de TODAS las sesiones (siempre fresco, nunca de una entrada anterior)
   await pReloadMisGastos();
   pUpdatePersonalBanner();
-  const gt=[...document.querySelectorAll('.ptab')].find(b=>/Gastos/.test(b.textContent));
-  if(gt) switchPage('gastos', gt);
+  if(!skipGastosSwitch){
+    const gt=[...document.querySelectorAll('.ptab')].find(b=>/Gastos/.test(b.textContent));
+    if(gt) switchPage('gastos', gt);
+  }
   renderAll();
   showToast('👤 Sesión personal — '+misGastosAll.length+' movimientos de todas tus sesiones');
 }
