@@ -1700,7 +1700,7 @@ details:not([open]) .chev{transform:rotate(-90deg)}
 // v29: nombre clave de esta entrega — cámbialo cada vez que termines un lote
 // de cambios, así en 👥 → 🛠 Panel dev se puede confirmar que el navegador
 // está cargando la versión más reciente y no una copia en caché.
-const BUILD_VERSION='Begonia';
+const BUILD_VERSION='Hortensia';
 let GAS_URL=localStorage.getItem('gastos_gas_url')||'';
 function v29TieneGasUrl(){ return !!GAS_URL; }
 function v29GuardarGasUrl(url){
@@ -6186,19 +6186,23 @@ function pRenderFijos(){
     const pagado=(f.pagos||{})[mk]; const dias=pDiasPara(f.diaLimite);
     const card=pCardById(f.tarjeta);
     const fechaPagado=pagado&&typeof pagado==='object'?pagado.fecha:'';
-    // v29: los chips verdes de historial ahora son clicables — si ese pago
-    // tiene un gasto vinculado (gastoRowIndex), abre su detalle en vez de
-    // solo mostrar el mes. Siempre se muestran máximo los 8 más recientes
-    // (no crecen sin límite conforme se acumulan pagos) y se van al
-    // renglón de abajo solos conforme no caben (wrap normal, sin JS extra).
-    const historial=Object.keys(f.pagos||{}).sort().reverse().slice(0,8).map(k=>{
+    // v29: los chips verdes de historial son clicables — si ese pago tiene
+    // un gasto vinculado (gastoRowIndex), abre su detalle en vez de solo
+    // mostrar el mes. Solo se ven de entrada los 8 más recientes; si hay
+    // más (ej. llevas un año de pagos), un plegable "Ver historial
+    // completo" debajo muestra el resto — así no se pierden, solo se
+    // ocultan hasta que los pidas.
+    const pChip=k=>{
       const p=(f.pagos||{})[k];
       const label='✓ '+esc(k)+((p&&typeof p==='object'&&p.fecha)?(' · '+esc(p.fecha)):'');
       const rowIdx=(p&&typeof p==='object'&&p.gastoRowIndex)?p.gastoRowIndex:'';
       return rowIdx
         ? '<button type="button" class="chip" style="font-size:10px;margin:2px;background:var(--shared-bg);color:var(--shared);border:none;cursor:pointer" title="Ver el gasto de este pago" onclick="pOpenLinkedGasto(\''+esc(rowIdx)+'\')">'+label+'</button>'
         : '<span class="chip" style="font-size:10px;margin:2px;background:var(--shared-bg);color:var(--shared)" title="Este pago no tiene un gasto vinculado para ver">'+label+'</span>';
-    }).join('');
+    };
+    const periodos=Object.keys(f.pagos||{}).sort().reverse();
+    const historial=periodos.slice(0,8).map(pChip).join('');
+    const historialResto=periodos.length>8?('<details style="margin-top:4px"><summary style="cursor:pointer;font-size:10px;color:var(--ink-3)"><span class="chev">▾</span> Ver historial completo ('+periodos.length+')</summary><div style="margin-top:2px">'+periodos.slice(8).map(pChip).join('')+'</div></details>'):'';
     let alarma='';
     if(f.cancelado) alarma='<span style="color:var(--ink-3);font-weight:600">🚫 cancelado</span>';
     else if(!pagado && dias!==null){
@@ -6226,6 +6230,7 @@ function pRenderFijos(){
           <div style="font-weight:600;font-size:13px">${esc(f.concepto||'—')} ${alarma}</div>
           <div style="font-size:11px;color:var(--ink-3)">día límite ${f.diaLimite||'?'}${f.fechaPago?(' · pago '+esc(f.fechaPago)):''}${fechaPagado?(' · pagado '+esc(fechaPagado)):''}${card?(' · 💳 '+esc(pCardLabel(card))):''}${f.nota?(' · '+esc(f.nota)):''}</div>
           ${historial?'<div style="margin-top:4px">'+historial+'</div>':''}
+          ${historialResto}
         </div>
         <div style="font-family:var(--mono);font-weight:700">${pMoney(f.monto)}</div>
       </div>
