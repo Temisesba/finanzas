@@ -1692,7 +1692,7 @@ details:not([open]) .chev{transform:rotate(-90deg)}
 // v29: nombre clave de esta entrega — cámbialo cada vez que termines un lote
 // de cambios, así en 👥 → 🛠 Panel dev se puede confirmar que el navegador
 // está cargando la versión más reciente y no una copia en caché.
-const BUILD_VERSION='Ranunculo';
+const BUILD_VERSION='Jazmin';
 let GAS_URL=localStorage.getItem('gastos_gas_url')||'';
 function v29TieneGasUrl(){ return !!GAS_URL; }
 function v29GuardarGasUrl(url){
@@ -5655,9 +5655,30 @@ async function pCrearMSIDesdeGasto(data){
   if(ok){ closeModal(true); showToast('✓ Registrada como Compra a MSI · '+data.meses+' meses'); }
 }
 async function pDelItem(id){
-  if(!confirm('¿Eliminar este registro personal?')) return;
+  const item=pItems.find(x=>x.id===id);
+  let msgExtra='';
+  let relacionados=[];
+  if(item && item.tipo==='msi'){
+    const marca='MSI '+id;
+    const fuente=(personalMode?misGastosAll:allExp)||[];
+    relacionados=fuente.filter(e=>String(e.notas||'').includes(marca));
+    if(relacionados.length) msgExtra=' Esto también eliminará '+relacionados.length+' gasto(s) ya registrados de sus cuotas.';
+  }
+  if(!confirm('¿Eliminar este registro personal?'+msgExtra)) return;
   const r=await postGAS({action:'personalDelete', owner:pOwner, pass:pPass, id});
-  if(r&&r.ok){ pLoaded=false; await pLoad(); pRender(); } else showToast('⚠ '+((r&&r.error)||'error'));
+  if(r&&r.ok){
+    if(relacionados.length){
+      for(const g of relacionados){
+        try{ await postGAS({action:'deleteGasto', rowIndex:g.rowIndex, eliminadoPor:myName()}); }catch(e){}
+      }
+      invalidateSesionCache(activeSesion);
+      allExp=allExp.filter(e=>!relacionados.some(g=>g.rowIndex===e.rowIndex));
+      misGastosAll=(misGastosAll||[]).filter(e=>!relacionados.some(g=>g.rowIndex===e.rowIndex));
+    }
+    pLoaded=false; await pLoad();
+    if(relacionados.length){ if(personalMode) await pReloadMisGastos(); else await loadExp(); }
+    pRender();
+  } else showToast('⚠ '+((r&&r.error)||'error'));
 }
 
 function pSetSection(sec, el){
@@ -6225,22 +6246,33 @@ let pTarjMSIView=false; // v29: botón "🗓️ Ver compras a MSI" dentro de Tar
 function pToggleTarjMSIView(){ pTarjMSIView=!pTarjMSIView; pRender(); }
 function pRenderTarjetasMSISolo(){
   const items=pItemsOf('tarjeta');
+  // v29: separa las compras a MSI ya totalmente pagadas — se quedaban
+  // mezcladas con las activas para siempre, aunque ya no tuvieras nada
+  // pendiente de esa compra. Ahora las terminadas se juntan abajo, en un
+  // plegable aparte, para que la vista activa solo muestre lo que sigue
+  // corriendo.
+  const msiActivas=pItemsOf('msi').filter(m=>pMSIPendiente(m)>0);
+  const msiTerminadas=pItemsOf('msi').filter(m=>pMSIPendiente(m)<=0);
   const grupos=items.map(c=>{
-    const msi=pItemsOf('msi').filter(m=>m.tarjeta===c.id);
+    const msi=msiActivas.filter(m=>m.tarjeta===c.id);
     if(!msi.length) return '';
     return `<div style="margin-bottom:14px"><div style="font-size:11px;font-weight:700;margin-bottom:6px">${pCardTipoEmoji(c)} ${esc(pCardLabel(c))}</div>${msi.map(pMSIRowHTML).join('')}</div>`;
   }).join('');
-  const sinTarjeta=pItemsOf('msi').filter(m=>!m.tarjeta);
+  const sinTarjeta=msiActivas.filter(m=>!m.tarjeta);
   const msiSinTarjeta=sinTarjeta.length?`<div style="margin-bottom:14px"><div style="font-size:11px;font-weight:700;color:var(--ink-3);margin-bottom:6px">🗓️ Sin tarjeta asignada</div>${sinTarjeta.map(pMSIRowHTML).join('')}</div>`:'';
-  const cuerpo=(grupos+msiSinTarjeta) || '<div style="color:var(--ink-3);font-size:13px;padding:20px;text-align:center">No tienes compras a MSI registradas.</div>';
+  const cuerpo=(grupos+msiSinTarjeta) || '<div style="color:var(--ink-3);font-size:13px;padding:20px;text-align:center">No tienes compras a MSI activas.</div>';
+  const terminadasHtml=msiTerminadas.length?`<details style="margin-top:16px">
+      <summary style="cursor:pointer;font-size:12px;font-weight:700;color:var(--ink-3);padding:6px 0">✅ Pagos terminados (${msiTerminadas.length})</summary>
+      <div style="margin-top:8px">${msiTerminadas.map(pMSIRowHTML).join('')}</div>
+    </details>`:'';
   // v29: total pendiente de TODAS tus compras a MSI, visible en esta ventana
   // (antes había que sumar cada una a mano).
-  const pendTotal=pItemsOf('msi').reduce((s,m)=>s+pMSIPendiente(m),0);
+  const pendTotal=msiActivas.reduce((s,m)=>s+pMSIPendiente(m),0);
   const totalHtml=pendTotal?`<div style="margin-bottom:12px;padding:9px 11px;background:var(--temis-bg);border:1px solid var(--temis-bdr);border-radius:9px;font-size:12px;color:var(--temis)">🗓️ Total pendiente por pagar en MSI: <strong style="font-family:var(--mono)">${pMoney(pendTotal)}</strong></div>`:'';
   return `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
       <button class="rt-btn" onclick="pToggleTarjMSIView()">← Volver a tarjetas</button>
       <button class="rt-btn" onclick="pOpenForm('msi','')">＋ Compra a MSI</button>
-    </div>${totalHtml}${cuerpo}`;
+    </div>${totalHtml}${cuerpo}${terminadasHtml}`;
 }
 let pTarjFiltroTipo=''; // v29: '' | 'TDC' | 'TDD' | 'PUNTOS'
 function pSetTarjFiltroTipo(t){ pTarjFiltroTipo=(pTarjFiltroTipo===t)?'':t; pRender(); }
@@ -6643,9 +6675,24 @@ function pMovComoMSI(btn){
   // pregunta el número para calcular hacia atrás la fecha de la 1ª cuota —
   // así el calendario completo (1ª a última) queda bien desde el principio.
   const numCuota=Math.min(meses, parseInt(prompt('¿Qué cuota es este cobro? (ej. 1 si es la primera, 3 si ya va en la 3 de '+meses+')','1'))||1);
-  let fechaPrimeraCuota=m.fecha||new Date().toISOString().substring(0,10);
-  if(numCuota>1){
-    const d=new Date(fechaPrimeraCuota+'T12:00:00');
+  // v29: antes se restaban meses del calendario a partir del DÍA del
+  // movimiento (no del día de corte) — si el corte no coincidía con ese
+  // día, pMSICuotas() volvía a recorrer todo un mes más al proyectar hacia
+  // adelante (ej. corte 10, movimiento el 13 → primer cobro calculado caía
+  // "antes" del corte real y se empujaba solo al mes siguiente). Ahora se
+  // calcula directo sobre el día de CORTE de la tarjeta, para que el
+  // resultado ya sea exactamente lo que pMSICuotas() reproduce sin correrse.
+  const cardParaFecha=pCardById(cardId);
+  const corteParaFecha=cardParaFecha?parseInt(cardParaFecha.diaCorte)||0:0;
+  const mFechaObj=new Date((m.fecha||new Date().toISOString().substring(0,10))+'T12:00:00');
+  let fechaPrimeraCuota;
+  if(corteParaFecha){
+    let cobroDeEsteMov=new Date(mFechaObj.getFullYear(), mFechaObj.getMonth(), Math.min(corteParaFecha, new Date(mFechaObj.getFullYear(),mFechaObj.getMonth()+1,0).getDate()));
+    if(cobroDeEsteMov>mFechaObj) cobroDeEsteMov=new Date(mFechaObj.getFullYear(), mFechaObj.getMonth()-1, corteParaFecha);
+    const primeraCuota=new Date(cobroDeEsteMov.getFullYear(), cobroDeEsteMov.getMonth()-(numCuota-1), corteParaFecha);
+    fechaPrimeraCuota=primeraCuota.toISOString().substring(0,10);
+  } else {
+    const d=new Date(mFechaObj);
     d.setMonth(d.getMonth()-(numCuota-1));
     fechaPrimeraCuota=d.toISOString().substring(0,10);
   }
