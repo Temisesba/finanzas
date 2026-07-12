@@ -1692,7 +1692,7 @@ details:not([open]) .chev{transform:rotate(-90deg)}
 // v29: nombre clave de esta entrega — cámbialo cada vez que termines un lote
 // de cambios, así en 👥 → 🛠 Panel dev se puede confirmar que el navegador
 // está cargando la versión más reciente y no una copia en caché.
-const BUILD_VERSION='Jazmin';
+const BUILD_VERSION='Girasol';
 let GAS_URL=localStorage.getItem('gastos_gas_url')||'';
 function v29TieneGasUrl(){ return !!GAS_URL; }
 function v29GuardarGasUrl(url){
@@ -6310,7 +6310,12 @@ function pRenderTarjetas(){
     // próximo vencimiento + estimado del ciclo — todo lo demás (corte,
     // límite, estatus de pago, periodo, fijos/MSI, estados de cuenta,
     // crédito, comisiones) queda detrás del ▸.
-    const resumenSiempre=`<div style="font-size:11px;color:var(--ink-3);margin-top:2px">➡️ Próximo vencimiento: <strong>${proxVenc?esc(proxVenc)+' ('+pDiasPara(c.diaLimite)+'d)':'—'}</strong> · Estimado del ciclo: <strong>${pMoney(pTarjetaEstimadoCiclo(c,mk))}</strong></div>`;
+    // v29: si está retrasada (estado sin pagar con fecha límite ya vencida),
+    // se muestra el aviso aquí mismo — es la razón por la que esta tarjeta
+    // se ordena primero aunque su PRÓXIMO vencimiento se vea lejos; sin este
+    // aviso visible, el orden parecía "roto" al no verse el porqué.
+    const retrasadaTag=pTarjOrden(c).retrasada?'<span style="color:var(--temis);font-weight:700">🔴 Retrasado (estado anterior sin pagar) · </span>':'';
+    const resumenSiempre=`<div style="font-size:11px;color:var(--ink-3);margin-top:2px">${retrasadaTag}➡️ Próximo vencimiento: <strong>${proxVenc?esc(proxVenc)+' ('+pDiasPara(c.diaLimite)+'d)':'—'}</strong> · Estimado del ciclo: <strong>${pMoney(pTarjetaEstimadoCiclo(c,mk))}</strong></div>`;
     const resumenPlegable=`<div style="font-size:11px;color:var(--ink-3);display:flex;flex-wrap:wrap;gap:4px 10px">`
       +`<span>📅 Corte: <strong>${esc(c.diaCorte||'—')}</strong></span>`
       +`<span>⏰ Límite: <strong>${esc(c.diaLimite||'—')}</strong></span>`
@@ -6417,7 +6422,7 @@ function pMSIRowHTML(m){
       <div style="display:flex;align-items:center;gap:8px">
         <div style="flex:1;min-width:0">
           <div style="font-weight:600;font-size:12.5px">🗓️ ${esc(m.concepto||'—')}</div>
-          <div style="font-size:11px;color:var(--ink-3)">Compra: ${m.inicio?fmtDate(m.inicio):'—'} · ${pMoney(m.monto)} a ${m.meses} MSI = ${pMoney(pMSICuotaMonto(m))}/mes · ${pagadasN}/${m.meses} pagadas</div>
+          <div style="font-size:11px;color:var(--ink-3)">Primer pago: ${m.inicio?fmtDate(m.inicio):'—'}${m.fechaCompra?' · Compra: '+fmtDate(m.fechaCompra):''} · ${pMoney(m.monto)} a ${m.meses} MSI = ${pMoney(pMSICuotaMonto(m))}/mes · ${pagadasN}/${m.meses} pagadas</div>
           ${pendiente?'<div style="font-size:11px;color:var(--temis);font-weight:600">Pendiente por pagar: '+pMoney(pendiente)+'</div>':'<div style="font-size:11px;color:var(--shared);font-weight:600">✓ Liquidado</div>'}
         </div>
         <button class="rt-btn" onclick="pOpenForm('msi','${esc(m.id)}')">✏️</button>
@@ -7033,8 +7038,9 @@ function pFormFieldsHTML(tipo, it){
       + F('Monto TOTAL (¥)','pfMonto',it.monto,'type="number" placeholder="0"')
       + F('Nº de meses','pfMeses',it.meses,'type="number" min="1" placeholder="3, 6, 12…"')
       + `<div class="pf-field"><label>Tarjeta</label><select id="pfTarjeta">${pCardOptions(it.tarjeta)}</select></div>`
-      + F('Fecha de compra','pfInicio',it.inicio||hoy,'type="date"')
-      + `<div style="font-size:11px;color:var(--ink-3);margin:-4px 0 8px">Con la fecha de compra y el día de corte de la tarjeta calculamos cuándo será el primer cobro.</div>`
+      + F('Fecha de primer pago','pfInicio',it.inicio||hoy,'type="date"')
+      + `<div style="font-size:11px;color:var(--ink-3);margin:-4px 0 8px">De esta fecha (y el día de corte de la tarjeta) se calcula todo el calendario de cuotas.</div>`
+      + F('Fecha de compra (opcional)','pfFechaCompraReal',it.fechaCompra||'','type="date"')
       + F('Día límite de pago (opcional)','pfDiaLimite',it.diaLimite,'type="number" min="1" max="31" placeholder="opc."')
       + TA('Notas (opcional)','pfNota',it.nota,'placeholder="Detalle…"')
       + (it.id?`<button type="button" class="rt-btn" style="font-size:11px" onclick="pMSIActualizarRelacionados('${esc(it.id)}')">🔄 Actualizar nombre/notas en gastos relacionados</button>`:'');
@@ -7135,7 +7141,7 @@ async function pFormSave(){
     // v29: si viene de "registrar MSI desde conciliación" y ya sabíamos que
     // iba en la cuota N, esas cuotas llegan premarcadas como pagadas.
     const pagadasPre=(!prev && window.__msiPagadasPendiente) ? window.__msiPagadasPendiente : null;
-    item={...base, concepto:pFval('pfConcepto').trim(), monto:parseFloat(pFval('pfMonto'))||0, meses:parseInt(pFval('pfMeses'))||1, tarjeta:pFval('pfTarjeta'), inicio:pFval('pfInicio'), diaLimite:pFval('pfDiaLimite'), nota:pFval('pfNota').trim(), pagadas:{...((prev&&prev.pagadas)||{}), ...(pagadasPre||{})}};
+    item={...base, concepto:pFval('pfConcepto').trim(), monto:parseFloat(pFval('pfMonto'))||0, meses:parseInt(pFval('pfMeses'))||1, tarjeta:pFval('pfTarjeta'), inicio:pFval('pfInicio'), fechaCompra:pFval('pfFechaCompraReal'), diaLimite:pFval('pfDiaLimite'), nota:pFval('pfNota').trim(), pagadas:{...((prev&&prev.pagadas)||{}), ...(pagadasPre||{})}};
   } else if(t==='inversion'){
     if(!pFval('pfInvNombre').trim()){ showToast('Escribe un nombre'); return; }
     item={...base, nombre:pFval('pfInvNombre').trim(), institucion:pFval('pfInstitucion').trim(), montoInicial:parseFloat(pFval('pfMontoInicial'))||0, valorActual:parseFloat(pFval('pfValorActual'))||0, fecha:pFval('pfFecha'), tasaInteres:parseFloat(pFval('pfTasaInteres'))||0, fechaFin:pFval('pfFechaFin'), nota:pFval('pfNota').trim()};
