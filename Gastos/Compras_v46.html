@@ -1293,7 +1293,7 @@ details:not([open]) .chev{transform:rotate(-90deg)}
         </div>
         <div style="font-size:11px;color:var(--ink-3);margin-top:4px">Solo se guarda en este navegador. Cámbiala aquí si tu backend se movió a otra URL.</div>
       </div>
-      <div class="field"><label>🛠 Panel dev</label>
+      <div class="field">
         <div style="font-size:12px;color:var(--ink-3);background:var(--surface2);border:1px solid var(--border2);border-radius:8px;padding:8px 10px">
           Versión: <strong id="devBuildName">—</strong>
         </div>
@@ -6013,8 +6013,11 @@ function pRenderTarjetas(){
         <div style="height:5px;background:var(--surface2);border-radius:3px;overflow:hidden;margin-top:2px"><div style="width:${pct}%;height:100%;background:${pct>80?'var(--temis)':'var(--shared)'}"></div></div>
       </div>`;
     }
-    // Datos sensibles (ocultos hasta pedir contraseña de datos sensibles)
-    const sensibles=[vField('CLABE',c.clabe),vField('Núm. física',c.numFisica),vField('Vence física',c.venceFisica),vField('Núm. virtual',c.numVirtual),vField('Vence virtual',c.venceVirtual),vField('PIN',c.pin)].filter(Boolean).join(' ');
+    // Datos sensibles (ocultos hasta pedir contraseña de datos sensibles).
+    // v29: el PIN ya NO se puede revelar aquí en la lista, ni enmascarado ni
+    // en claro — solo se ve/edita entrando a ✏️ Editar (que ya pide la
+    // contraseña de datos sensibles cada vez, ver pOpenForm).
+    const sensibles=[vField('CLABE',c.clabe),vField('Núm. física',c.numFisica),vField('Vence física',c.venceFisica),vField('Núm. virtual',c.numVirtual),vField('Vence virtual',c.venceVirtual)].filter(Boolean).join(' ');
     const sensiblesHtml=sensibles?`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">${sensibles}</div>`:'';
     // Comisiones/intereses (solo si hay algo capturado)
     const feeParts=[];
@@ -6166,8 +6169,10 @@ function pMovRowsHTML(movs){
 function pMovRowHTML(m){
   m=m||{estado:'pendiente'};
   const opts=['pendiente','identificado','posible','no_identificado','ignorado'].map(s=>'<option value="'+s+'"'+((m.estado||'pendiente')===s?' selected':'')+'>'+pEstadoLabel(s)+'</option>').join('');
-  const link=m.gastoId?'<button type="button" class="shop-del" title="Ver gasto vinculado" onclick="pOpenLinkedGasto(\''+esc(m.gastoId)+'\')">↗</button>':'<button type="button" class="rt-btn" style="font-size:10px;padding:2px 5px" title="Vincular con gasto existente" onclick="pVincularMovRow(this)">🔗</button><button type="button" class="rt-btn" style="font-size:10px;padding:2px 5px" title="Registrar como nuevo gasto" onclick="pRegistrarMovComoGasto(this)">➕</button><button type="button" class="rt-btn" style="font-size:10px;padding:2px 5px" title="Este movimiento es una compra a meses (MSI) — crearla desde aquí" onclick="pMovComoMSI(this)">🗓️</button>';
-  return '<div class="mov-grid"><input type="date" class="mov-fecha" value="'+esc(m.fecha||'')+'"><input class="mov-desc" value="'+esc(m.descripcion||'')+'" placeholder="Comercio"><input type="number" class="mov-monto" value="'+esc(m.monto||'')+'" placeholder="0"><input class="mov-cat" value="'+esc(m.categoria||'')+'" placeholder="Categoría"><select class="mov-estado">'+opts+'</select><span style="display:flex;gap:2px;flex-wrap:wrap"><input type="hidden" class="mov-gasto" value="'+esc(m.gastoId||'')+'">'+link+'<button type="button" class="shop-del" onclick="this.closest(\'.mov-grid\').remove()">🗑</button></span></div>';
+  const link=m.gastoId?'<button type="button" class="shop-del" title="Ver gasto vinculado" onclick="pOpenLinkedGasto(\''+esc(m.gastoId)+'\')">↗</button>'
+    :m.msiId?'<button type="button" class="shop-del" title="Ver compra a MSI vinculada" onclick="pOpenForm(\'msi\',\''+esc(m.msiId)+'\')">↗🗓️</button>'
+    :'<button type="button" class="rt-btn" style="font-size:10px;padding:2px 5px" title="Vincular con gasto existente" onclick="pVincularMovRow(this)">🔗</button><button type="button" class="rt-btn" style="font-size:10px;padding:2px 5px" title="Registrar como nuevo gasto" onclick="pRegistrarMovComoGasto(this)">➕</button><button type="button" class="rt-btn" style="font-size:10px;padding:2px 5px" title="Este movimiento es una compra a meses (MSI) — crearla desde aquí" onclick="pMovComoMSI(this)">🗓️</button>';
+  return '<div class="mov-grid"><input type="date" class="mov-fecha" value="'+esc(m.fecha||'')+'"><input class="mov-desc" value="'+esc(m.descripcion||'')+'" placeholder="Comercio"><input type="number" class="mov-monto" value="'+esc(m.monto||'')+'" placeholder="0"><input class="mov-cat" value="'+esc(m.categoria||'')+'" placeholder="Categoría"><select class="mov-estado">'+opts+'</select><span style="display:flex;gap:2px;flex-wrap:wrap"><input type="hidden" class="mov-gasto" value="'+esc(m.gastoId||'')+'"><input type="hidden" class="mov-msi" value="'+esc(m.msiId||'')+'">'+link+'<button type="button" class="shop-del" onclick="this.closest(\'.mov-grid\').remove()">🗑</button></span></div>';
 }
 //  Vincular con gasto existente: sugiere el mejor match automático, pero si no
 //  hay coincidencia confiable (o el usuario quiere elegir otro) muestra un
@@ -6231,7 +6236,8 @@ function pMovRowHTMLObjFromRow(row){
     monto:parseFloat((row.querySelector('.mov-monto')||{}).value)||0,
     categoria:(row.querySelector('.mov-cat')||{}).value||'',
     estado:(row.querySelector('.mov-estado')||{}).value||'pendiente',
-    gastoId:(row.querySelector('.mov-gasto')||{}).value||''
+    gastoId:(row.querySelector('.mov-gasto')||{}).value||'',
+    msiId:(row.querySelector('.mov-msi')||{}).value||''
   };
 }
 function pRowFromEl(m){
@@ -6273,6 +6279,15 @@ function pMovComoMSI(btn){
     d.setMonth(d.getMonth()-(numCuota-1));
     fechaPrimeraCuota=d.toISOString().substring(0,10);
   }
+  // v29: si ya vas en la cuota N, las 1..N ya se cobraron/pagaron — se
+  // premarcan como pagadas al guardar (en vez de tener que palomearlas
+  // una por una en el calendario).
+  const pagadasPre={};
+  if(numCuota>=1){
+    pMSICuotas({inicio:fechaPrimeraCuota, tarjeta:cardId, meses, pagadas:{}}).slice(0,numCuota).forEach(q=>{ pagadasPre[q.key]=true; });
+  }
+  window.__msiPagadasPendiente=pagadasPre;
+  window.__msiVincularPendiente=row; // v29: al guardar, esta fila queda vinculada (↗) y en "Ignorado"
   pOpenForm('msi','');
   setTimeout(()=>{
     const cuota=parseFloat(m.monto)||0;
@@ -6283,8 +6298,8 @@ function pMovComoMSI(btn){
     if(cardId && pF('pfTarjeta')) pF('pfTarjeta').value=cardId;
   },0);
   showToast(numCuota>1
-    ? ('Cuota '+numCuota+' de '+meses+' — se calculó la fecha de la 1ª cuota hacia atrás. Revisa el TOTAL y marca las cuotas 1 a '+(numCuota-1)+' como pagadas en el calendario tras guardar.')
-    : ('Revisa el TOTAL sugerido (esta cuota × '+meses+') y guarda. Luego marca este movimiento como "Ignorado" — ya queda como MSI, no como gasto suelto.'));
+    ? ('Cuota '+numCuota+' de '+meses+' — se calculó la fecha de la 1ª cuota y se marcarán como pagadas las cuotas 1 a '+numCuota+' al guardar.')
+    : ('Revisa el TOTAL sugerido (esta cuota × '+meses+') y guarda — esta fila se vincula y marca "Ignorado" sola.'));
 }
 function pAddEstadoMov(){
   const host=pF('pfMovRows'); if(!host)return;
@@ -6297,7 +6312,8 @@ function pMovsFromRows(){
     monto:parseFloat((row.querySelector('.mov-monto')||{}).value)||0,
     categoria:(row.querySelector('.mov-cat')||{}).value||'',
     estado:(row.querySelector('.mov-estado')||{}).value||'pendiente',
-    gastoId:(row.querySelector('.mov-gasto')||{}).value||''
+    gastoId:(row.querySelector('.mov-gasto')||{}).value||'',
+    msiId:(row.querySelector('.mov-msi')||{}).value||''
   })).filter(m=>m.fecha||m.descripcion||m.monto);
 }
 function pDateDistance(a,b){
@@ -6414,7 +6430,7 @@ async function pOpenForm(tipo, id){
   // contraseña de datos sensibles ANTES de abrir Editar — antes se veían
   // sin pedir nada con solo tocar el lápiz.
   if(tipo==='tarjeta' && item && (item.clabe||item.numFisica||item.numVirtual||item.pin)){
-    if(!(await vEnsure())){ showToast('🔒 Necesitas la contraseña de datos sensibles para editar esta tarjeta'); return; }
+    if(!(await vEnsure(true))){ showToast('🔒 Necesitas la contraseña de datos sensibles para editar esta tarjeta'); return; }
   }
   pFormTipo=tipo; pFormId=id||'';
   pF('pFormTitle').textContent = (id?'Editar ':'Nuevo ')+ (P_TIPOS[tipo]?P_TIPOS[tipo].emoji+' '+P_TIPOS[tipo].label:'registro');
@@ -6494,9 +6510,8 @@ function pFormFieldsHTML(tipo, it){
           <button type="button" class="tbtn ${ct==='TDC'?'sel':''}" id="ptC" onclick="pTarjTipo('TDC')">💳 Crédito (TDC)</button>
           <button type="button" class="tbtn ${ct==='TDD'?'sel':''}" id="ptD" onclick="pTarjTipo('TDD')">🏦 Débito (TDD)</button>
         </div><input type="hidden" id="pfCtipo" value="${ct}"></div>`
-      + `<div class="pf-field"><label>Red</label><select id="pfRed">
-          ${['','Visa','Mastercard','American Express','Otra'].map(x=>'<option value="'+x+'"'+((it.red||'')===x?' selected':'')+'>'+(x||'—')+'</option>').join('')}
-        </select></div>`
+      + `<div class="pf-field"><label>Red</label><input type="text" id="pfRed" list="list-redes" value="${esc(it.red||'')}" placeholder="Visa, Mastercard, American Express…"></div>
+        <datalist id="list-redes"><option value="Visa"><option value="Mastercard"><option value="American Express"></datalist>`
       + `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
           ${F('💳 Terminación física','pfTermFis',it.termFisica||it.terminacion,'placeholder="1234" maxlength="4"')}
           ${F('📱 Terminación virtual','pfTermVir',it.termVirtual,'placeholder="5678" maxlength="4"')}
@@ -6635,7 +6650,10 @@ async function pFormSave(){
   } else if(t==='msi'){
     if(!pFval('pfConcepto').trim()){ showToast('¿Qué compraste?'); return; }
     const prev=prevItem;
-    item={...base, concepto:pFval('pfConcepto').trim(), monto:parseFloat(pFval('pfMonto'))||0, meses:parseInt(pFval('pfMeses'))||1, tarjeta:pFval('pfTarjeta'), inicio:pFval('pfInicio'), diaLimite:pFval('pfDiaLimite'), pagadas:(prev&&prev.pagadas)||{}};
+    // v29: si viene de "registrar MSI desde conciliación" y ya sabíamos que
+    // iba en la cuota N, esas cuotas llegan premarcadas como pagadas.
+    const pagadasPre=(!prev && window.__msiPagadasPendiente) ? window.__msiPagadasPendiente : null;
+    item={...base, concepto:pFval('pfConcepto').trim(), monto:parseFloat(pFval('pfMonto'))||0, meses:parseInt(pFval('pfMeses'))||1, tarjeta:pFval('pfTarjeta'), inicio:pFval('pfInicio'), diaLimite:pFval('pfDiaLimite'), pagadas:{...((prev&&prev.pagadas)||{}), ...(pagadasPre||{})}};
   } else if(t==='inversion'){
     if(!pFval('pfInvNombre').trim()){ showToast('Escribe un nombre'); return; }
     item={...base, nombre:pFval('pfInvNombre').trim(), institucion:pFval('pfInstitucion').trim(), montoInicial:parseFloat(pFval('pfMontoInicial'))||0, valorActual:parseFloat(pFval('pfValorActual'))||0, fecha:pFval('pfFecha'), tasaInteres:parseFloat(pFval('pfTasaInteres'))||0, fechaFin:pFval('pfFechaFin'), nota:pFval('pfNota').trim()};
@@ -6643,7 +6661,18 @@ async function pFormSave(){
   btnBusy('Guardando…');
   const ok=await pSaveItem(item);
   btnReady();
-  if(ok){ pCloseForm(true); showToast('✓ Guardado'); }
+  if(ok){
+    pCloseForm(true);
+    // v29: si este MSI nació de "registrar MSI desde conciliación", vincula
+    // esa fila del movimiento sola (↗ + "Ignorado", ya no como gasto suelto).
+    if(t==='msi' && window.__msiVincularPendiente){
+      const row=window.__msiVincularPendiente;
+      const mEl=row.querySelector&&row.querySelector('.mov-msi'), eEl=row.querySelector&&row.querySelector('.mov-estado');
+      if(mEl && eEl){ mEl.value=String(item.id); eEl.value='ignorado'; try{ row.replaceWith(pRowFromEl(pMovRowHTMLObjFromRow(row))); }catch(_){} }
+    }
+    window.__msiVincularPendiente=null; window.__msiPagadasPendiente=null;
+    showToast('✓ Guardado');
+  }
 }
 
 // Suma cargada a cada tarjeta (pagos fijos + cuotas MSI del mes)
@@ -6882,11 +6911,18 @@ async function pReloadMisGastos(){
 // v29: contraseña de datos sensibles (CLABE, número completo, PIN de tarjetas) —
 // SEPARADA de la contraseña personal. Se guarda en sessionStorage (se olvida
 // al cerrar la pestaña, a propósito, para que no quede guardada en el dispositivo).
-async function vEnsure(){
+// v29: forcePrompt=true ignora la contraseña ya en caché (memoria/sessionStorage)
+// y siempre vuelve a pedirla — usado al Editar una tarjeta, para que ver los
+// datos sensibles en un formulario editable requiera confirmar cada vez, no
+// solo la primera vez de la sesión (a diferencia de 👁 revelar en la lista,
+// que sí puede quedarse desbloqueado mientras dure la pestaña).
+async function vEnsure(forcePrompt){
   if(!pOwner) pOwner=myName(); // v29: por si se llama antes de que Personal termine de inicializar pOwner
-  if(vPass) return true;
-  const cached=sessionStorage.getItem('gastos_vpass_'+pOwner);
-  if(cached){ vPass=cached; return true; }
+  if(!forcePrompt){
+    if(vPass) return true;
+    const cached=sessionStorage.getItem('gastos_vpass_'+pOwner);
+    if(cached){ vPass=cached; return true; }
+  }
   const pass=prompt('🔒 Contraseña de datos sensibles (distinta de tu contraseña personal).\nSi es la primera vez, escribe una nueva:','');
   if(pass===null) return false;
   try{
@@ -6927,6 +6963,10 @@ function vField(label, valor){
     <button type="button" class="rt-btn vault-copy" style="font-size:9px;padding:1px 5px;display:none" onclick="vCopiar(this,'${valEsc}')">📋</button>
   </span>`;
 }
+// v29: sesión activa "real" (household) justo antes de entrar a modo
+// Personal — se restaura al salir. Sin esto, activeSesion se quedaba en
+// "Personal-<tú>" para siempre tras la primera entrada a modo Personal.
+let __activeSesionAntesDePersonal=null;
 async function pEnterPersonal(skipGastosSwitch){
   pOwner = myName();
   if(!pOwner){ showToast('Primero elige tu nombre en 👥 (⭐ ¿Quién eres tú?)'); openPeople(); return; }
@@ -6935,13 +6975,20 @@ async function pEnterPersonal(skipGastosSwitch){
   if(!pPass){
     const pass=prompt('🔒 Tu contraseña personal ('+pOwner+').\nSi es la primera vez, escribe una nueva (solo tuya):','');
     if(pass===null) return;
-    try{ const r=await postGAS({action:'personalAuth', owner:pOwner, pass}); 
+    try{ const r=await postGAS({action:'personalAuth', owner:pOwner, pass});
       if(!(r&&r.ok)){ showToast('⚠ '+((r&&r.error==='PASSWORD')?'Contraseña incorrecta':(r&&r.error)||'Error')); return; }
       pPass=pass; localStorage.setItem('gastos_ppass_'+pOwner, pass);
     }catch(e){ showToast('⚠ Error de red'); return; }
   }
   personalMode = true;
   localStorage.setItem('gastos_personalMode','1'); // v29: recordar para recargas
+  // v29: Inventario/Lista de compras son SIEMPRE de activeSesion (nunca de
+  // "mis gastos agregados") — al entrar a modo Personal, activeSesion pasa
+  // a ser tu propia sesión "Personal-<tú>" para que lo que agregues ahí
+  // tenga un hogar consistente y predecible (antes quedaba ambiguo/vacío).
+  if(!__activeSesionAntesDePersonal) __activeSesionAntesDePersonal=activeSesion;
+  activeSesion=personalSesionName(pOwner);
+  v27ShopLoaded=false; invSharedLoaded=false; invContenedoresLoaded=false;
   misGastosAll=[]; // v29: nunca mostrar lo de la sesión anterior mientras carga
   v29ShowSesionLoading();
   activeF='all';
@@ -6965,6 +7012,10 @@ async function pExitPersonal(){
   const tabSalud=document.getElementById('tabSalud'); if(tabSalud) tabSalud.style.display='none';
   pUpdatePersonalBanner();
   v29ShowSesionLoading();
+  // v29: regresa activeSesion a la sesión household que tenías antes de
+  // entrar a modo Personal (pEnterPersonal la había cambiado a "Personal-<tú>").
+  if(__activeSesionAntesDePersonal!=null){ activeSesion=__activeSesionAntesDePersonal; __activeSesionAntesDePersonal=null; }
+  v27ShopLoaded=false; invSharedLoaded=false; invContenedoresLoaded=false;
   invalidateSesionCache(activeSesion);
   await loadExp(); // v29: recarga la sesión activa en vez de reusar allExp que quedó vacío/viejo
   if(currentPage==='salud'){ const gt=[...document.querySelectorAll('.ptab')].find(b=>/Gastos/.test(b.textContent)); if(gt) switchPage('gastos', gt); }
