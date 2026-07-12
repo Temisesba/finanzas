@@ -1692,7 +1692,7 @@ details:not([open]) .chev{transform:rotate(-90deg)}
 // v29: nombre clave de esta entrega — cámbialo cada vez que termines un lote
 // de cambios, así en 👥 → 🛠 Panel dev se puede confirmar que el navegador
 // está cargando la versión más reciente y no una copia en caché.
-const BUILD_VERSION='Peonia';
+const BUILD_VERSION='Ranunculo';
 let GAS_URL=localStorage.getItem('gastos_gas_url')||'';
 function v29TieneGasUrl(){ return !!GAS_URL; }
 function v29GuardarGasUrl(url){
@@ -6246,11 +6246,11 @@ let pTarjFiltroTipo=''; // v29: '' | 'TDC' | 'TDD' | 'PUNTOS'
 function pSetTarjFiltroTipo(t){ pTarjFiltroTipo=(pTarjFiltroTipo===t)?'':t; pRender(); }
 function pRenderTarjetas(){
   if(pTarjMSIView) return pRenderTarjetasMSISolo();
-  // v29: en sesión compartida, ver las tarjetas de TODOS los miembros (antes
-  // solo mostraba las tuyas — entrabas a la sesión de "Lot & Temis" y solo
-  // veías tus propias tarjetas, nunca las de Lot). sesionCards ya trae las
-  // de todos los miembros de la sesión activa (cargado en loadSesionCards).
-  const todas=(sesionCards&&sesionCards.length)?sesionCards:pItemsOf('tarjeta');
+  // v29: en sesión compartida (NO en modo Personal), ver las tarjetas de
+  // TODOS los miembros — entrabas a "Lot & Temis" y solo veías las tuyas,
+  // nunca las de Lot. Pero en modo Personal ("Mis Finanzas") solo tiene
+  // sentido ver las TUYAS — mostrar las de Lot ahí confundía.
+  const todas=(!personalMode && sesionCards&&sesionCards.length)?sesionCards:pItemsOf('tarjeta');
   // v29: TDC/TDD/Puntos ordenadas por próximo vencimiento, con las
   // retrasadas (estado de cuenta con fecha límite ya pasada y sin pagar)
   // primero — pDiasPara() por sí solo nunca da negativo (siempre proyecta
@@ -7106,7 +7106,12 @@ async function pFormSave(){
         // reales (ya salió el dinero, debe verse en Gastos) — el movimiento
         // de conciliación queda vinculado (↗) a la ÚLTIMA (la que aparece
         // en el estado que estás revisando), como un gasto normal.
-        const lastRowIndex=await pCrearGastosHistoricosMSI(item, historicas, window.__msiCardId);
+        // `historicas` se calculó ANTES de que existiera el monto total
+        // (pMovComoMSI corre antes de llenar el formulario), así que cada
+        // cuota ahí quedaba en ¥0 — se recalcula aquí con el item YA
+        // guardado (que sí trae el monto real) para que salgan bien.
+        const cuotasReales=pMSICuotas(item).slice(0, historicas.length);
+        const lastRowIndex=await pCrearGastosHistoricosMSI(item, cuotasReales, window.__msiCardId);
         const gEl=row.querySelector&&row.querySelector('.mov-gasto'), eEl=row.querySelector&&row.querySelector('.mov-estado');
         if(lastRowIndex && gEl && eEl){ gEl.value=String(lastRowIndex); eEl.value='identificado'; try{ row.replaceWith(pRowFromEl(pMovRowHTMLObjFromRow(row))); }catch(_){} }
         showToast('✓ '+historicas.length+' cuota(s) ya cobradas registradas como gastos');
@@ -7147,11 +7152,19 @@ async function pMSIActualizarRelacionados(id){
   const fuente=(personalMode?misGastosAll:allExp)||[];
   const relacionados=fuente.filter(e=>String(e.notas||'').includes(marca));
   if(!relacionados.length){ showToast('No hay gastos relacionados a esta MSI (todavía, o ninguna cuota ya cobrada se registró como gasto)'); return; }
-  if(!confirm('¿Actualizar el nombre de '+relacionados.length+' gasto(s) relacionados a "'+nuevoConcepto+'"?')) return;
+  if(!confirm('¿Actualizar nombre y monto de '+relacionados.length+' gasto(s) relacionados a "'+nuevoConcepto+'"?')) return;
+  // v29: de paso corrige el MONTO — las cuotas históricas registradas antes
+  // de este arreglo se guardaban en ¥0 (el monto total de la MSI todavía
+  // no existía cuando se calculaban). Se recalculan aquí con el item ya
+  // guardado, que sí tiene monto real.
+  const item=pItems.find(x=>x.id===id);
+  const cuotas=item?pMSICuotas(item):[];
   for(const g of relacionados){
     const m=/\(cuota (\d+)\)/.exec(g.concepto||'');
     const nuevo=nuevoConcepto+(m?' (cuota '+m[1]+')':'');
-    try{ await postGAS({action:'updateGasto', rowIndex:g.rowIndex, concepto:nuevo}); }catch(e){}
+    const body={action:'updateGasto', rowIndex:g.rowIndex, concepto:nuevo};
+    if(m){ const q=cuotas[parseInt(m[1])-1]; if(q && q.monto) body.costo=q.monto; }
+    try{ await postGAS(body); }catch(e){}
   }
   invalidateSesionCache(activeSesion);
   if(personalMode) await pReloadMisGastos(); else await loadExp();
