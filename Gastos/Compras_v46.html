@@ -1692,7 +1692,7 @@ details:not([open]) .chev{transform:rotate(-90deg)}
 // v29: nombre clave de esta entrega — cámbialo cada vez que termines un lote
 // de cambios, así en 👥 → 🛠 Panel dev se puede confirmar que el navegador
 // está cargando la versión más reciente y no una copia en caché.
-const BUILD_VERSION='Iris';
+const BUILD_VERSION='Jazmin';
 let GAS_URL=localStorage.getItem('gastos_gas_url')||'';
 function v29TieneGasUrl(){ return !!GAS_URL; }
 function v29GuardarGasUrl(url){
@@ -2898,13 +2898,13 @@ function renderAll(){
 
 function renderList(data){
   const list=document.getElementById('expList');
-  // v29: las filas derivadas (fijos/MSI/deudas) no tienen "compartido" ni
-  // sesión propios — solo tiene sentido mostrarlas sin ningún filtro activo,
-  // si no, aparecían siempre sin importar el chip de filtro elegido.
-  const derived = (personalMode && activeF==='all') ? pDerivedRowsHTML() : '';
-  if(!data.length && !derived){list.innerHTML='<div class="empty-st">Sin gastos en esta vista.</div>';return;}
+  // v29: los pendientes (fijos/MSI/deudas) ya NO se muestran aquí en
+  // absoluto — solo en Finanzas. Antes aparecían como filas de solo
+  // lectura mezcladas con gastos reales, lo cual confundía (sobre todo
+  // ahora que los pagos SÍ crean un gasto real cuando se registran).
+  if(!data.length){list.innerHTML='<div class="empty-st">Sin gastos en esta vista.</div>';return;}
   const me=myName();
-  list.innerHTML = derived + data.map(e=>{
+  list.innerHTML = data.map(e=>{
     const mp=e.moneda_pago||appSettings.moneda_local;
     const isYen=mp==='JPY';
     let amt=parseFloat(e.costo);
@@ -2936,27 +2936,6 @@ const proy=e.proyecto?'<div class="prod" title="Vinculado desde itinerario">🧳
     const myActs='<button class="ibtn" onclick="openExpView('+e.rowIndex+')" title="Ver todo">👁</button><button class="ibtn" onclick="pEditPersonal('+e.rowIndex+',\''+sesArg+'\')" title="Editar en su sesión">✏️</button><button class="ibtn" onclick="delExp('+e.rowIndex+')" title="Eliminar">🗑</button>';
     return '<div class="erow"><span class="dc">'+fmtDate(e.fecha)+'</span><span class="cc">'+prodBadge+esc(e.concepto||'—')+prod+proy+note+'</span><span class="ac" style="text-align:right">'+amtStr+convStr+'</span><span>'+pc+'</span><span>'+tc2+'</span><span>'+cc2+'</span><span>'+pagoCel+'</span><span>'+foto+'</span><span class="row-acts">'+(esMio?myActs:((personalMode?'<button class="ibtn" onclick="pViewOriginal('+e.rowIndex+')" title="Ver original y sesión">👁</button>':'')+'<button class="ibtn" onclick="editExp('+e.rowIndex+')" title="Editar">✏️</button><button class="ibtn" onclick="delExp('+e.rowIndex+')" title="Eliminar">🗑</button>'))+'</span></div>'+subRows;
   }).join('');
-}
-// v38: filas de solo lectura de MIS items personales (pagos fijos, cuotas MSI, deudas) del mes
-function pDerivedRowsHTML(){
-  if(!personalMode || !pItems || !pItems.length) return '';
-  const mk = pMesKey();
-  const rows=[];
-  const R=(fecha,concepto,monto,nota,ico)=>'<div class="erow" style="opacity:.92"><span class="dc">'+(fecha?fmtDate(fecha):'—')+'</span>'
-    +'<span class="cc">'+ico+' '+esc(concepto)+'<div class="note">'+esc(nota)+'</div></span>'
-    +'<span class="ac" style="text-align:right">'+curSym()+' '+Math.round(monto).toLocaleString()+'</span>'
-    +'<span><span style="color:var(--ink-3);font-size:11px">—</span></span><span><span class="chip cv">🔒</span></span>'
-    +'<span><span style="color:var(--ink-3);font-size:11px">—</span></span><span><span style="color:var(--ink-3);font-size:11px">—</span></span>'
-    +'<span class="row-acts"><button class="ibtn" onclick="pGoSalud()" title="Editar en Salud">↗</button></span></div>';
-  pItemsOf('fijo').forEach(f=>{ const card=pCardById(f.tarjeta); const pagado=(f.pagos||{})[mk];
-    const fechaPagado=pagado&&typeof pagado==='object'?pagado.fecha:'';
-    rows.push({f:pFechaDia(f.diaLimite), c:f.concepto||'Pago fijo', m:parseFloat(f.monto)||0, n:(pagado?'✓ pagado'+(fechaPagado?' '+fechaPagado:''):'⏳ pendiente')+(card?(' · sale de '+card.ctipo+' '+(card.banco||'')):''), i:'🔁'}); });
-  pItemsOf('msi').forEach(m=>{ pMSICuotas(m).forEach(q=>{ if(q.key===mk){ const card=pCardById(m.tarjeta);
-    rows.push({f:pFechaDia(m.diaLimite)||(mk+'-15'), c:(m.concepto||'MSI')+' (cuota '+q.idx+')', m:q.monto, n:(q.pagada?'✓ pagada':'⏳')+(card?(' · '+card.ctipo+' '+(card.banco||'')):''), i:'🗓️'}); } }); });
-  pItemsOf('deuda').forEach(d=>{ const meDeben=d.dir==='medeben';
-    rows.push({f:d.fechaPago||'', c:(d.persona||'')+(meDeben?' me debe':' · le debo'), m:parseFloat(d.monto)||0, n:(d.fechaPago?('📅 '+d.fechaPago+' · '):'')+(d.nota||''), i:meDeben?'💰':'⚠️'}); });
-  rows.sort((a,b)=>(b.f||'').localeCompare(a.f||''));
-  return rows.map(r=>R(r.f,r.c,r.m,r.n,r.i)).join('');
 }
 function pGoSalud(){ const t=document.getElementById('tabSalud'); if(t){ t.style.display=''; switchPage('salud',t); } }
 // v40: ver el gasto ORIGINAL completo (abre el editor con el dato real) + sesión
@@ -3822,7 +3801,20 @@ sesion:saveSesion};
     // v29: usa el mes de la FECHA del gasto (no siempre "hoy") — así un
     // pago fijo detectado en un estado de cuenta de otro mes marca el mes
     // correcto como pagado, no el mes actual.
-    if(!ei && window.__pagoFijoPendiente){ const f=pItems.find(x=>x.id===window.__pagoFijoPendiente); if(f){ const mk=(body.fecha||'').substring(0,7)||pMesKey(); f.pagos=f.pagos||{}; f.pagos[mk]={monto:parseFloat(f.monto)||0, fecha:fecha, gastoRef:body.concepto||''}; await pSaveItem(f); } window.__pagoFijoPendiente=''; }
+    if(!ei && window.__pagoFijoPendiente){
+      const f=pItems.find(x=>x.id===window.__pagoFijoPendiente);
+      if(f){
+        f.pagos=f.pagos||{};
+        let mk=(body.fecha||'').substring(0,7)||pMesKey();
+        // v29: si ese periodo ya tenía un pago (típico al usar "＋ Otro
+        // pago" para un pago extra del mismo mes), no lo pisa — usa un
+        // periodo alterno automático, igual que en pAddFijoPago.
+        if(f.pagos[mk]){ let i=2, alt=mk+'-'+i; while(f.pagos[alt]){ i++; alt=mk+'-'+i; } mk=alt; }
+        f.pagos[mk]={monto:parseFloat(f.monto)||0, fecha:fecha, gastoRef:body.concepto||''};
+        await pSaveItem(f);
+      }
+      window.__pagoFijoPendiente='';
+    }
     // v29: si este gasto nuevo vino de "➕ Registrar como nuevo gasto" en conciliación, vincula la fila sola
     if(!ei && r.rowIndex && window.__movVincularPendiente){
       const mrow=window.__movVincularPendiente;
@@ -5698,7 +5690,7 @@ function pBalanceSesionActual(){
 // v29: el estatus de pago de la tarjeta ya vive en el estado de cuenta
 // (pagado/fechaPago, ver pEstadoStatusBadgeHTML) — el viejo botón "Marcar
 // pagado"/c.pagos[mk] independiente del estado de cuenta se quitó.
-function pCardTipoEmoji(c){ return (c.ctipo||'TDC')==='TDD' ? '🏦' : '💳'; }
+function pCardTipoEmoji(c){ const t=c.ctipo||'TDC'; return t==='PUNTOS'?'🎫':(t==='TDD'?'🏦':'💳'); }
 function pCardLabel(c){
   const tipo = c.ctipo||'TDC';
   const tf = c.termFisica||c.terminacion, tv=c.termVirtual;
@@ -6091,6 +6083,7 @@ function pRenderFijos(){
           ? '<button class="rt-btn" onclick="pToggleFijoPagado(\''+esc(f.id)+'\')">✓ Pagado '+(fechaPagado||'este mes')+' (deshacer)</button>'
           : '<button class="rt-btn" style="font-weight:600" onclick="pAccionFijo(\''+esc(f.id)+'\')">'+(f.tipoPago==='tarjeta'?'🔎 Revisar pago':'🧾 Registrar pago ('+mk+')')+'</button>'}
         <button class="rt-btn" onclick="pAddFijoPago('${esc(f.id)}')">＋ Otro pago</button>
+        <button class="rt-btn" onclick="pVincularFijoConGasto('${esc(f.id)}',this)">🔗 Vincular con gasto</button>
         <button class="rt-btn" onclick="pOpenForm('fijo','${esc(f.id)}')">✏️</button>
         <button class="shop-del" onclick="pDelItem('${esc(f.id)}')">🗑</button>
       </div>
@@ -6126,43 +6119,71 @@ function pToggleFijoPagado(id){
   f.pagos[mk]={monto:parseFloat(f.monto)||0, fecha:(fecha||hoy).trim()};
   pSaveItem(f);
 }
-async function pAddFijoPago(id){
+// v29: "＋ Otro pago" ahora abre el MISMO formulario que "🧾 Registrar
+// pago" (antes eran puros prompt() sueltos) — la fecha que pongas ahí
+// define el periodo; si ese periodo ya tenía un pago, saveExpense() lo
+// nota solo con un periodo alterno en vez de sobreescribirlo (así puedes
+// registrar varios pagos del mismo mes: parciales, quincenas, etc.).
+function pAddFijoPago(id){
   const f=pItems.find(x=>x.id===id); if(!f)return;
-  let periodo=prompt('Periodo a registrar (ej. 2026-04, 2026-05-Q1, abril, quincena 1):', pMesKey());
-  if(periodo===null||!periodo.trim()) return;
-  periodo=periodo.trim();
+  if(f.generaGasto===false){
+    const hoy=new Date().toISOString().substring(0,10);
+    const periodo=prompt('Periodo a registrar (ej. 2026-04, quincena 1):', pMesKey());
+    if(periodo===null||!periodo.trim()) return;
+    const fecha=prompt('Fecha de pago:', hoy); if(fecha===null) return;
+    const monto=prompt('Monto pagado:', f.monto||''); if(monto===null) return;
+    f.pagos=f.pagos||{};
+    let p=periodo.trim();
+    if(f.pagos[p]){ let i=2, alt=p+'-'+i; while(f.pagos[alt]){ i++; alt=p+'-'+i; } p=alt; }
+    f.pagos[p]={monto:parseFloat(monto)||0, fecha:(fecha||hoy).trim()};
+    pSaveItem(f);
+    return;
+  }
+  openModal();
+  document.getElementById('iDate').value=new Date().toISOString().substring(0,10);
+  document.getElementById('iCosto').value=Math.round(parseFloat(f.monto)||0);
+  document.getElementById('iConc').value=f.concepto||'Pago fijo';
+  document.getElementById('iCat').value=f.categoria||'Servicios';
+  document.getElementById('iNotas').value=(f.nota?f.nota+' · ':'')+'Pago adicional de '+f.id;
+  if(f.formaPago==='Tarjeta'&&f.tarjeta){ const mm=document.getElementById('iMetodo'); if(mm){ mm.value='Tarjeta'; onMetodoChange(); const s=document.getElementById('iTarjetaSel'); if(s){ s.value=f.tarjeta; onTarjetaSelChange(); } } }
+  window.__pagoFijoPendiente=f.id;
+  showToast('Revisa la fecha (define el periodo) y guarda; quedará marcado como pagado');
+}
+// v29: vincular este pago fijo con un gasto YA EXISTENTE (buscador, igual
+// que "vincular con gasto existente" en conciliación) — para cuando el
+// gasto ya está en tu lista y solo quieres conectarlo, sin crear otro.
+function pVincularFijoConGasto(fijoId, btn){
+  const existente=btn.parentElement.nextElementSibling;
+  if(existente && existente.classList.contains('mov-vincular-pop')){ existente.remove(); return; }
+  const fuente=(personalMode?misGastosAll:allExp)||[];
+  const candidatos=fuente.filter(e=>e.compartido!=='Cotizacion'&&e.tipoFila!=='producto').sort((a,b)=>String(b.fecha||'').localeCompare(String(a.fecha||''))).slice(0,150);
+  const optRow=(g)=>'<button type="button" class="rt-btn vincular-opt" data-search="'+esc(normTxt((g.concepto||g.tienda||'')+' '+String(g.fecha||'')))+'" data-row="'+g.rowIndex+'" style="text-align:left;font-size:11px;display:block;width:100%;margin-bottom:2px" onclick="pVincularElegir(this)">'+esc(String(g.fecha||'').substring(0,10))+' · '+esc((g.concepto||g.tienda||'').substring(0,28))+' · '+pMoney(g.costo)+'</button>';
+  const pop=document.createElement('div');
+  pop.className='mov-vincular-pop';
+  pop.style.cssText='padding:8px;background:var(--surface2);border-radius:8px;margin:6px 0 0;font-size:11px';
+  pop.innerHTML='<div style="margin-bottom:5px;color:var(--ink-3)">¿Cuál gasto corresponde a este pago fijo? Escribe para buscar:</div>'
+    +'<input type="text" placeholder="Buscar por concepto, fecha…" oninput="pFiltrarVincularOpts(this)" style="width:100%;margin-bottom:6px;font-size:11px;padding:5px 7px;border:1px solid var(--border2);border-radius:6px;background:var(--bg)">'
+    +'<input type="hidden" class="vincular-elegido" value="">'
+    +'<input type="hidden" class="fijo-id" value="'+esc(fijoId)+'">'
+    +'<div class="vincular-opts" style="max-height:180px;overflow-y:auto;display:flex;flex-direction:column;gap:2px">'+candidatos.map(optRow).join('')+'</div>'
+    +'<div style="display:flex;gap:6px;margin-top:6px"><button type="button" class="rt-btn" style="font-size:10px;font-weight:600" onclick="pVincularFijoConGastoConfirmar(this)">Vincular</button><button type="button" class="rt-btn" style="font-size:10px" onclick="this.closest(\'.mov-vincular-pop\').remove()">Cancelar</button></div>';
+  btn.parentElement.insertAdjacentElement('afterend', pop);
+}
+async function pVincularFijoConGastoConfirmar(btn){
+  const pop=btn.closest('.mov-vincular-pop');
+  const rowIndex=pop.querySelector('.vincular-elegido').value;
+  const fijoId=pop.querySelector('.fijo-id').value;
+  if(!rowIndex){ showToast('Elige un gasto de la lista'); return; }
+  const f=pItems.find(x=>x.id===fijoId); if(!f) return;
+  const fuente=(personalMode?misGastosAll:allExp)||[];
+  const g=fuente.find(x=>String(x.rowIndex)===String(rowIndex)); if(!g) return;
+  const fecha=String(g.fecha||'').substring(0,10)||new Date().toISOString().substring(0,10);
+  const mk=fecha.substring(0,7);
   f.pagos=f.pagos||{};
-  // v29: si ya había un pago con ese mismo periodo (típico: aceptaste el mes
-  // sugerido y ya existía uno), antes se PISABA en silencio y el segundo
-  // pago desaparecía. Ahora, en vez de preguntar, deja coexistir ambos con
-  // un periodo alterno automático — puedes registrar tantos pagos del mismo
-  // mes como quieras (ej. pagos parciales, quincenas).
-  if(f.pagos[periodo]){
-    let i=2, alterno=periodo+'-'+i;
-    while(f.pagos[alterno]){ i++; alterno=periodo+'-'+i; }
-    periodo=alterno;
-  }
-  const hoy=new Date().toISOString().substring(0,10);
-  const fecha=prompt('Fecha de pago:', hoy); if(fecha===null) return;
-  const monto=prompt('Monto pagado:', f.monto||''); if(monto===null) return;
-  f.pagos[periodo]={monto:parseFloat(monto)||0, fecha:(fecha||hoy).trim()};
-  // v29: también se registra como gasto real, igual que "Registrar pago" —
-  // antes esto solo quedaba anotado aquí y nunca aparecía en Gastos.
-  if(f.generaGasto!==false){
-    const ses=currentSaveSesion();
-    try{
-      await postGAS({action:'saveGasto', fecha:(fecha||hoy).trim(), fecha_captura:localDateTimeValue(new Date()),
-        costo:parseFloat(monto)||0, moneda_pago:appSettings.moneda_local,
-        concepto:(f.concepto||'Pago fijo')+' ('+periodo+')', tienda:f.concepto||'',
-        quien_paga:myName(), compartido:'Personal',
-        pago:(f.formaPago==='Tarjeta'&&f.tarjeta)?pPagoStrDeTarjeta(f.tarjeta):'',
-        categoria:f.categoria||'Servicios', notas:'Generado desde pago fijo '+f.id+' · '+periodo,
-        sesion:ses});
-      invalidateSesionCache(ses);
-      if(personalMode) await pReloadMisGastos(); else await loadExp();
-    }catch(e){}
-  }
-  await pSaveItem(f);
+  f.pagos[mk]={monto:parseFloat(g.costo)||parseFloat(f.monto)||0, fecha, gastoRef:g.concepto||''};
+  pop.remove();
+  const ok=await pSaveItem(f);
+  if(ok) showToast('✓ Vinculado — "'+(f.concepto||'pago fijo')+'" marcado pagado en '+mk);
 }
 function pAccionFijo(id){
   const f=pItems.find(x=>x.id===id); if(!f)return;
@@ -6245,9 +6266,6 @@ function pRenderTarjetas(){
       +`<div style="font-size:11px;color:var(--ink-3);margin-top:2px">Periodo: ${esc(cy.label)} · Estimado del ciclo: <strong>${pMoney(pTarjetaEstimadoCiclo(c,mk))}</strong></div>`
       +`<div style="font-size:11px;color:var(--ink-3);margin-top:2px">➡️ Próximo vencimiento: <strong>${proxVenc?esc(proxVenc)+' ('+pDiasPara(c.diaLimite)+'d)':'—'}</strong></div>`
       +`<div style="font-size:10px;color:var(--ink-3);margin-top:2px">fijos/MSI asignados: ${pMoney(pTarjetaCargado(c.id,mk))}</div>`;
-    const fechas=`<div style="display:flex;flex-wrap:wrap;gap:4px 12px;font-size:11px;color:var(--ink-3)">`
-      +`<span>🟢 Disponible desde: <strong>${esc(c.diaDisponible||'—')}</strong></span>`
-      +`</div>`;
     // Crédito máximo / disponible (solo TDC con límite capturado)
     let creditoHtml='';
     if(c.ctipo==='TDC' && parseFloat(c.creditoMax)>0){
@@ -6273,6 +6291,7 @@ function pRenderTarjetas(){
     if(c.requisitoMinimo) feeParts.push('Mín: '+esc(c.requisitoMinimo));
     const feesHtml=feeParts.length?`<div style="font-size:10.5px;color:var(--temis);margin-top:6px;background:var(--temis-bg);border-radius:6px;padding:4px 8px">⚠️ ${feeParts.join(' · ')}</div>`:'';
     const cardId='cardbody_'+c.id;
+    const fotoBtn=c.fotoUrl?`<button type="button" class="rt-btn" style="flex-shrink:0" onclick="openLightbox('${esc(c.fotoUrl)}')" title="Ver foto / QR">📷</button>`:'';
     return `<div style="padding:12px;border:1px solid var(--border);border-radius:10px;margin-bottom:10px;background:var(--surface)">
     <div style="display:flex;align-items:center;gap:10px">
       <button type="button" onclick="pToggleCardCollapse('${esc(cardId)}',this)" style="background:none;border:none;cursor:pointer;font-size:13px;color:var(--ink-3);padding:2px 4px;flex-shrink:0">▸</button>
@@ -6281,14 +6300,14 @@ function pRenderTarjetas(){
         <div style="font-size:11px;color:var(--ink-3)">${esc(c.nombre||'')}</div>
         ${resumenSiempre}
       </div>
+      <div style="display:flex;gap:4px;flex-shrink:0;align-self:flex-start">
+        ${fotoBtn}
+        ${esMia?'<button type="button" class="rt-btn" style="flex-shrink:0" onclick="pOpenForm(\'tarjeta\',\''+esc(c.id)+'\')">✏️</button><button type="button" class="shop-del" style="flex-shrink:0" onclick="pDelItem(\''+esc(c.id)+'\')">🗑</button>':''}
+      </div>
     </div>
-    ${esMia?`<div class="tarj-btn-scroll" style="display:flex;gap:6px;margin-top:8px;overflow-x:auto;-webkit-overflow-scrolling:touch;flex-wrap:nowrap">
-        <button class="rt-btn" style="flex-shrink:0" onclick="pOpenForm('tarjeta','${esc(c.id)}')">✏️</button><button class="shop-del" style="flex-shrink:0" onclick="pDelItem('${esc(c.id)}')">🗑</button>
-    </div>`:''}
-    <div id="${esc(cardId)}" style="display:none;margin-top:8px;padding-top:8px;border-top:1px dashed var(--border)">
-    ${fechas}
-    ${creditoHtml}${feesHtml}${sensiblesHtml}
     ${pRenderEstadosTarjeta(c)}
+    <div id="${esc(cardId)}" style="display:none;margin-top:8px;padding-top:8px;border-top:1px dashed var(--border)">
+    ${creditoHtml}${feesHtml}${sensiblesHtml}
     </div></div>`;
   }).join('') || '<div style="color:var(--ink-3);font-size:13px;padding:20px;text-align:center">Sin tarjetas. Agrega tus TDC/TDD para elegirlas al pagar.</div>';
   // v29: las compras a MSI ya NO se listan aquí (ni por tarjeta ni "sin
@@ -6762,6 +6781,11 @@ async function pOpenForm(tipo, id){
     if(!(await vEnsure(true))){ showToast('🔒 Necesitas la contraseña de datos sensibles para editar esta tarjeta'); return; }
   }
   pFormTipo=tipo; pFormId=id||'';
+  // v29: limpia el estado de la foto/QR de tarjeta al abrir — si no,
+  // editar una tarjeta SIN foto justo después de una CON foto se quedaba
+  // con la foto anterior en memoria (aunque no se veía, se habría guardado
+  // si tocabas cualquier otro campo).
+  if(tipo==='tarjeta'){ pfTarjFoto={b64:'',mime:''}; pfTarjFotoUrl=(item&&item.fotoUrl)||''; }
   pF('pFormTitle').textContent = (id?'Editar ':'Nuevo ')+ (P_TIPOS[tipo]?P_TIPOS[tipo].emoji+' '+P_TIPOS[tipo].label:'registro');
   pF('pFormFields').innerHTML = pFormFieldsHTML(tipo, item||{tipo});
   pF('pFormOverlay').style.display='flex';
@@ -6842,10 +6866,21 @@ function pFormFieldsHTML(tipo, it){
     return F('Alias','pfTarjNombre',it.nombre,'placeholder="Ej. Nu principal" id="pFormFirst"')
       + F('Titular (de quién es)','pfTitular',it.titular||myName(),'placeholder="Ej. Temis, Lot…"')
       + F('Banco','pfBanco',it.banco,'placeholder="Nu, HSBC, Citibanamex, Hey, Stori…"')
-      + `<div class="pf-field"><label>Tipo</label><div style="display:flex;gap:8px">
+      + `<div class="pf-field"><label>Tipo</label><div style="display:flex;gap:8px;flex-wrap:wrap">
           <button type="button" class="tbtn ${ct==='TDC'?'sel':''}" id="ptC" onclick="pTarjTipo('TDC')">💳 Crédito (TDC)</button>
           <button type="button" class="tbtn ${ct==='TDD'?'sel':''}" id="ptD" onclick="pTarjTipo('TDD')">🏦 Débito (TDD)</button>
+          <button type="button" class="tbtn ${ct==='PUNTOS'?'sel':''}" id="ptP" onclick="pTarjTipo('PUNTOS')">🎫 Puntos / departamental</button>
         </div><input type="hidden" id="pfCtipo" value="${ct}"></div>`
+      + `<div class="pf-field"><label>Foto / QR (opcional — para verla rápido en la tienda)</label>
+          <input type="file" accept="image/*" id="pfTarjFotoInput" style="display:none" onchange="pTarjFotoFile(event)">
+          <input type="file" accept="image/*" capture="environment" id="pfTarjFotoCam" style="display:none" onchange="pTarjFotoFile(event)">
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+            <img id="pfTarjFotoPrev" src="${esc(it.fotoUrl||'')}" style="${it.fotoUrl?'':'display:none;'}width:64px;height:64px;object-fit:cover;border-radius:10px;border:1px solid var(--border);cursor:zoom-in" onclick="if(this.src)openLightbox(this.src)">
+            <button type="button" class="rt-btn" onclick="document.getElementById('pfTarjFotoCam').click()">📷 Cámara</button>
+            <button type="button" class="rt-btn" onclick="document.getElementById('pfTarjFotoInput').click()">🖼 Galería</button>
+            <button type="button" class="rt-btn" id="pfTarjFotoDel" style="${it.fotoUrl?'':'display:none;'}" onclick="pTarjFotoClear()">✕ Quitar</button>
+          </div>
+        </div>`
       + `<div class="pf-field"><label>Red</label><input type="text" id="pfRed" list="list-redes" value="${esc(it.red||'')}" placeholder="Visa, Mastercard, American Express…"></div>
         <datalist id="list-redes"><option value="Visa"><option value="Mastercard"><option value="American Express"></datalist>`
       + `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
@@ -6948,7 +6983,36 @@ function pFormFieldsHTML(tipo, it){
 }
 function pfFormaPagoChange(){ const v=document.getElementById('pfFormaPago').value; const t=document.getElementById('pfTarjeta'); if(t) t.style.display=(v==='Tarjeta')?'block':'none'; }
 function pDeudaDir(d){ pF('pfDir').value=d; pF('pdMe').className='tbtn'+(d==='medeben'?' sel':''); pF('pdYo').className='tbtn'+(d==='debo'?' sel':''); }
-function pTarjTipo(t){ pF('pfCtipo').value=t; pF('ptC').className='tbtn'+(t==='TDC'?' sel':''); pF('ptD').className='tbtn'+(t==='TDD'?' sel':''); }
+function pTarjTipo(t){ pF('pfCtipo').value=t; pF('ptC').className='tbtn'+(t==='TDC'?' sel':''); pF('ptD').className='tbtn'+(t==='TDD'?' sel':''); const p=pF('ptP'); if(p) p.className='tbtn'+(t==='PUNTOS'?' sel':''); }
+// v29: foto/QR de la tarjeta (ej. tarjeta de puntos departamental) — para
+// verla rápido en la tienda sin traer la física. Estado propio (no reusa
+// pfFoto del formulario de producto, que además abre el flujo de recorte).
+let pfTarjFoto={b64:'',mime:''}, pfTarjFotoUrl='';
+function pTarjFotoFile(e){
+  const f=e.target.files[0]; if(!f) return;
+  e.target.value='';
+  const r=new FileReader();
+  r.onload=ev=>{
+    const img=new Image();
+    img.onload=()=>{
+      const canvas=document.createElement('canvas');
+      const MAX=700, scale=Math.min(1, MAX/img.width);
+      canvas.width=img.width*scale; canvas.height=img.height*scale;
+      canvas.getContext('2d').drawImage(img,0,0,canvas.width,canvas.height);
+      const dataUrl=canvas.toDataURL('image/jpeg',.8);
+      pfTarjFoto={b64:dataUrl.split(',')[1], mime:'image/jpeg'}; pfTarjFotoUrl='';
+      const pv=pF('pfTarjFotoPrev'); if(pv){ pv.src=dataUrl; pv.style.display='block'; }
+      const del=pF('pfTarjFotoDel'); if(del) del.style.display='inline-block';
+    };
+    img.src=ev.target.result;
+  };
+  r.readAsDataURL(f);
+}
+function pTarjFotoClear(){
+  pfTarjFoto={b64:'',mime:''}; pfTarjFotoUrl='';
+  const pv=pF('pfTarjFotoPrev'); if(pv){ pv.style.display='none'; pv.src=''; }
+  const del=pF('pfTarjFotoDel'); if(del) del.style.display='none';
+}
 
 // Guarda leyendo el formulario según el tipo
 async function pFormSave(){
@@ -6970,7 +7034,16 @@ async function pFormSave(){
     item={...base, concepto:pFval('pfConcepto').trim(), tipoPago, monto:parseFloat(pFval('pfMonto'))||0, frecuencia:pFval('pfFrecuencia')||'mensual', diaLimite:pFval('pfDiaLimite'), fechaPago:pFval('pfFechaPago'), categoria:pFval('pfCategoria').trim(), formaPago:pFval('pfFormaPago'), tarjeta:(pFval('pfFormaPago')==='Tarjeta'?pFval('pfTarjeta'):''), generaGasto:(tipoPago==='tarjeta'?false:(pFval('pfGeneraGasto')!=='no')), nota:pFval('pfNota').trim(), pagos:(prev&&prev.pagos)||{}};
   } else if(t==='tarjeta'){
     if(!pFval('pfBanco').trim() && !pFval('pfTarjNombre').trim()){ showToast('Pon al menos alias o banco'); return; }
-    item={...base, nombre:pFval('pfTarjNombre').trim(), titular:pFval('pfTitular').trim(), banco:pFval('pfBanco').trim(), ctipo:pFval('pfCtipo'), red:pFval('pfRed'), termFisica:pFval('pfTermFis').trim(), termVirtual:pFval('pfTermVir').trim(), diaCorte:pFval('pfDiaCorte'), diaDisponible:pFval('pfDiaDisponible'), diaLimite:pFval('pfDiaLimite'), creditoMax:parseFloat(pFval('pfCreditoMax'))||0, interesAnual:parseFloat(pFval('pfInteres'))||0, comisionTardio:parseFloat(pFval('pfComisionTardio'))||0, comisionInactividad:parseFloat(pFval('pfComisionInactividad'))||0, requisitoMinimo:pFval('pfRequisitoMinimo').trim(), clabe:pFval('pfClabe').trim(), numFisica:pFval('pfNumFis').trim(), numVirtual:pFval('pfNumVir').trim(), venceFisica:pFval('pfVenceFis').trim(), venceVirtual:pFval('pfVenceVir').trim(), pin:pFval('pfPin').trim(), nota:pFval('pfNotaTarj').trim()};
+    let fotoUrl=pfTarjFotoUrl;
+    if(pfTarjFoto.b64){
+      try{
+        btnBusy('Subiendo foto…');
+        const up=await postGAS({action:'uploadTarjetaFoto', owner:pOwner, pass:pPass, base64:pfTarjFoto.b64, mimeType:pfTarjFoto.mime||'image/jpeg'});
+        if(up&&up.ok) fotoUrl=up.url;
+        else throw new Error((up&&up.error)||'No se pudo subir la foto');
+      }catch(e){ showToast('⚠ '+e.message); btnReady(); return; }
+    }
+    item={...base, nombre:pFval('pfTarjNombre').trim(), titular:pFval('pfTitular').trim(), banco:pFval('pfBanco').trim(), ctipo:pFval('pfCtipo'), red:pFval('pfRed'), fotoUrl, termFisica:pFval('pfTermFis').trim(), termVirtual:pFval('pfTermVir').trim(), diaCorte:pFval('pfDiaCorte'), diaDisponible:pFval('pfDiaDisponible'), diaLimite:pFval('pfDiaLimite'), creditoMax:parseFloat(pFval('pfCreditoMax'))||0, interesAnual:parseFloat(pFval('pfInteres'))||0, comisionTardio:parseFloat(pFval('pfComisionTardio'))||0, comisionInactividad:parseFloat(pFval('pfComisionInactividad'))||0, requisitoMinimo:pFval('pfRequisitoMinimo').trim(), clabe:pFval('pfClabe').trim(), numFisica:pFval('pfNumFis').trim(), numVirtual:pFval('pfNumVir').trim(), venceFisica:pFval('pfVenceFis').trim(), venceVirtual:pFval('pfVenceVir').trim(), pin:pFval('pfPin').trim(), nota:pFval('pfNotaTarj').trim()};
   } else if(t==='estado'){
     if(!pFval('pfTarjeta')){ showToast('Elige tarjeta'); return; }
     const prev=pFormId?pItems.find(x=>x.id===pFormId):null;
