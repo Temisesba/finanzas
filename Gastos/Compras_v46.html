@@ -1700,7 +1700,7 @@ details:not([open]) .chev{transform:rotate(-90deg)}
 // v29: nombre clave de esta entrega — cámbialo cada vez que termines un lote
 // de cambios, así en 👥 → 🛠 Panel dev se puede confirmar que el navegador
 // está cargando la versión más reciente y no una copia en caché.
-const BUILD_VERSION='Violeta';
+const BUILD_VERSION='Begonia';
 let GAS_URL=localStorage.getItem('gastos_gas_url')||'';
 function v29TieneGasUrl(){ return !!GAS_URL; }
 function v29GuardarGasUrl(url){
@@ -3818,7 +3818,7 @@ sesion:saveSesion};
         // del mismo mes desde "🧾 Registrar pago"), no lo pisa — usa un
         // periodo alterno automático.
         if(f.pagos[mk]){ let i=2, alt=mk+'-'+i; while(f.pagos[alt]){ i++; alt=mk+'-'+i; } mk=alt; }
-        f.pagos[mk]={monto:parseFloat(f.monto)||0, fecha:fecha, gastoRef:body.concepto||''};
+        f.pagos[mk]={monto:parseFloat(f.monto)||0, fecha:fecha, gastoRef:body.concepto||'', gastoRowIndex:r.rowIndex};
         await pSaveItem(f);
       }
       window.__pagoFijoPendiente='';
@@ -3866,8 +3866,22 @@ function editExp(rowIndex){
   }
   const delBtn=document.getElementById('bDeleteExp');
   if(delBtn) delBtn.style.display='inline-block';
+  // v29: si este gasto ya está vinculado a un pago fijo, el botón ya no se
+  // queda diciendo siempre "🔁 Vincular a un pago fijo" (como si nada
+  // estuviera conectado) — dice a cuál está vinculado y abre ESE pago fijo
+  // para verlo/editarlo, en vez de reabrir el buscador.
   const vfBtn=document.getElementById('mVincularFijoBtn');
-  if(vfBtn) vfBtn.style.display='inline-block';
+  if(vfBtn){
+    vfBtn.style.display='inline-block';
+    const link=pFijoLinkedToGasto(rowIndex);
+    if(link){
+      vfBtn.textContent='🔗 Vinculado a "'+(link.fijo.concepto||'pago fijo')+'" · Ver/editar';
+      vfBtn.setAttribute('onclick', "pOpenForm('fijo','"+esc(link.fijo.id)+"')");
+    } else {
+      vfBtn.textContent='🔁 Vincular a un pago fijo';
+      vfBtn.setAttribute('onclick', 'pVincularGastoAFijo()');
+    }
+  }
 
   // Cargar Fechas
   document.getElementById('iDate').value = String(e.fecha||'').substring(0,10);
@@ -4061,8 +4075,9 @@ async function pVincularGastoAFijoConfirmar(btn){
   const fecha=document.getElementById('iDate').value||new Date().toISOString().substring(0,10);
   const costo=parseFloat(document.getElementById('iCosto').value)||parseFloat(f.monto)||0;
   const mk=fecha.substring(0,7);
+  const rowIndex=parseInt(document.getElementById('editIdx').value)||'';
   f.pagos=f.pagos||{};
-  f.pagos[mk]={monto:costo, fecha, gastoRef:document.getElementById('iConc').value||''};
+  f.pagos[mk]={monto:costo, fecha, gastoRef:document.getElementById('iConc').value||'', gastoRowIndex:rowIndex};
   pop.remove();
   const ok=await pSaveItem(f);
   if(ok) showToast('✓ Vinculado con "'+(f.concepto||'pago fijo')+'" — marcado pagado en '+mk);
@@ -5763,6 +5778,19 @@ function pMoney(n){ return curSym()+Math.round(n||0).toLocaleString(); }
 // comparar contra el monto tal cual viene en el estado de cuenta.
 function pMoneyExact(n){ return curSym()+(parseFloat(n)||0).toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:2}); }
 function pItemsOf(tipo){ return pItems.filter(i=>i.tipo===tipo); }
+// v29: ¿este gasto (rowIndex) ya está vinculado a algún pago fijo? Busca en
+// pagos[mk].gastoRowIndex de todos los pagos fijos — ese campo se guarda al
+// vincular (desde Editar gasto, desde conciliación o al "Registrar pago").
+function pFijoLinkedToGasto(rowIndex){
+  if(!rowIndex) return null;
+  for(const f of pItemsOf('fijo')){
+    for(const mk in (f.pagos||{})){
+      const p=f.pagos[mk];
+      if(p && typeof p==='object' && String(p.gastoRowIndex||'')===String(rowIndex)) return {fijo:f, mk};
+    }
+  }
+  return null;
+}
 
 // ── Balance cruzado de todas las sesiones donde participo ──
 // (usa la sesión activa cargada; para otras sesiones desbloqueadas suma su neto)
@@ -6158,7 +6186,19 @@ function pRenderFijos(){
     const pagado=(f.pagos||{})[mk]; const dias=pDiasPara(f.diaLimite);
     const card=pCardById(f.tarjeta);
     const fechaPagado=pagado&&typeof pagado==='object'?pagado.fecha:'';
-    const historial=Object.keys(f.pagos||{}).sort().reverse().slice(0,8).map(k=>'<span class="chip" style="font-size:10px;margin:2px;background:var(--shared-bg);color:var(--shared)">✓ '+esc(k)+(((f.pagos||{})[k]&&typeof (f.pagos||{})[k]==='object'&&(f.pagos||{})[k].fecha)?(' · '+esc((f.pagos||{})[k].fecha)):'')+'</span>').join('');
+    // v29: los chips verdes de historial ahora son clicables — si ese pago
+    // tiene un gasto vinculado (gastoRowIndex), abre su detalle en vez de
+    // solo mostrar el mes. Siempre se muestran máximo los 8 más recientes
+    // (no crecen sin límite conforme se acumulan pagos) y se van al
+    // renglón de abajo solos conforme no caben (wrap normal, sin JS extra).
+    const historial=Object.keys(f.pagos||{}).sort().reverse().slice(0,8).map(k=>{
+      const p=(f.pagos||{})[k];
+      const label='✓ '+esc(k)+((p&&typeof p==='object'&&p.fecha)?(' · '+esc(p.fecha)):'');
+      const rowIdx=(p&&typeof p==='object'&&p.gastoRowIndex)?p.gastoRowIndex:'';
+      return rowIdx
+        ? '<button type="button" class="chip" style="font-size:10px;margin:2px;background:var(--shared-bg);color:var(--shared);border:none;cursor:pointer" title="Ver el gasto de este pago" onclick="pOpenLinkedGasto(\''+esc(rowIdx)+'\')">'+label+'</button>'
+        : '<span class="chip" style="font-size:10px;margin:2px;background:var(--shared-bg);color:var(--shared)" title="Este pago no tiene un gasto vinculado para ver">'+label+'</span>';
+    }).join('');
     let alarma='';
     if(f.cancelado) alarma='<span style="color:var(--ink-3);font-weight:600">🚫 cancelado</span>';
     else if(!pagado && dias!==null){
@@ -6268,7 +6308,7 @@ async function pVincularFijoConGastoConfirmar(btn){
   const fecha=String(g.fecha||'').substring(0,10)||new Date().toISOString().substring(0,10);
   const mk=fecha.substring(0,7);
   f.pagos=f.pagos||{};
-  f.pagos[mk]={monto:parseFloat(g.costo)||parseFloat(f.monto)||0, fecha, gastoRef:g.concepto||''};
+  f.pagos[mk]={monto:parseFloat(g.costo)||parseFloat(f.monto)||0, fecha, gastoRef:g.concepto||'', gastoRowIndex:g.rowIndex};
   pop.remove();
   const ok=await pSaveItem(f);
   if(ok) showToast('✓ Vinculado — "'+(f.concepto||'pago fijo')+'" marcado pagado en '+mk);
@@ -7314,8 +7354,9 @@ async function pFormSave(){
         const fecha=(dEl&&dEl.value)||hoy;
         const costo=parseFloat(cEl&&cEl.value)||parseFloat(item.monto)||0;
         const mk=fecha.substring(0,7);
+        const rowIndex=parseInt(document.getElementById('editIdx').value)||'';
         item.pagos=item.pagos||{};
-        item.pagos[mk]={monto:costo, fecha, gastoRef:(ncEl&&ncEl.value)||''};
+        item.pagos[mk]={monto:costo, fecha, gastoRef:(ncEl&&ncEl.value)||'', gastoRowIndex:rowIndex};
         await pSaveItem(item);
         showToast('✓ Pago fijo creado y vinculado a este gasto');
       } else if(pend.origen==='mov' && pend.row){
