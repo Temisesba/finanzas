@@ -983,9 +983,17 @@ details:not([open]) .chev{transform:rotate(-90deg)}
 .pf-field input,.pf-field select,.pf-field textarea{width:100%;border:1px solid var(--border2);border-radius:8px;padding:9px 11px;font-size:14px;font-family:var(--sans);outline:none;background:var(--bg)}
 .pf-field input:focus,.pf-field select:focus,.pf-field textarea:focus{border-color:var(--lot)}
 .pf-field textarea{min-height:92px;resize:vertical;line-height:1.35}
-.mov-grid{display:grid;grid-template-columns:110px minmax(150px,1fr) 90px 120px 135px 30px;gap:5px;align-items:center;margin-bottom:5px}
+/* v29: la descripción va en su propia fila completa (antes se veía a la
+   mitad, apretada entre columnas fijas) y fecha/monto/categoría/estado van
+   en la fila de abajo — ver pedido de "ponerlo en dos filas". */
+.mov-grid{display:grid;grid-template-columns:110px 90px 120px 135px 30px;grid-template-areas:"desc desc desc desc desc" "fecha monto cat estado acc";gap:5px 6px;align-items:center;margin-bottom:8px;padding-bottom:8px;border-bottom:1px dashed var(--border2)}
 .mov-grid input,.mov-grid select{border:1px solid var(--border2);border-radius:7px;padding:7px 8px;font-size:12px;background:var(--bg);min-width:0}
-.mov-grid.head{font-size:10px;color:var(--ink-3);font-weight:600;text-transform:uppercase;letter-spacing:.05em}
+.mov-grid .mov-desc{grid-area:desc;width:100%}
+.mov-grid .mov-fecha{grid-area:fecha}
+.mov-grid .mov-monto{grid-area:monto}
+.mov-grid .mov-cat{grid-area:cat}
+.mov-grid .mov-estado{grid-area:estado}
+.mov-grid .mov-acc{grid-area:acc}
 @media(max-width:560px){ #pFormOverlay .modal{max-width:100%;margin:8px} }
 </style>
 </head>
@@ -1692,7 +1700,7 @@ details:not([open]) .chev{transform:rotate(-90deg)}
 // v29: nombre clave de esta entrega — cámbialo cada vez que termines un lote
 // de cambios, así en 👥 → 🛠 Panel dev se puede confirmar que el navegador
 // está cargando la versión más reciente y no una copia en caché.
-const BUILD_VERSION='Camelia';
+const BUILD_VERSION='Orquidea';
 let GAS_URL=localStorage.getItem('gastos_gas_url')||'';
 function v29TieneGasUrl(){ return !!GAS_URL; }
 function v29GuardarGasUrl(url){
@@ -6497,7 +6505,7 @@ function pEstadoLabel(s){
 function pMovRowsHTML(movs, containerId){
   containerId=containerId||'pfMovRows';
   const arr=(movs&&movs.length)?movs:[{estado:'pendiente'}];
-  return '<div class="pf-field"><label>Movimientos del estado</label><div class="mov-grid head"><span>Fecha</span><span>Descripción</span><span>Monto</span><span>Categoría</span><span>Estado</span><span></span></div><div id="'+containerId+'">'
+  return '<div class="pf-field"><label>Movimientos del estado</label><div id="'+containerId+'">'
     + arr.map(pMovRowHTML).join('')
     + '</div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px"><button type="button" class="rt-btn" style="font-size:11px" onclick="pAddEstadoMov(\''+containerId+'\')">＋ Movimiento</button><button type="button" class="rt-btn" style="font-size:11px" onclick="pAutoMatchFormMovs(false,\''+containerId+'\')">🔎 Auto-identificar</button></div></div>';
 }
@@ -6515,7 +6523,7 @@ function pMovRowHTML(m){
   const link=m.gastoId?'<button type="button" class="shop-del" title="Ver gasto vinculado" onclick="pOpenLinkedGasto(\''+esc(m.gastoId)+'\')">↗</button><button type="button" class="rt-btn" style="font-size:10px;padding:2px 5px" title="Desvincular (no borra el gasto, solo esta fila)" onclick="pDesvincularMovRow(this)">↩️</button>'
     :m.msiId?'<button type="button" class="shop-del" title="Ver compra a MSI vinculada" onclick="pOpenForm(\'msi\',\''+esc(m.msiId)+'\')">↗🗓️</button><button type="button" class="rt-btn" style="font-size:10px;padding:2px 5px" title="Desvincular (no borra la MSI, solo esta fila)" onclick="pDesvincularMovRow(this)">↩️</button>'
     :'<button type="button" class="rt-btn" style="font-size:10px;padding:2px 5px" title="Vincular con gasto existente" onclick="pVincularMovRow(this)">🔗</button><button type="button" class="rt-btn" style="font-size:10px;padding:2px 5px" title="Registrar como nuevo gasto" onclick="pRegistrarMovComoGasto(this)">➕</button><button type="button" class="rt-btn" style="font-size:10px;padding:2px 5px" title="Este movimiento es una compra a meses (MSI) — crearla desde aquí" onclick="pMovComoMSI(this)">🗓️</button><button type="button" class="rt-btn" style="font-size:10px;padding:2px 5px" title="Este movimiento es uno de tus pagos fijos — vincularlo" onclick="pMovComoFijo(this)">🔁</button>';
-  return '<div class="mov-grid"><input type="date" class="mov-fecha" value="'+esc(m.fecha||'')+'"><input class="mov-desc" value="'+esc(m.descripcion||'')+'" placeholder="Comercio"><input type="number" class="mov-monto" value="'+esc(m.monto||'')+'" placeholder="0"><input class="mov-cat" value="'+esc(m.categoria||'')+'" placeholder="Categoría"><select class="mov-estado">'+opts+'</select><span style="display:flex;gap:2px;flex-wrap:wrap"><input type="hidden" class="mov-gasto" value="'+esc(m.gastoId||'')+'"><input type="hidden" class="mov-msi" value="'+esc(m.msiId||'')+'">'+link+'<button type="button" class="shop-del" onclick="this.closest(\'.mov-grid\').remove()">🗑</button></span></div>';
+  return '<div class="mov-grid"><input class="mov-desc" value="'+esc(m.descripcion||'')+'" placeholder="Comercio / descripción completa"><input type="date" class="mov-fecha" value="'+esc(m.fecha||'')+'"><input type="number" class="mov-monto" value="'+esc(m.monto||'')+'" placeholder="0"><input class="mov-cat" value="'+esc(m.categoria||'')+'" placeholder="Categoría"><select class="mov-estado">'+opts+'</select><span class="mov-acc" style="display:flex;gap:2px;flex-wrap:wrap"><input type="hidden" class="mov-gasto" value="'+esc(m.gastoId||'')+'"><input type="hidden" class="mov-msi" value="'+esc(m.msiId||'')+'">'+link+'<button type="button" class="shop-del" onclick="this.closest(\'.mov-grid\').remove()">🗑</button></span></div>';
 }
 //  Vincular con gasto existente: sugiere el mejor match automático, pero si no
 //  hay coincidencia confiable (o el usuario quiere elegir otro) muestra un
@@ -7519,6 +7527,12 @@ function pVerEstadoCuenta(cardId){
   alert('🧾 Estado de cuenta — '+pCardLabel(c)+'\n(sesión '+(activeSesion||'')+')\n\n'+filas+'\n\nTOTAL: '+curSym()+Math.round(tot).toLocaleString());
 }
 let pConciliacionActual=null; // {id, tarjeta, mes} del estado abierto en el modal de conciliación
+// v29: los overlays con "resize:both" (Conciliación, formulario Personal)
+// se cerraban solos al soltar el mouse tras jalar la esquina de resize —
+// el navegador a veces entrega ese mouseup/click con target=overlay (el
+// fondo), aunque el arrastre empezó DENTRO del modal. Solo cerramos si el
+// mousedown también empezó en el fondo (clic real, no cola de un resize).
+let pOverlayMdownBackdrop=false;
 function pVerConciliacion(estadoId){ pOpenConciliacion(estadoId); }
 function pOpenConciliacion(estadoId){
   const e=pItems.find(x=>x.id===estadoId); if(!e)return;
@@ -7850,8 +7864,8 @@ function pRenderMiLista(){
 </script>
 
 <!-- v34: Formulario del módulo Personal -->
-<div class="overlay" id="pFormOverlay" style="display:none;z-index:296;align-items:flex-start" onclick="if(event.target.id==='pFormOverlay')pCloseForm(false)">
-  <div class="modal" style="max-width:460px;width:100%;margin:16px auto">
+<div class="overlay" id="pFormOverlay" style="display:none;z-index:296;align-items:flex-start" onmousedown="pOverlayMdownBackdrop=(event.target.id==='pFormOverlay')" onclick="if(event.target.id==='pFormOverlay' && pOverlayMdownBackdrop)pCloseForm(false)">
+  <div class="modal" style="max-width:460px;width:100%;margin:16px auto;resize:both;overflow:auto;min-width:320px;min-height:220px">
     <div class="mhdr" style="display:flex;align-items:center;justify-content:space-between;padding:15px 18px;border-bottom:1px solid var(--border)">
       <h2 id="pFormTitle" style="margin:0;font-size:16px">Nuevo</h2>
       <button class="mclose" onclick="pCloseForm()">✕</button>
@@ -7880,7 +7894,7 @@ function pRenderMiLista(){
 </div>
 
 <!-- v29: Conciliación de estado de cuenta (tabla real, no confirm()) -->
-<div class="overlay" id="conciliacionOverlay" style="display:none;z-index:280;align-items:flex-start" onclick="if(event.target.id==='conciliacionOverlay')pCerrarConciliacion()">
+<div class="overlay" id="conciliacionOverlay" style="display:none;z-index:280;align-items:flex-start" onmousedown="pOverlayMdownBackdrop=(event.target.id==='conciliacionOverlay')" onclick="if(event.target.id==='conciliacionOverlay' && pOverlayMdownBackdrop)pCerrarConciliacion()">
   <div class="modal" style="width:min(640px,92vw);height:min(80vh,720px);max-width:none;margin:16px auto;resize:both;overflow:hidden;min-width:360px;min-height:300px;display:flex;flex-direction:column">
     <div class="mhdr" style="display:flex;align-items:center;justify-content:space-between;padding:15px 18px;border-bottom:1px solid var(--border);flex-shrink:0">
       <h2 style="margin:0;font-size:16px">🔎 Conciliación</h2>
