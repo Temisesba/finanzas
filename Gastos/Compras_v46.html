@@ -1710,7 +1710,7 @@ details:not([open]) .chev{transform:rotate(-90deg)}
 // v29: nombre clave de esta entrega — cámbialo cada vez que termines un lote
 // de cambios, así en 👥 → 🛠 Panel dev se puede confirmar que el navegador
 // está cargando la versión más reciente y no una copia en caché.
-const BUILD_VERSION='Fresia';
+const BUILD_VERSION='Girasol';
 let GAS_URL=localStorage.getItem('gastos_gas_url')||'';
 function v29TieneGasUrl(){ return !!GAS_URL; }
 function v29GuardarGasUrl(url){
@@ -7748,8 +7748,13 @@ function pPagoEsTarjeta(pagoStr, c){
   return false;
 }
 // Gastos de la sesión activa pagados con esta tarjeta
+// v46: en modo 👤 Personal la lista vigente es misGastosAll, no allExp (que
+// se queda vacío) — mismo criterio que ya usaba pCandidatosVincular. Sin
+// esto, conciliar una tarjeta personal (ej. Stori) nunca encontraba nada:
+// el pool de candidatos salía vacío aunque el gasto sí existiera.
 function pGastosDeTarjeta(c){
-  return (allExp||[]).filter(e=>e.pago && pPagoEsTarjeta(e.pago,c) && e.compartido!=='Cotizacion');
+  const fuente=personalMode?(misGastosAll||[]):(allExp||[]);
+  return fuente.filter(e=>e.pago && pPagoEsTarjeta(e.pago,c) && e.compartido!=='Cotizacion');
 }
 function pTarjetaEstimado(c){
   return pGastosDeTarjeta(c).reduce((s,e)=>s+pGastoEnMoneda(e,c.moneda),0);
@@ -7811,7 +7816,8 @@ function pGastosCandidatosParaMatch(c,mk){
   const rangoIni=isoDate(d1), rangoFin=isoDate(d2);
   const enRango=e=>{ const f=String(e.fecha||'').substring(0,10); return f>=rangoIni && f<=rangoFin; };
   const tagged=pGastosDeTarjeta(c).filter(enRango);
-  const sinPago=(allExp||[]).filter(e=>!e.pago && e.compartido!=='Cotizacion' && enRango(e));
+  const fuente=personalMode?(misGastosAll||[]):(allExp||[]);
+  const sinPago=fuente.filter(e=>!e.pago && e.compartido!=='Cotizacion' && enRango(e));
   const vistos=new Set(tagged.map(g=>String(g.rowIndex)));
   return tagged.concat(sinPago.filter(g=>!vistos.has(String(g.rowIndex))));
 }
