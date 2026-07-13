@@ -1710,7 +1710,7 @@ details:not([open]) .chev{transform:rotate(-90deg)}
 // v29: nombre clave de esta entrega — cámbialo cada vez que termines un lote
 // de cambios, así en 👥 → 🛠 Panel dev se puede confirmar que el navegador
 // está cargando la versión más reciente y no una copia en caché.
-const BUILD_VERSION='Freesia';
+const BUILD_VERSION='Zinnia';
 let GAS_URL=localStorage.getItem('gastos_gas_url')||'';
 function v29TieneGasUrl(){ return !!GAS_URL; }
 function v29GuardarGasUrl(url){
@@ -7105,20 +7105,31 @@ function pMatchMovimiento(m, cardId, mes){
   const gastos=pGastosDeTarjetaMes(c, mes||pMesKey());
   const monto=parseFloat(m.monto)||0;
   const desc=normTxt(m.descripcion||'');
+  // v29: antes exigía ±1 de monto y ±5 días — casi nunca encontraba nada
+  // porque en la vida real la fecha de compra y la fecha en que el banco
+  // cobra el movimiento no coinciden exacto, y el "otra moneda" a veces no
+  // se llenó. Se afloja a una tolerancia de monto más realista (3%, mínimo
+  // 50) y 7 días, y entre los candidatos que sí caen dentro se prioriza el
+  // que MÁS SE ACERCA en monto (no solo el primero que pase el filtro).
+  const tolMonto=Math.max(50, monto*0.03);
   let best=null, score=-1;
   gastos.forEach(g=>{
     // v29: compara en la moneda de LA TARJETA (ej. MXN), no siempre en
     // costo/moneda local — si no, nunca hace match cuando la tarjeta cobra
-    // en otra moneda que la que usas día a día.
+    // en otra moneda que la que usas día a día. pGastoEnMoneda ya intenta
+    // convertir con el tipo de cambio del día si el gasto se guardó en la
+    // otra moneda y no le pusiste "Conversión" — por eso importa que la
+    // tolerancia de monto sea generosa, esa conversión es aproximada.
     const ga=pGastoEnMoneda(g,c.moneda);
-    const montoOk=Math.abs(ga-monto)<=1;
-    if(!montoOk) return;
+    const diff=Math.abs(ga-monto);
+    if(diff>tolMonto) return;
     const dd=pDateDistance(String(m.fecha||'').substring(0,10), String(g.fecha||'').substring(0,10));
-    if(dd>5) return;
+    if(dd>7) return;
     const txt=normTxt((g.concepto||'')+' '+(g.tienda||'')+' '+(g.notas||''));
     const words=desc.split(/\s+/).filter(w=>w.length>3);
     const hits=words.filter(w=>txt.includes(w)).length;
-    const sc=30-dd+(hits*10);
+    const cercania=Math.max(0, 10-(diff/tolMonto)*10);
+    const sc=30-dd+(hits*10)+cercania;
     if(sc>score){ score=sc; best=g; }
   });
   return best?{gasto:best, exact:score>=35}:null;
