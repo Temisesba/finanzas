@@ -1710,7 +1710,7 @@ details:not([open]) .chev{transform:rotate(-90deg)}
 // v29: nombre clave de esta entrega — cámbialo cada vez que termines un lote
 // de cambios, así en 👥 → 🛠 Panel dev se puede confirmar que el navegador
 // está cargando la versión más reciente y no una copia en caché.
-const BUILD_VERSION='Jazmin';
+const BUILD_VERSION='Kalanchoe';
 let GAS_URL=localStorage.getItem('gastos_gas_url')||'';
 function v29TieneGasUrl(){ return !!GAS_URL; }
 function v29GuardarGasUrl(url){
@@ -2419,7 +2419,29 @@ function openSettings(){
   }
   document.getElementById('setOverlay').style.display='block'; document.getElementById('setPanel').style.display='block'; }
 function closeSettings(){ document.getElementById('setOverlay').style.display='none'; document.getElementById('setPanel').style.display='none'; }
-function applySettings(){ appSettings.moneda_local=document.getElementById('setMonedaLocal').value; appSettings.moneda_conv=document.getElementById('setMonedaConv').value; localStorage.setItem('gastos_v8_settings',JSON.stringify(appSettings)); buildCurrencySelects(); closeSettings(); showToast('✓ Configuración guardada'); }
+// v46: si ya iniciaste tu sesión personal en este navegador, el par de
+// monedas (ej. "JPY ⇄ MXN") también se guarda en tu Sheet (tipo:'ajustes'),
+// para que no se resetee en otro dispositivo/navegador — el numerito del
+// tipo de cambio (pFxGuardarHoy) ya viajaba así, pero la ELECCIÓN de
+// monedas se quedaba solo en localStorage. Si no has iniciado tu sesión
+// personal aquí, no se fuerza login solo por guardar Ajustes (mismo
+// criterio que el resto del panel — ver openSettings).
+function applySettings(){
+  appSettings.moneda_local=document.getElementById('setMonedaLocal').value;
+  appSettings.moneda_conv=document.getElementById('setMonedaConv').value;
+  localStorage.setItem('gastos_v8_settings',JSON.stringify(appSettings));
+  buildCurrencySelects();
+  closeSettings();
+  showToast('✓ Configuración guardada');
+  if(!pOwner) pOwner=myName();
+  if(pOwner){
+    if(!pPass) pPass=localStorage.getItem('gastos_ppass_'+pOwner)||'';
+    if(pPass){
+      const existente=pLoaded?pItemsOf('ajustes')[0]:null;
+      pSaveItem({id:existente?existente.id:'', tipo:'ajustes', moneda_local:appSettings.moneda_local, moneda_conv:appSettings.moneda_conv});
+    }
+  }
+}
 
 let sesionCards=[]; // v45: tarjetas de los miembros de la sesión
 async function loadSesionCards(){
@@ -5758,6 +5780,17 @@ async function pLoad(){
     const r=await postGAS({action:'personalList', owner:pOwner, pass:pPass});
     pItems = (r.ok && Array.isArray(r.items)) ? r.items : [];
     pLoaded = true;
+    // v46: si ya guardaste tu par de monedas (JPY/MXN, etc.) desde este
+    // login en OTRO dispositivo, tráelo aquí — antes solo el número del
+    // tipo de cambio viajaba entre dispositivos, la elección de monedas se
+    // quedaba en localStorage y se reseteaba en un navegador nuevo.
+    const ajustes=pItemsOf('ajustes')[0];
+    if(ajustes && (ajustes.moneda_local||ajustes.moneda_conv)){
+      if(ajustes.moneda_local) appSettings.moneda_local=ajustes.moneda_local;
+      if(ajustes.moneda_conv) appSettings.moneda_conv=ajustes.moneda_conv;
+      localStorage.setItem('gastos_v8_settings',JSON.stringify(appSettings));
+      if(typeof buildCurrencySelects==='function') buildCurrencySelects();
+    }
   }catch(e){ pItems=[]; pLoaded=false; }
 }
 
