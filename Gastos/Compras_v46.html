@@ -1710,7 +1710,7 @@ details:not([open]) .chev{transform:rotate(-90deg)}
 // v29: nombre clave de esta entrega — cámbialo cada vez que termines un lote
 // de cambios, así en 👥 → 🛠 Panel dev se puede confirmar que el navegador
 // está cargando la versión más reciente y no una copia en caché.
-const BUILD_VERSION='Magnolia';
+const BUILD_VERSION='Narciso';
 let GAS_URL=localStorage.getItem('gastos_gas_url')||'';
 function v29TieneGasUrl(){ return !!GAS_URL; }
 function v29GuardarGasUrl(url){
@@ -7959,8 +7959,16 @@ function pEstadoActualDeTarjeta(c){
 function pEstadoStatusBadgeHTML(c){
   const e=pEstadoActualDeTarjeta(c);
   if(!e) return '<span style="color:var(--ink-3)">Sin estado registrado</span>';
-  if(e.pagado) return '<span style="color:var(--shared);font-weight:700">✅ Pagado'+(e.fechaPago?(' '+esc(e.fechaPago)):'')+'</span>';
   const hoy=new Date().toISOString().substring(0,10);
+  if(e.pagado){
+    // v46: si ya pagaste ESTE estado pero ya pasó su fecha límite y no hay
+    // uno más reciente capturado, ya casi seguro hay un ciclo NUEVO sin
+    // revisar — mostrar "✅ Pagado" de un ciclo viejo da la falsa impresión
+    // de que no hay nada pendiente cuando en realidad falta capturar/revisar
+    // el estado más reciente.
+    if(e.fechaLimite && e.fechaLimite<hoy) return '<span style="color:var(--loan);font-weight:700">🆕 Posible estado nuevo pendiente</span>';
+    return '<span style="color:var(--shared);font-weight:700">✅ Pagado'+(e.fechaPago?(' '+esc(e.fechaPago)):'')+'</span>';
+  }
   if(e.fechaLimite && e.fechaLimite<hoy) return '<span style="color:var(--temis);font-weight:700">🔴 Retrasado</span>';
   return '<span style="color:var(--loan);font-weight:700">⚠️ Pendiente de pago</span>';
 }
