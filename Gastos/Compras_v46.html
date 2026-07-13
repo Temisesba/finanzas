@@ -1700,7 +1700,7 @@ details:not([open]) .chev{transform:rotate(-90deg)}
 // v29: nombre clave de esta entrega — cámbialo cada vez que termines un lote
 // de cambios, así en 👥 → 🛠 Panel dev se puede confirmar que el navegador
 // está cargando la versión más reciente y no una copia en caché.
-const BUILD_VERSION='Gardenia';
+const BUILD_VERSION='Jacaranda';
 let GAS_URL=localStorage.getItem('gastos_gas_url')||'';
 function v29TieneGasUrl(){ return !!GAS_URL; }
 function v29GuardarGasUrl(url){
@@ -6379,6 +6379,28 @@ function pToggleCardCollapse(id, btn){
   el.style.display=collapsed?'':'none';
   btn.textContent=collapsed?'▾':'▸';
 }
+// v29: pago suelto a la tarjeta (no ligado a ningún estado de cuenta) —
+// para cuando depositas dinero por otra razón, ej. ampliar tu límite de
+// crédito. Se guarda en la tarjeta misma (c.pagosAdicionales) y se ve en
+// su vista desplegada.
+async function pAddPagoTarjeta(cardId){
+  const c=pCardById(cardId); if(!c) return;
+  const hoy=new Date().toISOString().substring(0,10);
+  const fecha=prompt('Fecha del pago:', hoy); if(fecha===null) return;
+  const monto=prompt('¿Cuánto pagaste/depositaste?', ''); if(monto===null || !parseFloat(monto)) return;
+  const nota=prompt('¿Para qué fue? (opcional, ej. "Para ampliar mi crédito")','');
+  if(nota===null) return;
+  c.pagosAdicionales=c.pagosAdicionales||[];
+  c.pagosAdicionales.push({fecha:(fecha||hoy).trim(), monto:parseFloat(monto)||0, nota:(nota||'').trim()});
+  await pSaveItem(c);
+  showToast('✓ Pago agregado a '+(pCardLabel(c)||'la tarjeta'));
+}
+async function pDelPagoTarjeta(cardId, idx){
+  const c=pCardById(cardId); if(!c) return;
+  if(!confirm('¿Eliminar este pago?')) return;
+  (c.pagosAdicionales||[]).splice(idx,1);
+  await pSaveItem(c);
+}
 let pTarjMSIView=false; // v29: botón "🗓️ Ver compras a MSI" dentro de Tarjetas
 function pToggleTarjMSIView(){ pTarjMSIView=!pTarjMSIView; pRender(); }
 function pRenderTarjetasMSISolo(){
@@ -6485,6 +6507,12 @@ function pRenderTarjetas(){
     const feesHtml=feeParts.length?`<div style="font-size:10.5px;color:var(--temis);margin-top:6px;background:var(--temis-bg);border-radius:6px;padding:4px 8px">⚠️ ${feeParts.join(' · ')}</div>`:'';
     const cardId='cardbody_'+c.id;
     const fotoBtn=c.fotoUrl?`<button type="button" class="rt-btn" style="flex-shrink:0" onclick="openLightbox('${esc(c.fotoUrl)}')" title="Ver foto / QR">📷</button>`:'';
+    // v29: pagos sueltos a la tarjeta que NO corresponden a un estado de
+    // cuenta (ej. depositar de más para ampliar el límite de crédito) —
+    // antes no había dónde anotarlos. Viven en la tarjeta misma, aparte de
+    // los "pagado" por mes.
+    const addPagoBtn=esMia?`<button type="button" class="rt-btn" style="flex-shrink:0" onclick="pAddPagoTarjeta('${esc(c.id)}')" title="Agregar pago (ej. para ampliar tu crédito)">＋💳</button>`:'';
+    const pagosHtml=(c.pagosAdicionales&&c.pagosAdicionales.length)?`<div style="margin-top:8px"><div style="font-size:10px;font-weight:700;color:var(--ink-3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Pagos adicionales</div>${c.pagosAdicionales.map((p,i)=>`<div style="display:flex;align-items:center;gap:6px;font-size:11px;padding:4px 0;border-bottom:1px dashed var(--border2)"><span style="flex:1">${esc(p.fecha||'')}${p.nota?(' · '+esc(p.nota)):''}</span><strong style="font-family:var(--mono)">${pMoney(p.monto)}</strong><button type="button" class="shop-del" style="font-size:10px;padding:2px 5px" onclick="pDelPagoTarjeta('${esc(c.id)}',${i})">🗑</button></div>`).join('')}</div>`:'';
     return `<div style="padding:12px;border:1px solid var(--border);border-radius:10px;margin-bottom:10px;background:var(--surface)">
     <div style="display:flex;align-items:center;gap:10px">
       <button type="button" onclick="pToggleCardCollapse('${esc(cardId)}',this)" style="background:none;border:none;cursor:pointer;font-size:13px;color:var(--ink-3);padding:2px 4px;flex-shrink:0">▸</button>
@@ -6495,13 +6523,14 @@ function pRenderTarjetas(){
       </div>
       <div style="display:flex;gap:4px;flex-shrink:0;align-self:flex-start">
         ${fotoBtn}
+        ${addPagoBtn}
         ${esMia?'<button type="button" class="rt-btn" style="flex-shrink:0" onclick="pOpenForm(\'tarjeta\',\''+esc(c.id)+'\')">✏️</button><button type="button" class="shop-del" style="flex-shrink:0" onclick="pDelItem(\''+esc(c.id)+'\')">🗑</button>':''}
       </div>
     </div>
     ${pRenderEstadosTarjeta(c)}
     <div id="${esc(cardId)}" style="display:none;margin-top:8px;padding-top:8px;border-top:1px dashed var(--border)">
     ${resumenPlegable}
-    ${creditoHtml}${feesHtml}${sensiblesHtml}
+    ${creditoHtml}${feesHtml}${sensiblesHtml}${pagosHtml}
     </div></div>`;
   }).join('') || (todas.length?'<div style="color:var(--ink-3);font-size:13px;padding:20px;text-align:center">No tienes tarjetas de este tipo.</div>':'<div style="color:var(--ink-3);font-size:13px;padding:20px;text-align:center">Sin tarjetas. Agrega tus TDC/TDD para elegirlas al pagar.</div>');
   // v29: las compras a MSI ya NO se listan aquí (ni por tarjeta ni "sin
@@ -7593,7 +7622,7 @@ function pToggleEstadoPagado(id){
   const e=pItems.find(x=>x.id===id); if(!e) return;
   if(e.pagado){
     if(!confirm('¿Deshacer el pago registrado el '+(e.fechaPago||'')+'? (Los gastos ya registrados no se borran, solo se quita la marca de "pagado")')) return;
-    e.pagado=false; e.fechaPago=''; e.montoPagado=''; pSaveItem(e); return;
+    e.pagado=false; e.fechaPago=''; e.montoPagado=''; e.tipoPagoRealizado=''; pSaveItem(e); return;
   }
   const hoy=new Date().toISOString().substring(0,10);
   const fecha=prompt('Fecha de pago de este estado de cuenta:', hoy);
@@ -7601,7 +7630,9 @@ function pToggleEstadoPagado(id){
   const sugerido=e.noIntereses||e.total||'';
   const monto=prompt('¿Cuánto pagaste? (pago para no generar intereses, o cualquier otra cantidad — ej. si depositaste extra para ampliar tu crédito)', sugerido);
   if(monto===null) return;
-  e.pagado=true; e.fechaPago=(fecha||hoy).trim(); e.montoPagado=parseFloat(monto)||0;
+  const tipoOp=(prompt('¿Qué tipo de pago fue?\n\n1 = Pago para no generar intereses\n2 = Pago mínimo\n3 = Otro\n\nEscribe 1, 2 o 3:','1')||'').trim();
+  const tipoMap={'1':'No intereses','2':'Pago mínimo','3':'Otro'};
+  e.pagado=true; e.fechaPago=(fecha||hoy).trim(); e.montoPagado=parseFloat(monto)||0; e.tipoPagoRealizado=tipoMap[tipoOp]||'Otro';
   pSaveItem(e);
 }
 // v29: "conciliado" (revisaste movimiento por movimiento, todo quedó
@@ -7687,14 +7718,16 @@ function pRenderEstadosTarjeta(c){
     // v29: check visual para pagado/pendiente (en vez de solo texto), con
     // fecha de pago inline y opción de deshacer sin abrir el formulario.
     const pagadoChip=e.pagado
-      ? '<button class="rt-btn" style="font-size:10px;padding:3px 8px;background:var(--shared-bg);color:var(--shared);border-color:var(--shared-bdr);font-weight:700" onclick="pToggleEstadoPagado(\''+esc(e.id)+'\')" title="Deshacer">✅ Pagado '+esc(e.fechaPago||'')+(e.montoPagado?(' · '+pMoney(e.montoPagado)):'')+' · deshacer</button>'
+      ? '<button class="rt-btn" style="font-size:10px;padding:3px 8px;background:var(--shared-bg);color:var(--shared);border-color:var(--shared-bdr);font-weight:700" onclick="pToggleEstadoPagado(\''+esc(e.id)+'\')" title="Deshacer">✅ Pagado '+esc(e.fechaPago||'')+(e.montoPagado?(' · '+pMoney(e.montoPagado)):'')+(e.tipoPagoRealizado?(' · '+esc(e.tipoPagoRealizado)):'')+' · deshacer</button>'
       : '<button class="rt-btn" style="font-size:10px;padding:3px 8px" onclick="pToggleEstadoPagado(\''+esc(e.id)+'\')">☐ Marcar pagado</button>';
     // v29: "conciliado" es distinto de "pagado" — pagado es que ya
     // depositaste el dinero (aunque no hayas revisado movimiento por
     // movimiento); conciliado es que ya quedó todo identificado/registrado
     // en la app (o lo marcaste tú manualmente desde el panel de Conciliar).
     const conciliado=co.estado==='conciliado'||e.conciliadoManual;
-    const conciliadoChip='<span style="color:'+(conciliado?'var(--shared)':'var(--ink-3)')+';font-weight:600">'+(conciliado?'✓ conciliado':'✗ no conciliado')+'</span>';
+    // v29: también botón (no solo texto) — permite elegir cómo conciliar
+    // directo desde aquí, sin tener que entrar primero al panel completo.
+    const conciliadoChip='<button class="rt-btn" style="font-size:10px;padding:3px 8px;font-weight:600;'+(conciliado?'color:var(--shared);border-color:var(--shared-bdr)':'color:var(--ink-3)')+'" onclick="pMarcarConciliadoFlow(\''+esc(e.id)+'\')">'+(conciliado?'✓ conciliado':'✗ no conciliado')+'</button>';
     // v29: antes había un chip de estatus ("PDF"/"Pendiente PDF") Y aparte
     // un botón "PDF" clicable cuando sí había uno — dos elementos para lo
     // mismo. Ahora es un solo botón: dice "📄 PDF" (y abre el archivo) o
