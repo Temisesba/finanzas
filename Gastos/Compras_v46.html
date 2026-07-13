@@ -1526,14 +1526,14 @@ details:not([open]) .chev{transform:rotate(-90deg)}
       <div class="amount-pair">
         <label>Monto</label>
         <div class="pair-inputs">
-          <input type="number" id="iCosto" oninput="if(typeof v31RenderParticipantes==='function')v31RenderParticipantes()" onblur="if(typeof pAutoConvertirMonto==='function')pAutoConvertirMonto()" placeholder="0">
+          <input type="number" id="iCosto" oninput="if(typeof v31RenderParticipantes==='function')v31RenderParticipantes()" onblur="if(typeof pAutoConvertir==='function')pAutoConvertir('costo')" placeholder="0">
           <select id="iMonedaPago"></select>
         </div>
       </div>
       <div class="amount-pair">
         <label>Conversión <span style="font-size:10px;font-weight:400;text-transform:none;letter-spacing:0;color:var(--ink-3)">opcional</span></label>
         <div class="pair-inputs">
-          <input type="text" id="iConv" placeholder="IA puede estimar">
+          <input type="text" id="iConv" onblur="if(typeof pAutoConvertir==='function')pAutoConvertir('conv')" placeholder="IA puede estimar">
           <select id="iMonedaConv"></select>
         </div>
       </div>
@@ -1710,7 +1710,7 @@ details:not([open]) .chev{transform:rotate(-90deg)}
 // v29: nombre clave de esta entrega — cámbialo cada vez que termines un lote
 // de cambios, así en 👥 → 🛠 Panel dev se puede confirmar que el navegador
 // está cargando la versión más reciente y no una copia en caché.
-const BUILD_VERSION='Bugambilia';
+const BUILD_VERSION='Freesia';
 let GAS_URL=localStorage.getItem('gastos_gas_url')||'';
 function v29TieneGasUrl(){ return !!GAS_URL; }
 function v29GuardarGasUrl(url){
@@ -5851,24 +5851,36 @@ function pGastoEnMoneda(g, moneda){
   }
   return costo;
 }
-// v29: al salir del campo Monto en +Gasto, si Conversión está vacío y ya
-// tienes un tipo de cambio capturado para esa fecha, lo autocompleta —
-// "día a día quiero poner la conversión... que se calcule con el cambio
-// del día que registre". No pisa nada si ya escribiste algo en Conversión.
-function pAutoConvertirMonto(){
+// v29: al salir del campo Monto O del campo Conversión en +Gasto, si el
+// OTRO campo está vacío y ya tienes un tipo de cambio capturado para esa
+// fecha, lo autocompleta — funciona en los dos sentidos: si compraste en
+// tu moneda local, calcula la conversión; si pagaste algo en línea en la
+// otra moneda (ej. MXN) y lo capturas directo en Conversión, calcula el
+// Monto en tu moneda local. No pisa nada si el campo destino ya tiene algo.
+function pAutoConvertir(origen){
   const costoEl=document.getElementById('iCosto'), convEl=document.getElementById('iConv');
   const mpEl=document.getElementById('iMonedaPago'), mcEl=document.getElementById('iMonedaConv');
   const dateEl=document.getElementById('iDate');
-  if(!costoEl||!convEl||convEl.value.trim()) return;
-  const costo=parseFloat(costoEl.value); if(!costo) return;
+  if(!costoEl||!convEl) return;
   const pago=(mpEl&&mpEl.value)||appSettings.moneda_local;
   const conv=(mcEl&&mcEl.value)||appSettings.moneda_conv;
   const fecha=(dateEl&&dateEl.value)||new Date().toISOString().substring(0,10);
   const tasa=pFxTasaDe(fecha); if(!tasa) return;
-  let resultado=null;
-  if(pago===appSettings.moneda_local && conv===appSettings.moneda_conv) resultado=costo/tasa;
-  else if(pago===appSettings.moneda_conv && conv===appSettings.moneda_local) resultado=costo*tasa;
-  if(resultado!==null) convEl.value=Math.round(resultado*100)/100;
+  if(origen==='costo'){
+    if(convEl.value.trim()) return;
+    const costo=parseFloat(costoEl.value); if(!costo) return;
+    let resultado=null;
+    if(pago===appSettings.moneda_local && conv===appSettings.moneda_conv) resultado=costo/tasa;
+    else if(pago===appSettings.moneda_conv && conv===appSettings.moneda_local) resultado=costo*tasa;
+    if(resultado!==null) convEl.value=Math.round(resultado*100)/100;
+  } else {
+    if(costoEl.value.trim()) return;
+    const montoConv=parseFloat(convEl.value); if(!montoConv) return;
+    let resultado=null;
+    if(conv===appSettings.moneda_local && pago===appSettings.moneda_conv) resultado=montoConv/tasa;
+    else if(conv===appSettings.moneda_conv && pago===appSettings.moneda_local) resultado=montoConv*tasa;
+    if(resultado!==null) costoEl.value=Math.round(resultado*100)/100;
+  }
 }
 async function pFxGuardarHoy(){
   if(!pOwner) pOwner=myName();
@@ -7758,9 +7770,20 @@ function pToggleEstadoPagado(id){
   const sugerido=e.noIntereses||e.total||'';
   const monto=prompt('¿Cuánto pagaste? (pago para no generar intereses, o cualquier otra cantidad — ej. si depositaste extra para ampliar tu crédito)', sugerido);
   if(monto===null) return;
-  const tipoOp=(prompt('¿Qué tipo de pago fue?\n\n1 = Pago para no generar intereses\n2 = Pago mínimo\n3 = Otro\n\nEscribe 1, 2 o 3:','1')||'').trim();
-  const tipoMap={'1':'No intereses','2':'Pago mínimo','3':'Otro'};
-  e.pagado=true; e.fechaPago=(fecha||hoy).trim(); e.montoPagado=parseFloat(monto)||0; e.tipoPagoRealizado=tipoMap[tipoOp]||'Otro';
+  const montoNum=parseFloat(monto)||0;
+  // v29: si lo que pagaste es (prácticamente) el "pago para no generar
+  // intereses" que ya tenías capturado, no hace falta preguntar el tipo —
+  // ya se sabe qué es. Solo pregunta cuando el monto es distinto (pago
+  // mínimo, o cualquier otra cantidad).
+  let tipo;
+  if(e.noIntereses && Math.abs(montoNum-(parseFloat(e.noIntereses)||0))<=1){
+    tipo='No intereses';
+  } else {
+    const tipoOp=(prompt('¿Qué tipo de pago fue?\n\n1 = Pago para no generar intereses\n2 = Pago mínimo\n3 = Otro\n\nEscribe 1, 2 o 3:','1')||'').trim();
+    const tipoMap={'1':'No intereses','2':'Pago mínimo','3':'Otro'};
+    tipo=tipoMap[tipoOp]||'Otro';
+  }
+  e.pagado=true; e.fechaPago=(fecha||hoy).trim(); e.montoPagado=montoNum; e.tipoPagoRealizado=tipo;
   pSaveItem(e);
 }
 // v29: "conciliado" (revisaste movimiento por movimiento, todo quedó
@@ -8246,7 +8269,7 @@ function pRenderMiLista(){
 
 <!-- v34: Formulario del módulo Personal -->
 <div class="overlay" id="pFormOverlay" style="display:none;z-index:296;align-items:flex-start" onmousedown="pOverlayMdownBackdrop=(event.target.id==='pFormOverlay')" onclick="if(event.target.id==='pFormOverlay' && pOverlayMdownBackdrop)pCloseForm(false)">
-  <div class="modal" style="max-width:460px;width:100%;margin:16px auto;resize:both;overflow:auto;min-width:320px;min-height:220px">
+  <div class="modal" style="width:460px;max-width:94vw;margin:16px auto;resize:both;overflow:auto;min-width:320px;min-height:220px">
     <div class="mhdr" style="display:flex;align-items:center;justify-content:space-between;padding:15px 18px;border-bottom:1px solid var(--border)">
       <h2 id="pFormTitle" style="margin:0;font-size:16px">Nuevo</h2>
       <button class="mclose" onclick="pCloseForm()">✕</button>
