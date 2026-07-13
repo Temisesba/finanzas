@@ -1700,7 +1700,7 @@ details:not([open]) .chev{transform:rotate(-90deg)}
 // v29: nombre clave de esta entrega — cámbialo cada vez que termines un lote
 // de cambios, así en 👥 → 🛠 Panel dev se puede confirmar que el navegador
 // está cargando la versión más reciente y no una copia en caché.
-const BUILD_VERSION='Crisantemo';
+const BUILD_VERSION='Gardenia';
 let GAS_URL=localStorage.getItem('gastos_gas_url')||'';
 function v29TieneGasUrl(){ return !!GAS_URL; }
 function v29GuardarGasUrl(url){
@@ -3423,7 +3423,7 @@ function openModal(){ resetModal(); document.getElementById('mTitle').textConten
   }
   const delBtn=document.getElementById('bDeleteExp'); if(delBtn) delBtn.style.display='none';
   const vfBtn=document.getElementById('mVincularFijoBtn'); if(vfBtn) vfBtn.style.display='none';
-  window.__movVincularPendiente=null; window.__estadoPagoPendiente=null; document.getElementById('mOverlay').style.display='flex'; }
+  window.__movVincularPendiente=null; window.__estadoConciliadoPendiente=null; document.getElementById('mOverlay').style.display='flex'; }
 function hasUnsavedData(){ return document.getElementById('iConc').value.trim()||document.getElementById('iCosto').value.trim()||tb64; }
 function closeModal(force){ if(!force&&hasUnsavedData()){if(!confirm('¿Salir sin guardar?'))return;} document.getElementById('mOverlay').style.display='none';
   if(pReturnToPersonalAfterEdit){ pReturnToPersonalAfterEdit=false; pEnterPersonal(); }
@@ -3830,13 +3830,13 @@ sesion:saveSesion};
       if(gEl && eEl){ gEl.value=String(r.rowIndex); eEl.value='identificado'; try{ mrow.replaceWith(pRowFromEl(pMovRowHTMLObjFromRow(mrow))); }catch(_){} }
       window.__movVincularPendiente=null;
     }
-    // v29: si este gasto vino de "Marcar pagado → pagar la diferencia", al
-    // guardarlo se marca el estado de cuenta como pagado en el mismo paso —
-    // ya no hace falta un segundo click aparte en "Marcar pagado".
-    if(!ei && window.__estadoPagoPendiente){
-      const est=pItems.find(x=>x.id===window.__estadoPagoPendiente);
-      if(est){ est.pagado=true; est.fechaPago=body.fecha||fecha; await pSaveItem(est); }
-      window.__estadoPagoPendiente=null;
+    // v29: si este gasto vino de "✅ Marcar conciliado → pagar la
+    // diferencia" (dentro de Conciliación), al guardarlo se marca el
+    // estado de cuenta como conciliado en el mismo paso.
+    if(!ei && window.__estadoConciliadoPendiente){
+      const est=pItems.find(x=>x.id===window.__estadoConciliadoPendiente);
+      if(est){ est.conciliadoManual=true; await pSaveItem(est); }
+      window.__estadoConciliadoPendiente=null;
     }
     invalidateSesionCache(saveSesion);
     closeModal(true);showToast(ei?'✓ Actualizado':'✓ Guardado');await new Promise(r => setTimeout(r, 350));
@@ -7581,51 +7581,61 @@ function pMesLabelCorto(mk){
   const idx=parseInt(parts[1],10)-1;
   return parts[0]+'-'+(MESES_CORTOS[idx]||parts[1]);
 }
-// v29: marcar/desmarcar un estado de cuenta como pagado, con fecha.
-// Antes "Marcar pagado" y "registrar la diferencia/los gastos" eran dos
-// pasos sueltos y fáciles de mezclar (uno registraba el gasto, el otro
-// marcaba pagado, y si volvías a tocar el mismo botón por accidente
-// deshacías el pagado sin querer). Ahora un solo botón: si ya está pagado,
-// pide confirmar antes de deshacer (ya no se borra "por error" con un
-// click); si no está pagado, pregunta CÓMO vas a pagar y hace ambas cosas
-// —registrar + marcar pagado— en un solo paso.
+// v29: marcar/desmarcar un estado de cuenta como pagado — simple otra vez:
+// solo fecha + cuánto pagaste. "Pagado" es "ya deposité el dinero" (para no
+// perder la fecha límite), sin tener que revisar movimiento por movimiento
+// en ese momento; eso se hace aparte, cuando haya tiempo, desde 🔎 Conciliar
+// (ver pMarcarConciliadoFlow). El monto es libre porque no siempre es "el
+// pago para no generar intereses" — a veces depositas de más (ej. para
+// ampliar tu límite de crédito) y antes no había dónde anotar eso; queda
+// aquí, en la tarjeta, sin crear ningún gasto.
 function pToggleEstadoPagado(id){
   const e=pItems.find(x=>x.id===id); if(!e) return;
   if(e.pagado){
     if(!confirm('¿Deshacer el pago registrado el '+(e.fechaPago||'')+'? (Los gastos ya registrados no se borran, solo se quita la marca de "pagado")')) return;
-    e.pagado=false; e.fechaPago=''; pSaveItem(e); return;
+    e.pagado=false; e.fechaPago=''; e.montoPagado=''; pSaveItem(e); return;
   }
-  pMarcarPagadoFlow(id);
-}
-function pPedirFechaYMarcarPagado(estadoId){
-  const e=pItems.find(x=>x.id===estadoId); if(!e) return;
   const hoy=new Date().toISOString().substring(0,10);
   const fecha=prompt('Fecha de pago de este estado de cuenta:', hoy);
   if(fecha===null) return;
-  e.pagado=true; e.fechaPago=(fecha||hoy).trim();
+  const sugerido=e.noIntereses||e.total||'';
+  const monto=prompt('¿Cuánto pagaste? (pago para no generar intereses, o cualquier otra cantidad — ej. si depositaste extra para ampliar tu crédito)', sugerido);
+  if(monto===null) return;
+  e.pagado=true; e.fechaPago=(fecha||hoy).trim(); e.montoPagado=parseFloat(monto)||0;
   pSaveItem(e);
 }
-async function pMarcarPagadoFlow(estadoId){
+// v29: "conciliado" (revisaste movimiento por movimiento, todo quedó
+// identificado/registrado) es un paso aparte de "pagado" — este flujo vive
+// dentro del panel de Conciliación (botón "✅ Marcar conciliado"), para
+// cuando sí tienes tiempo de hacerlo bien.
+function pMarcarConciliadoDirecto(estadoId){
+  const e=pItems.find(x=>x.id===estadoId); if(!e) return;
+  e.conciliadoManual=true;
+  pSaveItem(e);
+  showToast('✓ Marcado como conciliado');
+  if(pConciliacionActual && pConciliacionActual.id===estadoId) pOpenConciliacion(estadoId);
+}
+async function pMarcarConciliadoFlow(estadoId){
   const e=pItems.find(x=>x.id===estadoId); if(!e) return;
   const co=pConciliacionEstado(e);
-  const op=(prompt('¿Cómo vas a pagar este estado de cuenta?\n\n'
-    +'1 = Pagando solo la diferencia ('+pMoney(Math.abs(co.dif))+') — abre +Gasto ya prellenado, y al guardarlo se marca pagado solo\n'
-    +'2 = Registrando todos los movimientos no identificados ('+co.counts.no_identificado+') como gastos, y luego marcar pagado\n'
-    +'3 = Ya registré todo yo mismo, solo marcar como pagado\n\n'
+  const op=(prompt('¿Cómo quieres dejar esto conciliado?\n\n'
+    +'1 = Pagando solo la diferencia ('+pMoney(Math.abs(co.dif))+') — abre +Gasto ya prellenado, y al guardarlo se marca conciliado solo\n'
+    +'2 = Registrando todos los movimientos no identificados ('+co.counts.no_identificado+') como gastos, y luego marcar conciliado\n'
+    +'3 = Ya registré todo yo mismo, solo marcar como conciliado\n\n'
     +'Escribe 1, 2 o 3:', '3')||'').trim();
   if(!op) return;
   if(op==='1'){
     if(!(Math.abs(co.dif)>1)){ showToast('No hay diferencia positiva para registrar — usa la opción 3'); return; }
     // ojo: pRegistrarDiferencia llama a openModal() por dentro, que limpia
-    // __estadoPagoPendiente — hay que poner la bandera DESPUÉS de llamarla.
+    // __estadoConciliadoPendiente — hay que poner la bandera DESPUÉS.
     pRegistrarDiferencia(estadoId);
-    window.__estadoPagoPendiente=estadoId;
+    window.__estadoConciliadoPendiente=estadoId;
   } else if(op==='2'){
     if(co.counts.no_identificado===0){ showToast('No hay movimientos no identificados — usa la opción 3'); return; }
     const ok=await pEnviarNoIdentificados(estadoId);
-    if(ok) pPedirFechaYMarcarPagado(estadoId);
+    if(ok) pMarcarConciliadoDirecto(estadoId);
   } else {
-    pPedirFechaYMarcarPagado(estadoId);
+    pMarcarConciliadoDirecto(estadoId);
   }
 }
 function pGastosDeTarjetaMes(c, mk){
@@ -7677,19 +7687,31 @@ function pRenderEstadosTarjeta(c){
     // v29: check visual para pagado/pendiente (en vez de solo texto), con
     // fecha de pago inline y opción de deshacer sin abrir el formulario.
     const pagadoChip=e.pagado
-      ? '<button class="rt-btn" style="font-size:10px;padding:3px 8px;background:var(--shared-bg);color:var(--shared);border-color:var(--shared-bdr);font-weight:700" onclick="pToggleEstadoPagado(\''+esc(e.id)+'\')" title="Deshacer">✅ Pagado '+esc(e.fechaPago||'')+' · deshacer</button>'
+      ? '<button class="rt-btn" style="font-size:10px;padding:3px 8px;background:var(--shared-bg);color:var(--shared);border-color:var(--shared-bdr);font-weight:700" onclick="pToggleEstadoPagado(\''+esc(e.id)+'\')" title="Deshacer">✅ Pagado '+esc(e.fechaPago||'')+(e.montoPagado?(' · '+pMoney(e.montoPagado)):'')+' · deshacer</button>'
       : '<button class="rt-btn" style="font-size:10px;padding:3px 8px" onclick="pToggleEstadoPagado(\''+esc(e.id)+'\')">☐ Marcar pagado</button>';
+    // v29: "conciliado" es distinto de "pagado" — pagado es que ya
+    // depositaste el dinero (aunque no hayas revisado movimiento por
+    // movimiento); conciliado es que ya quedó todo identificado/registrado
+    // en la app (o lo marcaste tú manualmente desde el panel de Conciliar).
+    const conciliado=co.estado==='conciliado'||e.conciliadoManual;
+    const conciliadoChip='<span style="color:'+(conciliado?'var(--shared)':'var(--ink-3)')+';font-weight:600">'+(conciliado?'✓ conciliado':'✗ no conciliado')+'</span>';
+    // v29: antes había un chip de estatus ("PDF"/"Pendiente PDF") Y aparte
+    // un botón "PDF" clicable cuando sí había uno — dos elementos para lo
+    // mismo. Ahora es un solo botón: dice "📄 PDF" (y abre el archivo) o
+    // "📄 Falta PDF" (informativo, sin link).
+    const pdfBtn=e.pdfUrl
+      ?'<a class="rt-btn" style="font-size:10px;padding:3px 8px;text-decoration:none" href="'+esc(e.pdfUrl)+'" target="_blank">📄 PDF</a>'
+      :'<span class="chip" style="font-size:10px;color:var(--temis)">📄 Falta PDF</span>';
     return `<div style="margin:8px 0 0 0;padding:10px;background:var(--surface2);border-radius:8px;font-size:11.5px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
         <strong class="chip" style="font-size:11px;background:var(--surface);border:1px solid var(--border2)">🧾 ${esc(pMesLabelCorto(e.mes))}</strong>
         ${pagadoChip}
         <span style="color:${pEstadoColor(co.estado)};font-weight:600">${pEstadoLabel(co.estado)}</span>
         <span>app ${pMoney(co.totalApp)}</span>
-        <span>estado ${pMoney(co.totalReal)}</span>
         <span title="Monto a pagar para no generar intereses">no intereses ${pMoney(e.noIntereses||0)}</span>
         <span style="color:${co.dif?'var(--temis)':'var(--shared)'}">dif ${pMoney(Math.abs(co.dif))}</span>
-        <span class="chip" style="font-size:10px">${e.pdfUrl?'PDF':'Pendiente PDF'}</span>
-        ${e.pdfUrl?'<a class="rt-btn" style="font-size:10px;padding:3px 8px;text-decoration:none" href="'+esc(e.pdfUrl)+'" target="_blank">PDF</a>':''}
+        ${conciliadoChip}
+        ${pdfBtn}
         <button class="rt-btn" style="font-size:10px;padding:3px 8px" onclick="pVerConciliacion('${esc(e.id)}')">🔎 Conciliar</button>
         <button class="rt-btn" style="font-size:10px;padding:3px 8px" onclick="pEnviarNoIdentificados('${esc(e.id)}')">Enviar a gastos</button>
         <button class="rt-btn" style="font-size:10px;padding:3px 8px" onclick="pOpenEstado('${esc(c.id)}','${esc(e.id)}')">✏️</button>
@@ -7735,6 +7757,7 @@ function pOpenConciliacion(estadoId){
       <button class="rt-btn" style="font-weight:600" onclick="pEnviarNoIdentificados('${esc(e.id)}')">📤 Enviar a gastos (no identificados)</button>
       <button class="rt-btn" onclick="pRegistrarDiferencia('${esc(e.id)}')">➕ Registrar solo diferencia</button>
       <button class="rt-btn" onclick="pRefrescarConciliacionStats()" title="Recalcula Estimado app/Diferencia sin perder cambios sin guardar en las filas">🔄 Recalcular</button>
+      <button class="rt-btn" style="font-weight:600" onclick="pMarcarConciliadoFlow('${esc(e.id)}')">✅ Marcar conciliado</button>
     </div>`;
   document.getElementById('conciliacionOverlay').style.display='flex';
 }
