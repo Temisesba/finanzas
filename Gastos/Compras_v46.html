@@ -1710,7 +1710,7 @@ details:not([open]) .chev{transform:rotate(-90deg)}
 // v29: nombre clave de esta entrega — cámbialo cada vez que termines un lote
 // de cambios, así en 👥 → 🛠 Panel dev se puede confirmar que el navegador
 // está cargando la versión más reciente y no una copia en caché.
-const BUILD_VERSION='Zinnia';
+const BUILD_VERSION='Anemona';
 let GAS_URL=localStorage.getItem('gastos_gas_url')||'';
 function v29TieneGasUrl(){ return !!GAS_URL; }
 function v29GuardarGasUrl(url){
@@ -5840,6 +5840,19 @@ function pFxTasaDe(fecha){
 // coincide); si ninguno coincide, convierte con el tipo de cambio del día
 // del gasto como mejor esfuerzo.
 function pGastoEnMoneda(g, moneda){
+  const r=pGastoEnMonedaOrNull(g, moneda);
+  // v29: para MOSTRAR un total es mejor enseñar algo (el costo tal cual)
+  // que nada — pero para hacer MATCH (pMatchMovimiento) ese fallback es
+  // justo el bug reportado: comparar pesos con yenes "como si fueran lo
+  // mismo" cuando no hay con qué convertir de verdad. Por eso el matching
+  // usa pGastoEnMonedaOrNull directo, sin este fallback.
+  return r===null?(parseFloat(g.costo)||0):r;
+}
+// v29: igual que pGastoEnMoneda pero SIN el fallback a costo crudo — si no
+// hay un campo que ya venga en esa moneda, ni tipo de cambio capturado
+// para convertir con confianza, regresa null en vez de un número que
+// mezcla monedas distintas.
+function pGastoEnMonedaOrNull(g, moneda){
   const costo=parseFloat(g.costo)||0;
   if(!moneda || moneda===(g.moneda_pago||appSettings.moneda_local)) return costo;
   if(g.moneda_conv===moneda && g.costo_conv) return parseFloat(g.costo_conv)||0;
@@ -5849,7 +5862,7 @@ function pGastoEnMoneda(g, moneda){
     if(moneda===appSettings.moneda_conv && pago===appSettings.moneda_local) return costo/tasa;
     if(moneda===appSettings.moneda_local && pago===appSettings.moneda_conv) return costo*tasa;
   }
-  return costo;
+  return null;
 }
 // v29: al salir del campo Monto O del campo Conversión en +Gasto, si el
 // OTRO campo está vacío y ya tienes un tipo de cambio capturado para esa
@@ -7116,11 +7129,13 @@ function pMatchMovimiento(m, cardId, mes){
   gastos.forEach(g=>{
     // v29: compara en la moneda de LA TARJETA (ej. MXN), no siempre en
     // costo/moneda local — si no, nunca hace match cuando la tarjeta cobra
-    // en otra moneda que la que usas día a día. pGastoEnMoneda ya intenta
-    // convertir con el tipo de cambio del día si el gasto se guardó en la
-    // otra moneda y no le pusiste "Conversión" — por eso importa que la
-    // tolerancia de monto sea generosa, esa conversión es aproximada.
-    const ga=pGastoEnMoneda(g,c.moneda);
+    // en otra moneda que la que usas día a día. Usa la variante ESTRICTA
+    // (sin fallback a costo crudo): si no hay campo en esa moneda ni tipo
+    // de cambio capturado para convertir con confianza, se EXCLUYE este
+    // gasto en vez de comparar pesos contra yenes como si fueran lo mismo
+    // (ese era el bug real detrás de "no identifica nada").
+    const ga=pGastoEnMonedaOrNull(g,c.moneda);
+    if(ga===null) return;
     const diff=Math.abs(ga-monto);
     if(diff>tolMonto) return;
     const dd=pDateDistance(String(m.fecha||'').substring(0,10), String(g.fecha||'').substring(0,10));
