@@ -1710,7 +1710,7 @@ details:not([open]) .chev{transform:rotate(-90deg)}
 // v29: nombre clave de esta entrega — cámbialo cada vez que termines un lote
 // de cambios, así en 👥 → 🛠 Panel dev se puede confirmar que el navegador
 // está cargando la versión más reciente y no una copia en caché.
-const BUILD_VERSION='Lavanda';
+const BUILD_VERSION='Magnolia';
 let GAS_URL=localStorage.getItem('gastos_gas_url')||'';
 function v29TieneGasUrl(){ return !!GAS_URL; }
 function v29GuardarGasUrl(url){
@@ -6546,7 +6546,7 @@ function pVincularFijoConGasto(fijoId, btn){
   // — para poder comparar a ojo contra el estado de cuenta real.
   const fijoAsoc=pItems.find(x=>x.id===fijoId);
   const cardMon=fijoAsoc&&fijoAsoc.tarjeta?((pCardById(fijoAsoc.tarjeta)||{}).moneda):'';
-  const optRow=(g)=>'<button type="button" class="rt-btn vincular-opt" data-search="'+esc(normTxt((g.concepto||g.tienda||'')+' '+String(g.fecha||'')))+'" data-row="'+g.rowIndex+'" style="text-align:left;font-size:11px;display:block;width:100%;margin-bottom:2px;white-space:normal;word-break:break-word" onclick="pVincularElegir(this)">'+esc(String(g.fecha||'').substring(0,10))+' · '+esc(g.concepto||g.tienda||'')+' · '+pMoneyExact(pGastoEnMoneda(g,cardMon),cardMon)+'</button>';
+  const optRow=(g)=>'<button type="button" class="rt-btn vincular-opt" data-search="'+esc(normTxt((g.concepto||g.tienda||'')+' '+String(g.fecha||'')))+'" data-row="'+g.rowIndex+'" style="text-align:left;font-size:11px;display:block;width:100%;margin-bottom:2px;white-space:normal;word-break:break-word" onclick="pVincularElegir(this)">'+esc(String(g.fecha||'').substring(0,10))+' · '+esc(g.concepto||g.tienda||'gasto')+(g.tienda&&g.tienda!==g.concepto?' — '+esc(g.tienda):'')+' · '+pMoneyExact(pGastoEnMoneda(g,cardMon),cardMon)+'</button>';
   const pop=document.createElement('div');
   pop.className='mov-vincular-pop';
   pop.style.cssText='padding:8px;background:var(--surface2);border-radius:8px;margin:6px 0 0;font-size:11px';
@@ -6965,10 +6965,14 @@ function pVincularMovRow(btn){
   // estás conciliando (si tiene una propia), para poder comparar a ojo
   // contra el estado de cuenta real en vez de siempre ver tu moneda local.
   const cardMon=cardId?((pCardById(cardId)||{}).moneda):'';
-  const msg = match ? ('Sugerido: '+esc(match.gasto.concepto||match.gasto.tienda||'gasto')+' · '+pMoneyExact(pGastoEnMoneda(match.gasto,cardMon),cardMon)+' — no se identifica con certeza, confirma o elige otro (o escribe para buscar):') : (candidatos.length?'No se identifica automáticamente. Escribe para buscar entre tus gastos:':'No se identifica automáticamente y no hay gastos registrados cerca de esa fecha. Prueba con "➕ Registrar como nuevo gasto" en vez de vincular.');
+  // v46: nombre de la tienda junto al concepto, cuando existe y es distinto
+  // (ej. "entrada huis ten bosch — Huis Ten Bosch") — ayuda a comparar
+  // contra la descripción del banco sin adivinar solo por el concepto.
+  const conTienda=(g)=>esc(g.concepto||g.tienda||'gasto')+(g.tienda&&g.tienda!==g.concepto?' — '+esc(g.tienda):'');
+  const msg = match ? ('Sugerido: '+conTienda(match.gasto)+' · '+pMoneyExact(pGastoEnMoneda(match.gasto,cardMon),cardMon)+' — no se identifica con certeza, confirma o elige otro (o escribe para buscar):') : (candidatos.length?'No se identifica automáticamente. Escribe para buscar entre tus gastos:':'No se identifica automáticamente y no hay gastos registrados cerca de esa fecha. Prueba con "➕ Registrar como nuevo gasto" en vez de vincular.');
   // v29: antes era un <select> plano (difícil de usar con muchos gastos) —
   // ahora es un buscador: escribes y filtra la lista en vivo.
-  const optRow=(g)=>'<button type="button" class="rt-btn vincular-opt" data-search="'+esc(normTxt((g.concepto||g.tienda||'')+' '+String(g.fecha||'')))+'" data-row="'+g.rowIndex+'" style="text-align:left;font-size:11px;display:block;width:100%;margin-bottom:2px;white-space:normal;word-break:break-word'+(match&&String(match.gasto.rowIndex)===String(g.rowIndex)?';border-color:var(--personal);color:var(--personal)':'')+'" onclick="pVincularElegir(this)">'+esc(String(g.fecha||'').substring(0,10))+' · '+esc(g.concepto||g.tienda||'')+' · '+pMoneyExact(pGastoEnMoneda(g,cardMon),cardMon)+'</button>';
+  const optRow=(g)=>'<button type="button" class="rt-btn vincular-opt" data-search="'+esc(normTxt((g.concepto||g.tienda||'')+' '+String(g.fecha||'')))+'" data-row="'+g.rowIndex+'" style="text-align:left;font-size:11px;display:block;width:100%;margin-bottom:2px;white-space:normal;word-break:break-word'+(match&&String(match.gasto.rowIndex)===String(g.rowIndex)?';border-color:var(--personal);color:var(--personal)':'')+'" onclick="pVincularElegir(this)">'+esc(String(g.fecha||'').substring(0,10))+' · '+conTienda(g)+' · '+pMoneyExact(pGastoEnMoneda(g,cardMon),cardMon)+'</button>';
   const pop=document.createElement('div');
   pop.className='mov-vincular-pop';
   pop.style.cssText='padding:8px;background:var(--surface2);border-radius:8px;margin:2px 0 6px;font-size:11px';
@@ -8159,7 +8163,7 @@ function pOpenConciliacion(estadoId){
     </div>
     ${pMovRowsHTML(e.movimientos||[], 'pcMovRows')}
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
-      <button class="rt-btn" style="font-weight:700;color:var(--shared);border-color:var(--shared-bdr)" onclick="pConciliacionGuardar()">💾 Guardar cambios</button>
+      <button class="rt-btn" id="pcGuardarBtn" style="font-weight:700;color:var(--shared);border-color:var(--shared-bdr)" onclick="pConciliacionGuardar()">💾 Guardar cambios</button>
       <button class="rt-btn" style="font-weight:600" onclick="pEnviarNoIdentificados('${esc(e.id)}')">📤 Enviar a gastos (no identificados)</button>
       <button class="rt-btn" onclick="pRegistrarDiferencia('${esc(e.id)}')">➕ Registrar solo diferencia</button>
       <button class="rt-btn" onclick="pRefrescarConciliacionStats()" title="Recalcula Estimado app/Diferencia sin perder cambios sin guardar en las filas">🔄 Recalcular</button>
@@ -8174,12 +8178,19 @@ function pCerrarConciliacion(){
 async function pConciliacionGuardar(){
   if(!pConciliacionActual) return;
   const e=pItems.find(x=>x.id===pConciliacionActual.id); if(!e)return;
+  // v46: sin esto no había forma de saber si el clic realmente se registró
+  // — el guardado tarda un rato (movimientos + corregir método de pago) y
+  // el botón se quedaba igual, así que parecía que no había pasado nada.
+  const btn=document.getElementById('pcGuardarBtn');
+  if(btn){ btn.disabled=true; btn.textContent='Guardando…'; }
   e.movimientos=pMovsFromRows('pcMovRows');
   const ok=await pSaveItem(e);
   if(ok){
     const actualizados=await pActualizarTarjetasVinculadas(e);
     showToast('✓ Movimientos guardados'+(actualizados>0?(' · método de pago corregido en '+actualizados+' gastos'):''));
-    pOpenConciliacion(e.id);
+    pOpenConciliacion(e.id); // reconstruye el panel (y el botón) desde cero
+  } else if(btn){
+    btn.disabled=false; btn.textContent='💾 Guardar cambios';
   }
 }
 function pRegistrarDiferencia(estadoId){
