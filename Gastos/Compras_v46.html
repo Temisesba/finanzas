@@ -1526,7 +1526,7 @@ details:not([open]) .chev{transform:rotate(-90deg)}
       <div class="amount-pair">
         <label>Monto</label>
         <div class="pair-inputs">
-          <input type="number" id="iCosto" oninput="if(typeof v31RenderParticipantes==='function')v31RenderParticipantes()" placeholder="0">
+          <input type="number" id="iCosto" oninput="if(typeof v31RenderParticipantes==='function')v31RenderParticipantes()" onblur="if(typeof pAutoConvertirMonto==='function')pAutoConvertirMonto()" placeholder="0">
           <select id="iMonedaPago"></select>
         </div>
       </div>
@@ -1687,6 +1687,16 @@ details:not([open]) .chev{transform:rotate(-90deg)}
     </select>
     <div class="set-hint">La IA estimará esta conversión al analizar tickets.</div>
   </div>
+  <div class="set-field">
+    <label>Tipo de cambio de hoy</label>
+    <div style="display:flex;gap:8px;align-items:center">
+      <span style="font-size:12px;color:var(--ink-3);white-space:nowrap">1 <span id="setFxParConv">MXN</span> =</span>
+      <input type="number" id="setFxTasa" step="0.01" placeholder="Ej. 8.50" style="flex:1;min-width:0">
+      <span style="font-size:12px;color:var(--ink-3);white-space:nowrap" id="setFxParLocal">JPY</span>
+    </div>
+    <div style="margin-top:6px"><button type="button" class="rt-btn" style="font-size:11px" onclick="pFxGuardarHoy()">💾 Guardar tipo de cambio de hoy</button></div>
+    <div class="set-hint" id="setFxUltimo"></div>
+  </div>
   <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:18px">
     <button class="bcnl" onclick="closeSettings()">Cancelar</button>
     <button class="bsv" onclick="applySettings()">Guardar</button>
@@ -1700,7 +1710,7 @@ details:not([open]) .chev{transform:rotate(-90deg)}
 // v29: nombre clave de esta entrega — cámbialo cada vez que termines un lote
 // de cambios, así en 👥 → 🛠 Panel dev se puede confirmar que el navegador
 // está cargando la versión más reciente y no una copia en caché.
-const BUILD_VERSION='Jacaranda';
+const BUILD_VERSION='Loto';
 let GAS_URL=localStorage.getItem('gastos_gas_url')||'';
 function v29TieneGasUrl(){ return !!GAS_URL; }
 function v29GuardarGasUrl(url){
@@ -2393,7 +2403,21 @@ function buildCurrencySelects(){
   document.getElementById('iMonedaConv').value=appSettings.moneda_conv;
 }
 
-function openSettings(){ document.getElementById('setMonedaLocal').value=appSettings.moneda_local; document.getElementById('setMonedaConv').value=appSettings.moneda_conv; document.getElementById('setOverlay').style.display='block'; document.getElementById('setPanel').style.display='block'; }
+function openSettings(){
+  document.getElementById('setMonedaLocal').value=appSettings.moneda_local;
+  document.getElementById('setMonedaConv').value=appSettings.moneda_conv;
+  document.getElementById('setFxParConv').textContent=appSettings.moneda_conv;
+  document.getElementById('setFxParLocal').textContent=appSettings.moneda_local;
+  // v29: si ya tenemos los ítems personales cargados (no forzamos login
+  // solo por abrir Ajustes), muestra el último tipo de cambio capturado.
+  const fxUltimoEl=document.getElementById('setFxUltimo');
+  if(typeof pItemsOf==='function' && pLoaded){
+    const fx=pItemsOf('fx').filter(x=>x.fecha).sort((a,b)=>b.fecha.localeCompare(a.fecha));
+    fxUltimoEl.textContent=fx.length?('Último capturado: '+fx[0].fecha+' → 1 '+appSettings.moneda_conv+' = '+fx[0].tasa+' '+appSettings.moneda_local):'Todavía no has capturado ningún tipo de cambio.';
+  } else {
+    fxUltimoEl.textContent='';
+  }
+  document.getElementById('setOverlay').style.display='block'; document.getElementById('setPanel').style.display='block'; }
 function closeSettings(){ document.getElementById('setOverlay').style.display='none'; document.getElementById('setPanel').style.display='none'; }
 function applySettings(){ appSettings.moneda_local=document.getElementById('setMonedaLocal').value; appSettings.moneda_conv=document.getElementById('setMonedaConv').value; localStorage.setItem('gastos_v8_settings',JSON.stringify(appSettings)); buildCurrencySelects(); closeSettings(); showToast('✓ Configuración guardada'); }
 
@@ -5772,7 +5796,10 @@ function pGoSection(sec){
 }
 
 // ── Helpers de dinero ──
-function pMoney(n){ return curSym()+Math.round(n||0).toLocaleString(); }
+// v29: acepta moneda opcional — para mostrar montos de una tarjeta en SU
+// propia moneda (ej. tarjeta mexicana en MXN) en vez de forzar siempre la
+// moneda local de la app.
+function pMoney(n, moneda){ return curSym(moneda)+Math.round(n||0).toLocaleString(); }
 // v29: pMoney() redondea a entero (bien para totales) — pero al buscar un
 // gasto para vincular necesitas ver los centavos exactos para poder
 // comparar contra el monto tal cual viene en el estado de cuenta.
@@ -5790,6 +5817,85 @@ function pFijoLinkedToGasto(rowIndex){
     }
   }
   return null;
+}
+
+// ── v29: Tipo de cambio diario (para viajar entre monedas) ──
+// Guardado como ítem personal tipo:'fx' — uno por fecha capturada
+// ({fecha, tasa}), tasa = cuántas unidades de moneda_local vale 1 unidad
+// de moneda_conv (ej. 1 MXN = 8.5 JPY). Con esto una tarjeta que cobra en
+// otra moneda puede compararse bien en Conciliación, y el costo_conv de un
+// gasto se puede autocompletar con el tipo de cambio del día.
+function pFxTasaDe(fecha){
+  const fx=pItemsOf('fx').filter(x=>x.fecha).sort((a,b)=>a.fecha.localeCompare(b.fecha));
+  if(!fx.length) return null;
+  // la más reciente en/antes de esa fecha; si no hay ninguna anterior, la más vieja que sí exista
+  let elegida=null;
+  for(const x of fx){ if(x.fecha<=fecha) elegida=x; else break; }
+  return elegida?parseFloat(elegida.tasa)||null:(parseFloat(fx[0].tasa)||null);
+}
+// v29: el monto de un gasto EN LA MONEDA de una tarjeta específica — para
+// tarjetas que cobran en otra moneda que tu moneda local (ej. viviendo en
+// Japón con una tarjeta mexicana). Usa primero el campo que ya venga en
+// esa moneda (costo si moneda_pago coincide, costo_conv si moneda_conv
+// coincide); si ninguno coincide, convierte con el tipo de cambio del día
+// del gasto como mejor esfuerzo.
+function pGastoEnMoneda(g, moneda){
+  const costo=parseFloat(g.costo)||0;
+  if(!moneda || moneda===(g.moneda_pago||appSettings.moneda_local)) return costo;
+  if(g.moneda_conv===moneda && g.costo_conv) return parseFloat(g.costo_conv)||0;
+  const tasa=pFxTasaDe(String(g.fecha||'').substring(0,10)||new Date().toISOString().substring(0,10));
+  if(tasa){
+    const pago=g.moneda_pago||appSettings.moneda_local;
+    if(moneda===appSettings.moneda_conv && pago===appSettings.moneda_local) return costo/tasa;
+    if(moneda===appSettings.moneda_local && pago===appSettings.moneda_conv) return costo*tasa;
+  }
+  return costo;
+}
+// v29: al salir del campo Monto en +Gasto, si Conversión está vacío y ya
+// tienes un tipo de cambio capturado para esa fecha, lo autocompleta —
+// "día a día quiero poner la conversión... que se calcule con el cambio
+// del día que registre". No pisa nada si ya escribiste algo en Conversión.
+function pAutoConvertirMonto(){
+  const costoEl=document.getElementById('iCosto'), convEl=document.getElementById('iConv');
+  const mpEl=document.getElementById('iMonedaPago'), mcEl=document.getElementById('iMonedaConv');
+  const dateEl=document.getElementById('iDate');
+  if(!costoEl||!convEl||convEl.value.trim()) return;
+  const costo=parseFloat(costoEl.value); if(!costo) return;
+  const pago=(mpEl&&mpEl.value)||appSettings.moneda_local;
+  const conv=(mcEl&&mcEl.value)||appSettings.moneda_conv;
+  const fecha=(dateEl&&dateEl.value)||new Date().toISOString().substring(0,10);
+  const tasa=pFxTasaDe(fecha); if(!tasa) return;
+  let resultado=null;
+  if(pago===appSettings.moneda_local && conv===appSettings.moneda_conv) resultado=costo/tasa;
+  else if(pago===appSettings.moneda_conv && conv===appSettings.moneda_local) resultado=costo*tasa;
+  if(resultado!==null) convEl.value=Math.round(resultado*100)/100;
+}
+async function pFxGuardarHoy(){
+  if(!pOwner) pOwner=myName();
+  if(!pOwner){ showToast('Primero elige tu nombre en 👥 (⭐ ¿Quién eres tú?)'); return; }
+  if(!pPass) pPass=localStorage.getItem('gastos_ppass_'+pOwner)||'';
+  if(!pPass){
+    const pass=prompt('🔒 Tu contraseña personal ('+pOwner+') para guardar el tipo de cambio:','');
+    if(pass===null) return;
+    try{
+      const r=await postGAS({action:'personalAuth', owner:pOwner, pass});
+      if(!(r&&r.ok)){ showToast('⚠ '+((r&&r.error==='PASSWORD')?'Contraseña incorrecta':(r&&r.error)||'Error')); return; }
+      pPass=pass; localStorage.setItem('gastos_ppass_'+pOwner, pass);
+    }catch(e){ showToast('⚠ Error de red'); return; }
+  }
+  if(!pLoaded || !pItems.length){ try{ await pLoad(); }catch(e){} }
+  const hoy=new Date().toISOString().substring(0,10);
+  const input=document.getElementById('setFxTasa');
+  const tasa=parseFloat(input&&input.value);
+  if(!tasa){ showToast('Escribe un tipo de cambio válido'); return; }
+  const existente=pItemsOf('fx').find(x=>x.fecha===hoy);
+  const item={id:existente?existente.id:'', tipo:'fx', fecha:hoy, tasa};
+  const ok=await pSaveItem(item);
+  if(ok){
+    showToast('✓ Tipo de cambio de hoy guardado: 1 '+appSettings.moneda_conv+' = '+tasa+' '+appSettings.moneda_local);
+    const fxUltimoEl=document.getElementById('setFxUltimo');
+    if(fxUltimoEl) fxUltimoEl.textContent='Último capturado: '+hoy+' → 1 '+appSettings.moneda_conv+' = '+tasa+' '+appSettings.moneda_local;
+  }
 }
 
 // ── Balance cruzado de todas las sesiones donde participo ──
@@ -6260,7 +6366,7 @@ function pRenderHistorialMensual(){
     // registrado ese mes; lo pendiente usa el monto esperado).
     const totalMes=pItemsOf('fijo').reduce((s,f)=>{ const p=(f.pagos||{})[mk]; const monto=(p&&typeof p==='object')?(parseFloat(p.monto)||0):(parseFloat(f.monto)||0); return s+monto; },0);
     const fijos=pItemsOf('fijo').map(f=>{ const st=pEstadoPagoMes(f,mk); return '<div>• '+esc(f.concepto||'Pago fijo')+': <span style="color:'+st.col+';font-weight:600">'+st.txt+'</span></div>'; }).join('');
-    const edos=pItemsOf('estado').filter(e=>e.mes===mk).map(e=>{ const c=pCardById(e.tarjeta)||{}; const co=pConciliacionEstado(e); return '<div>• '+esc(pCardLabel(c))+': <span style="color:'+pEstadoColor(co.estado)+';font-weight:600">'+pEstadoLabel(co.estado)+'</span>'+(co.dif?(' · dif '+pMoney(Math.abs(co.dif))):'')+'</div>'; }).join('') || '<div style="color:var(--ink-3)">• Sin estados de cuenta cargados</div>';
+    const edos=pItemsOf('estado').filter(e=>e.mes===mk).map(e=>{ const c=pCardById(e.tarjeta)||{}; const co=pConciliacionEstado(e); return '<div>• '+esc(pCardLabel(c))+': <span style="color:'+pEstadoColor(co.estado)+';font-weight:600">'+pEstadoLabel(co.estado)+'</span>'+(co.dif?(' · dif '+pMoney(Math.abs(co.dif),c.moneda)):'')+'</div>'; }).join('') || '<div style="color:var(--ink-3)">• Sin estados de cuenta cargados</div>';
     return `<div style="padding:12px;border:1px solid var(--border);border-radius:10px;margin-bottom:10px;background:var(--surface)"><div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px"><strong class="chip" style="font-size:12px;background:var(--surface2);border:1px solid var(--border2)">📅 ${esc(pMesLabelCorto(mk))}</strong><strong style="font-family:var(--mono);font-size:12px">${pMoney(totalMes)}</strong></div><div style="font-size:12px;line-height:1.6">${fijos}${edos}</div></div>`;
   }).join('');
 }
@@ -6474,7 +6580,7 @@ function pRenderTarjetas(){
     // se ordena primero aunque su PRÓXIMO vencimiento se vea lejos; sin este
     // aviso visible, el orden parecía "roto" al no verse el porqué.
     const retrasadaTag=pTarjOrden(c).retrasada?'<span style="color:var(--temis);font-weight:700">🔴 Retrasado (estado anterior sin pagar) · </span>':'';
-    const resumenSiempre=`<div style="font-size:11px;color:var(--ink-3);margin-top:2px">${retrasadaTag}➡️ Corte: <strong>${esc(c.diaCorte||'—')}</strong> · ⏰ Próximo vencimiento: <strong>${proxVenc?esc(proxVenc)+' ('+pDiasPara(c.diaLimite)+'d)':'—'}</strong> · Estimado del ciclo: <strong>${pMoney(pTarjetaEstimadoCiclo(c,mk))}</strong></div>`;
+    const resumenSiempre=`<div style="font-size:11px;color:var(--ink-3);margin-top:2px">${retrasadaTag}➡️ Corte: <strong>${esc(c.diaCorte||'—')}</strong> · ⏰ Próximo vencimiento: <strong>${proxVenc?esc(proxVenc)+' ('+pDiasPara(c.diaLimite)+'d)':'—'}</strong> · Estimado del ciclo: <strong>${pMoney(pTarjetaEstimadoCiclo(c,mk),c.moneda)}</strong></div>`;
     const resumenPlegable=`<div style="font-size:11px;color:var(--ink-3);display:flex;flex-wrap:wrap;gap:4px 10px">`
       +`<span>⏰ Límite: <strong>${esc(c.diaLimite||'—')}</strong></span>`
       +pEstadoStatusBadgeHTML(c)
@@ -6489,7 +6595,7 @@ function pRenderTarjetas(){
       const disp=Math.max(max-usado,0);
       const pct=Math.min(100,Math.round((usado/max)*100));
       creditoHtml=`<div style="margin-top:8px">
-        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--ink-3)"><span>Crédito disponible: <strong style="color:${pct>80?'var(--temis)':'var(--shared)'}">${pMoney(disp)}</strong> de ${pMoney(max)}</span><span>${pct}% usado</span></div>
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--ink-3)"><span>Crédito disponible: <strong style="color:${pct>80?'var(--temis)':'var(--shared)'}">${pMoney(disp,c.moneda)}</strong> de ${pMoney(max,c.moneda)}</span><span>${pct}% usado</span></div>
         <div style="height:5px;background:var(--surface2);border-radius:3px;overflow:hidden;margin-top:2px"><div style="width:${pct}%;height:100%;background:${pct>80?'var(--temis)':'var(--shared)'}"></div></div>
       </div>`;
     }
@@ -6777,10 +6883,11 @@ function pRefrescarConciliacionStats(){
   e.movimientos=pMovsFromRows('pcMovRows');
   const co=pConciliacionEstado(e);
   const stat=(t,v,col)=>`<div style="background:var(--surface2);border-radius:9px;padding:9px 11px"><div style="font-size:10px;color:var(--ink-3);text-transform:uppercase;letter-spacing:.06em">${t}</div><div style="font-family:var(--mono);font-weight:700;font-size:14px;${col?('color:'+col):''}">${v}</div></div>`;
-  grid.innerHTML=stat('Estimado app', pMoney(co.totalApp))
-    +stat('Estado de cuenta', pMoney(co.totalReal))
-    +stat('Pago para no generar intereses', pMoney(co.noIntereses))
-    +stat('Diferencia', pMoney(Math.abs(co.dif)), co.dif?'var(--temis)':'var(--shared)')
+  const mon=co.card&&co.card.moneda;
+  grid.innerHTML=stat('Estimado app', pMoney(co.totalApp,mon))
+    +stat('Estado de cuenta', pMoney(co.totalReal,mon))
+    +stat('Pago para no generar intereses', pMoney(co.noIntereses,mon))
+    +stat('Diferencia', pMoney(Math.abs(co.dif),mon), co.dif?'var(--temis)':'var(--shared)')
     +stat('Estado', pEstadoLabel(co.estado), pEstadoColor(co.estado));
 }
 // v29: un movimiento del estado de cuenta que en realidad es uno de tus
@@ -6834,6 +6941,7 @@ function pMovComoFijoConfirmar(btn){
   document.getElementById('iCat').value=f.categoria||'Servicios';
   document.getElementById('iNotas').value='Desde estado de cuenta · '+pCardLabel(c);
   const mm=document.getElementById('iMetodo'); if(mm && cardId){ mm.value='Tarjeta'; onMetodoChange(); const s=document.getElementById('iTarjetaSel'); if(s){ s.value=cardId; onTarjetaSelChange(); } }
+  if(c.moneda){ const mp=document.getElementById('iMonedaPago'); if(mp) mp.value=c.moneda; }
   window.__movVincularPendiente=row; // vincula (↗) la fila al gasto nuevo
   window.__pagoFijoPendiente=fijoId; // marca ese pago fijo como pagado ese mes
   pop.remove();
@@ -6868,6 +6976,7 @@ function pRegistrarMovComoGasto(btn){
   document.getElementById('iCat').value=m.categoria||'Por revisar';
   document.getElementById('iNotas').value='Desde estado de cuenta · '+pCardLabel(c);
   const mm=document.getElementById('iMetodo'); if(mm && cardId){ mm.value='Tarjeta'; onMetodoChange(); const s=document.getElementById('iTarjetaSel'); if(s){ s.value=cardId; onTarjetaSelChange(); } }
+  if(c.moneda){ const mp=document.getElementById('iMonedaPago'); if(mp) mp.value=c.moneda; }
   window.__movVincularPendiente=row; // v29: al guardar, esta fila se vincula sola
   showToast('Revisa y guarda; esta fila se vinculará sola al guardar');
 }
@@ -6977,7 +7086,10 @@ function pMatchMovimiento(m, cardId, mes){
   const desc=normTxt(m.descripcion||'');
   let best=null, score=-1;
   gastos.forEach(g=>{
-    const ga=parseFloat(g.costo)||0;
+    // v29: compara en la moneda de LA TARJETA (ej. MXN), no siempre en
+    // costo/moneda local — si no, nunca hace match cuando la tarjeta cobra
+    // en otra moneda que la que usas día a día.
+    const ga=pGastoEnMoneda(g,c.moneda);
     const montoOk=Math.abs(ga-monto)<=1;
     if(!montoOk) return;
     const dd=pDateDistance(String(m.fecha||'').substring(0,10), String(g.fecha||'').substring(0,10));
@@ -7174,6 +7286,13 @@ function pFormFieldsHTML(tipo, it){
           <button type="button" class="tbtn ${ct==='TDD'?'sel':''}" id="ptD" onclick="pTarjTipo('TDD')">🏦 Débito (TDD)</button>
           <button type="button" class="tbtn ${ct==='PUNTOS'?'sel':''}" id="ptP" onclick="pTarjTipo('PUNTOS')">🎫 Puntos / departamental</button>
         </div><input type="hidden" id="pfCtipo" value="${ct}"></div>`
+      + `<div class="pf-field"><label>Moneda en que cobra esta tarjeta</label><select id="pfTarjMoneda">
+          <option value=""${!it.moneda?' selected':''}>— Igual que mi moneda local (${esc(appSettings.moneda_local)})</option>
+          <option value="JPY"${it.moneda==='JPY'?' selected':''}>🇯🇵 JPY — Yen japonés</option>
+          <option value="MXN"${it.moneda==='MXN'?' selected':''}>🇲🇽 MXN — Peso mexicano</option>
+          <option value="USD"${it.moneda==='USD'?' selected':''}>🇺🇸 USD — Dólar</option>
+          <option value="EUR"${it.moneda==='EUR'?' selected':''}>🇪🇺 EUR — Euro</option>
+        </select><div style="font-size:11px;color:var(--ink-3);margin-top:2px">Si es distinta a tu moneda local (ej. tarjeta mexicana viviendo en Japón), Conciliación y los totales de esta tarjeta se muestran en SU moneda.</div></div>`
       + `<div class="pf-field"><label>Foto / QR (opcional — para verla rápido en la tienda)</label>
           <input type="file" accept="image/*" id="pfTarjFotoInput" style="display:none" onchange="pTarjFotoFile(event)">
           <input type="file" accept="image/*" capture="environment" id="pfTarjFotoCam" style="display:none" onchange="pTarjFotoFile(event)">
@@ -7240,7 +7359,7 @@ function pFormFieldsHTML(tipo, it){
         </div>`
       + `<div class="pf-field"><label>Tarjeta</label><select id="pfTarjeta">${pCardOptions(it.tarjeta)}</select></div>`
       + F('Mes','pfMes',it.mes||pMesKey(),'type="month"')
-      + `<div style="font-size:11px;color:var(--ink-3);margin:-4px 0 8px">Periodo estimado por corte: ${esc(cy.label)} · compras app: ${c.id?pMoney(pTarjetaEstimadoCiclo(c,mk)):'—'}</div>`
+      + `<div style="font-size:11px;color:var(--ink-3);margin:-4px 0 8px">Periodo estimado por corte: ${esc(cy.label)} · compras app: ${c.id?pMoney(pTarjetaEstimadoCiclo(c,mk),c.moneda):'—'}</div>`
       + F('Total del estado (saldo / total cargos)','pfTotal',it.total,'type="number" placeholder="0"')
       + F('Pago mínimo','pfMinimo',it.minimo,'type="number" placeholder="opcional"')
       + F('Pago para no generar intereses (monto a pagar)','pfNoIntereses',it.noIntereses,'type="number" placeholder="opcional"')
@@ -7348,7 +7467,7 @@ async function pFormSave(){
         else throw new Error((up&&up.error)||'No se pudo subir la foto');
       }catch(e){ showToast('⚠ '+e.message); btnReady(); return; }
     }
-    item={...base, nombre:pFval('pfTarjNombre').trim(), titular:pFval('pfTitular').trim(), banco:pFval('pfBanco').trim(), ctipo:pFval('pfCtipo'), red:pFval('pfRed'), fotoUrl, termFisica:pFval('pfTermFis').trim(), termVirtual:pFval('pfTermVir').trim(), diaCorte:pFval('pfDiaCorte'), diaDisponible:pFval('pfDiaDisponible'), diaLimite:pFval('pfDiaLimite'), creditoMax:parseFloat(pFval('pfCreditoMax'))||0, interesAnual:parseFloat(pFval('pfInteres'))||0, comisionTardio:parseFloat(pFval('pfComisionTardio'))||0, comisionInactividad:parseFloat(pFval('pfComisionInactividad'))||0, requisitoMinimo:pFval('pfRequisitoMinimo').trim(), clabe:pFval('pfClabe').trim(), numFisica:pFval('pfNumFis').trim(), numVirtual:pFval('pfNumVir').trim(), venceFisica:pFval('pfVenceFis').trim(), venceVirtual:pFval('pfVenceVir').trim(), pin:pFval('pfPin').trim(), nota:pFval('pfNotaTarj').trim()};
+    item={...base, nombre:pFval('pfTarjNombre').trim(), titular:pFval('pfTitular').trim(), banco:pFval('pfBanco').trim(), ctipo:pFval('pfCtipo'), moneda:pFval('pfTarjMoneda'), red:pFval('pfRed'), fotoUrl, termFisica:pFval('pfTermFis').trim(), termVirtual:pFval('pfTermVir').trim(), diaCorte:pFval('pfDiaCorte'), diaDisponible:pFval('pfDiaDisponible'), diaLimite:pFval('pfDiaLimite'), creditoMax:parseFloat(pFval('pfCreditoMax'))||0, interesAnual:parseFloat(pFval('pfInteres'))||0, comisionTardio:parseFloat(pFval('pfComisionTardio'))||0, comisionInactividad:parseFloat(pFval('pfComisionInactividad'))||0, requisitoMinimo:pFval('pfRequisitoMinimo').trim(), clabe:pFval('pfClabe').trim(), numFisica:pFval('pfNumFis').trim(), numVirtual:pFval('pfNumVir').trim(), venceFisica:pFval('pfVenceFis').trim(), venceVirtual:pFval('pfVenceVir').trim(), pin:pFval('pfPin').trim(), nota:pFval('pfNotaTarj').trim()};
   } else if(t==='estado'){
     if(!pFval('pfTarjeta')){ showToast('Elige tarjeta'); return; }
     const prev=pFormId?pItems.find(x=>x.id===pFormId):null;
@@ -7495,7 +7614,7 @@ async function pCrearGastosHistoricosMSI(msiItem, cuotas, cardId){
     try{
       const r=await postGAS({action:'saveGasto',
         fecha:q.fecha, fecha_captura:localDateTimeValue(new Date()),
-        costo:q.monto, moneda_pago:appSettings.moneda_local,
+        costo:q.monto, moneda_pago:c.moneda||appSettings.moneda_local,
         concepto:(msiItem.concepto||'Compra a MSI')+' (cuota '+q.idx+')',
         tienda:msiItem.concepto||'', quien_paga:quien, compartido:'Personal', pago,
         categoria:'MSI', notas:'Cuota ya cobrada · MSI '+msiItem.id, sesion:ses});
@@ -7550,7 +7669,7 @@ function pGastosDeTarjeta(c){
   return (allExp||[]).filter(e=>e.pago && pPagoEsTarjeta(e.pago,c) && e.compartido!=='Cotizacion');
 }
 function pTarjetaEstimado(c){
-  return pGastosDeTarjeta(c).reduce((s,e)=>s+(parseFloat(e.costo)||0),0);
+  return pGastosDeTarjeta(c).reduce((s,e)=>s+pGastoEnMoneda(e,c.moneda),0);
 }
 function pMesAnterior(mk){
   const y=parseInt(mk.slice(0,4)), m=parseInt(mk.slice(5,7))-1;
@@ -7583,7 +7702,7 @@ function pGastosDeTarjetaCiclo(c,mk){
   return pGastosDeTarjeta(c).filter(e=>String(e.fecha||'').substring(0,10)>=cy.ini && String(e.fecha||'').substring(0,10)<=cy.fin);
 }
 function pTarjetaEstimadoCiclo(c,mk){
-  return pGastosDeTarjetaCiclo(c,mk).reduce((s,e)=>s+(parseFloat(e.costo)||0),0)+pTarjetaCargado(c.id,mk);
+  return pGastosDeTarjetaCiclo(c,mk).reduce((s,e)=>s+pGastoEnMoneda(e,c.moneda),0)+pTarjetaCargado(c.id,mk);
 }
 function pEstadoDeTarjetaMes(cardId, mk){
   return pItemsOf('estado').find(e=>e.tarjeta===cardId && (e.mes||'')===mk);
@@ -7650,7 +7769,7 @@ async function pMarcarConciliadoFlow(estadoId){
   const e=pItems.find(x=>x.id===estadoId); if(!e) return;
   const co=pConciliacionEstado(e);
   const op=(prompt('¿Cómo quieres dejar esto conciliado?\n\n'
-    +'1 = Pagando solo la diferencia ('+pMoney(Math.abs(co.dif))+') — abre +Gasto ya prellenado, y al guardarlo se marca conciliado solo\n'
+    +'1 = Pagando solo la diferencia ('+pMoney(Math.abs(co.dif),co.card&&co.card.moneda)+') — abre +Gasto ya prellenado, y al guardarlo se marca conciliado solo\n'
     +'2 = Registrando todos los movimientos no identificados ('+co.counts.no_identificado+') como gastos, y luego marcar conciliado\n'
     +'3 = Ya registré todo yo mismo, solo marcar como conciliado\n\n'
     +'Escribe 1, 2 o 3:', '3')||'').trim();
@@ -7687,8 +7806,12 @@ function pConciliacionEstado(e){
   // vinculado, para no duplicarlos.
   const gastoIdsVinculados=new Set(movs.filter(m=>m.gastoId).map(m=>String(m.gastoId)));
   const gsSinDuplicar=gs.filter(g=>!gastoIdsVinculados.has(String(g.rowIndex)));
+  // v29: los movimientos vinculados ya vienen en la moneda de la tarjeta
+  // (tal cual el estado de cuenta) — no hace falta convertirlos. Los
+  // gastos sin vincular sí se convierten a la moneda de la tarjeta si
+  // tiene una distinta a tu moneda local (ver pGastoEnMoneda).
   const totalVinculados=movs.filter(m=>m.estado==='identificado' && m.gastoId).reduce((s,m)=>s+(parseFloat(m.monto)||0),0);
-  const totalApp=gsSinDuplicar.reduce((s,g)=>s+(parseFloat(g.costo)||0),0)+totalVinculados;
+  const totalApp=gsSinDuplicar.reduce((s,g)=>s+pGastoEnMoneda(g,c.moneda),0)+totalVinculados;
   const totalReal=parseFloat(e.total)||0;
   // v29: la diferencia que importa es contra el PAGO PARA NO GENERAR
   // INTERESES (lo que realmente hay que cubrir), no contra el Total del
@@ -7718,7 +7841,7 @@ function pRenderEstadosTarjeta(c){
     // v29: check visual para pagado/pendiente (en vez de solo texto), con
     // fecha de pago inline y opción de deshacer sin abrir el formulario.
     const pagadoChip=e.pagado
-      ? '<button class="rt-btn" style="font-size:10px;padding:3px 8px;background:var(--shared-bg);color:var(--shared);border-color:var(--shared-bdr);font-weight:700" onclick="pToggleEstadoPagado(\''+esc(e.id)+'\')" title="Deshacer">✅ Pagado '+esc(e.fechaPago||'')+(e.montoPagado?(' · '+pMoney(e.montoPagado)):'')+(e.tipoPagoRealizado?(' · '+esc(e.tipoPagoRealizado)):'')+' · deshacer</button>'
+      ? '<button class="rt-btn" style="font-size:10px;padding:3px 8px;background:var(--shared-bg);color:var(--shared);border-color:var(--shared-bdr);font-weight:700" onclick="pToggleEstadoPagado(\''+esc(e.id)+'\')" title="Deshacer">✅ Pagado '+esc(e.fechaPago||'')+(e.montoPagado?(' · '+pMoney(e.montoPagado,c.moneda)):'')+(e.tipoPagoRealizado?(' · '+esc(e.tipoPagoRealizado)):'')+' · deshacer</button>'
       : '<button class="rt-btn" style="font-size:10px;padding:3px 8px" onclick="pToggleEstadoPagado(\''+esc(e.id)+'\')">☐ Marcar pagado</button>';
     // v29: "conciliado" es distinto de "pagado" — pagado es que ya
     // depositaste el dinero (aunque no hayas revisado movimiento por
@@ -7740,9 +7863,9 @@ function pRenderEstadosTarjeta(c){
         <strong class="chip" style="font-size:11px;background:var(--surface);border:1px solid var(--border2)">🧾 ${esc(pMesLabelCorto(e.mes))}</strong>
         ${pagadoChip}
         <span style="color:${pEstadoColor(co.estado)};font-weight:600">${pEstadoLabel(co.estado)}</span>
-        <span>app ${pMoney(co.totalApp)}</span>
-        <span title="Monto a pagar para no generar intereses">no intereses ${pMoney(e.noIntereses||0)}</span>
-        <span style="color:${co.dif?'var(--temis)':'var(--shared)'}">dif ${pMoney(Math.abs(co.dif))}</span>
+        <span>app ${pMoney(co.totalApp,c.moneda)}</span>
+        <span title="Monto a pagar para no generar intereses">no intereses ${pMoney(e.noIntereses||0,c.moneda)}</span>
+        <span style="color:${co.dif?'var(--temis)':'var(--shared)'}">dif ${pMoney(Math.abs(co.dif),c.moneda)}</span>
         ${conciliadoChip}
         ${pdfBtn}
         <button class="rt-btn" style="font-size:10px;padding:3px 8px" onclick="pVerConciliacion('${esc(e.id)}')">🔎 Conciliar</button>
@@ -7774,14 +7897,15 @@ function pOpenConciliacion(estadoId){
   const co=pConciliacionEstado(e);
   const body=document.getElementById('conciliacionBody');
   const stat=(t,v,col)=>`<div style="background:var(--surface2);border-radius:9px;padding:9px 11px"><div style="font-size:10px;color:var(--ink-3);text-transform:uppercase;letter-spacing:.06em">${t}</div><div style="font-family:var(--mono);font-weight:700;font-size:14px;${col?('color:'+col):''}">${v}</div></div>`;
+  const mon=co.card&&co.card.moneda;
   body.innerHTML=`
-    <div style="font-size:13px;font-weight:700;margin-bottom:2px">${esc(pCardLabel(co.card))} · ${esc(e.mes||'—')}</div>
+    <div style="font-size:13px;font-weight:700;margin-bottom:2px">${esc(pCardLabel(co.card))} · ${esc(e.mes||'—')}${mon?' <span class="chip" style="font-size:10px">'+esc(mon)+'</span>':''}</div>
     <div style="font-size:11px;color:var(--ink-3);margin-bottom:10px">El pago completo de tarjeta NO se registra como gasto; solo los movimientos que envíes abajo.</div>
     <div id="conciliacionStats" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px;margin-bottom:12px">
-      ${stat('Estimado app', pMoney(co.totalApp))}
-      ${stat('Estado de cuenta', pMoney(co.totalReal))}
-      ${stat('Pago para no generar intereses', pMoney(co.noIntereses))}
-      ${stat('Diferencia', pMoney(Math.abs(co.dif)), co.dif?'var(--temis)':'var(--shared)')}
+      ${stat('Estimado app', pMoney(co.totalApp,mon))}
+      ${stat('Estado de cuenta', pMoney(co.totalReal,mon))}
+      ${stat('Pago para no generar intereses', pMoney(co.noIntereses,mon))}
+      ${stat('Diferencia', pMoney(Math.abs(co.dif),mon), co.dif?'var(--temis)':'var(--shared)')}
       ${stat('Estado', pEstadoLabel(co.estado), pEstadoColor(co.estado))}
     </div>
     ${pMovRowsHTML(e.movimientos||[], 'pcMovRows')}
@@ -7822,6 +7946,10 @@ function pRegistrarDiferencia(estadoId){
   document.getElementById('iCat').value='Por revisar';
   document.getElementById('iNotas').value='Diferencia estado '+(e.mes||'')+' · '+pCardLabel(co.card)+' · estadoId '+e.id;
   const mm=document.getElementById('iMetodo'); if(mm){ mm.value='Tarjeta'; onMetodoChange(); const s=document.getElementById('iTarjetaSel'); if(s){ s.value=e.tarjeta; onTarjetaSelChange(); } }
+  // v29: el monto de arriba ya está en la moneda de LA TARJETA (no siempre
+  // tu moneda local) — si la tarjeta cobra en otra, ajusta el selector de
+  // moneda del gasto para que quede coherente con lo que se está guardando.
+  if(co.card && co.card.moneda){ const mp=document.getElementById('iMonedaPago'); if(mp) mp.value=co.card.moneda; }
   showToast('Revisa y guarda solo la diferencia, no el pago completo');
 }
 async function pEnviarNoIdentificados(estadoId){
@@ -7841,7 +7969,10 @@ async function pEnviarNoIdentificados(estadoId){
       fecha:m.fecha||new Date().toISOString().substring(0,10),
       fecha_captura:localDateTimeValue(new Date()),
       costo:parseFloat(m.monto)||0,
-      moneda_pago:appSettings.moneda_local,
+      // v29: el monto del movimiento ya viene en la moneda DE LA TARJETA
+      // (tal cual el estado de cuenta) — si esa tarjeta cobra en otra
+      // moneda que tu local, hay que guardarlo con esa, no con la local.
+      moneda_pago:c.moneda||appSettings.moneda_local,
       concepto:m.descripcion||'Movimiento no identificado',
       tienda:m.descripcion||'',
       quien_paga:quien,
