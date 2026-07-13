@@ -1710,7 +1710,7 @@ details:not([open]) .chev{transform:rotate(-90deg)}
 // v29: nombre clave de esta entrega — cámbialo cada vez que termines un lote
 // de cambios, así en 👥 → 🛠 Panel dev se puede confirmar que el navegador
 // está cargando la versión más reciente y no una copia en caché.
-const BUILD_VERSION='Girasol';
+const BUILD_VERSION='Hortensia';
 let GAS_URL=localStorage.getItem('gastos_gas_url')||'';
 function v29TieneGasUrl(){ return !!GAS_URL; }
 function v29GuardarGasUrl(url){
@@ -8388,9 +8388,13 @@ function pRenderMiLista(){
 </div>
 
 
-<!-- v46: Visor de solo lectura de un gasto -->
-<div class="overlay" id="expViewOverlay" style="display:none;z-index:295;align-items:flex-start" onclick="if(event.target.id==='expViewOverlay')closeExpView()">
-  <div class="modal" style="max-width:440px;width:100%;margin:16px auto">
+<!-- v46: Visor de solo lectura de un gasto — v46: se abre como panel lateral
+     (sin oscurecer/difuminar el fondo, sin bloquear clics fuera del panel)
+     para poder comparar contra lo que quedó abierto detrás (ej. el
+     movimiento/candidatos de Conciliación) y aceptar sin tener que cerrar
+     este visor primero. -->
+<div class="overlay" id="expViewOverlay" style="display:none;z-index:295;align-items:flex-start;justify-content:flex-end;background:transparent;backdrop-filter:none;pointer-events:none;padding:0" onclick="if(event.target.id==='expViewOverlay')closeExpView()">
+  <div class="modal" style="max-width:400px;width:100%;height:100%;max-height:100%;margin:0;border-radius:0;box-shadow:-10px 0 30px rgba(0,0,0,.25);pointer-events:auto">
     <div class="mhdr" style="display:flex;align-items:center;justify-content:space-between;padding:15px 18px;border-bottom:1px solid var(--border)">
       <h2 style="margin:0;font-size:16px">👁 Detalle del gasto</h2>
       <button class="mclose" onclick="closeExpView()">✕</button>
