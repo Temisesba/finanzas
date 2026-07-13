@@ -1710,7 +1710,7 @@ details:not([open]) .chev{transform:rotate(-90deg)}
 // v29: nombre clave de esta entrega — cámbialo cada vez que termines un lote
 // de cambios, así en 👥 → 🛠 Panel dev se puede confirmar que el navegador
 // está cargando la versión más reciente y no una copia en caché.
-const BUILD_VERSION='Kalanchoe';
+const BUILD_VERSION='Lavanda';
 let GAS_URL=localStorage.getItem('gastos_gas_url')||'';
 function v29TieneGasUrl(){ return !!GAS_URL; }
 function v29GuardarGasUrl(url){
@@ -3032,6 +3032,36 @@ async function pEditPersonal(rowIndex, sesion){
   pReturnToPersonalAfterEdit=veniaDePersonal;
   editExp(rowIndex);
 }
+// v46: estima la conversión de un gasto a la OTRA moneda del par configurado
+// en ⚙️ Ajustes (moneda_local ⇄ moneda_conv), usando el tipo de cambio
+// capturado ese día — mismo cálculo que ya usaba pGastoEnMonedaOrNull como
+// último recurso, pero generalizado (no pide una moneda destino: calcula
+// automáticamente la que falte). Devuelve null si no hay tipo de cambio
+// capturado para esa fecha, o si moneda_pago no es ninguna de las dos del
+// par (ahí no hay con qué convertir con confianza).
+function pEstimarConversion(e){
+  const costo=parseFloat(e.costo)||0; if(!costo) return null;
+  const pago=e.moneda_pago||appSettings.moneda_local;
+  const tasa=pFxTasaDe(String(e.fecha||'').substring(0,10)||new Date().toISOString().substring(0,10));
+  if(!tasa) return null;
+  if(pago===appSettings.moneda_local && appSettings.moneda_conv) return {monto:costo/tasa, moneda:appSettings.moneda_conv};
+  if(pago===appSettings.moneda_conv && appSettings.moneda_local) return {monto:costo*tasa, moneda:appSettings.moneda_local};
+  return null;
+}
+// v46: guarda en el Sheet una conversión estimada (solo cuando el campo
+// estaba vacío — nunca pisa un valor ya capturado) para no tener que
+// volver a calcularla cada vez que se abre el visor, y para que quede
+// disponible de inmediato al conciliar (pGastoEnMonedaOrNull la usa igual
+// que si se hubiera capturado a mano).
+async function pGuardarConversionEstimada(e, est){
+  if(e.costo_conv) return; // ya se guardó (o ya la tenía) — no pisar
+  const monto=Math.round(est.monto*100)/100;
+  e.costo_conv=String(monto); e.moneda_conv=est.moneda; e.moneda=est.moneda;
+  try{
+    await postGAS({action:'updateGasto', rowIndex:e.rowIndex, costo_conv:monto, moneda_conv:est.moneda});
+    invalidateSesionCache(e.sesion||activeSesion);
+  }catch(err){}
+}
 // v46: visor de solo lectura con TODAS las variables
 function openExpView(rowIndex){
   const src = personalMode ? misGastosAll : allExp;
@@ -3045,8 +3075,18 @@ function openExpView(rowIndex){
   // conversión capturada (costo_conv/otra_moneda), se muestra aparte, para
   // poder comparar contra un movimiento de banco en cualquiera de las dos.
   const monedaPago=e.moneda_pago||appSettings.moneda_local;
-  const costoConv=parseFloat(e.costo_conv)||0;
-  const monedaConv=e.moneda_conv||e.moneda||'';
+  let costoConv=parseFloat(e.costo_conv)||0;
+  let monedaConv=e.moneda_conv||e.moneda||'';
+  let convEsEstimado=false;
+  // v46: si no hay conversión CAPTURADA, se estima con el tipo de cambio
+  // del día (⚙️ Ajustes → "Tipo de cambio de hoy") y, si sale bien, se deja
+  // guardada en el gasto (antes solo se mostraba al vuelo y se perdía al
+  // cerrar el visor) — así ya no hay que volver a estimarla cada vez ni se
+  // pierde si luego se usa para conciliar.
+  if(!costoConv){
+    const est=pEstimarConversion(e);
+    if(est){ costoConv=est.monto; monedaConv=est.moneda; convEsEstimado=true; pGuardarConversionEstimada(e, est); }
+  }
   const fotoUrl=e.foto_ticket_url||e.foto_ticket||'';
   const rows=[
     ['Fecha', e.fecha?fmtDate(e.fecha):'—'],
@@ -3054,7 +3094,7 @@ function openExpView(rowIndex){
     ['Sesión', esc(e.sesion||activeSesion||'—')],
     ['Tipo', esc(e.compartido||'—')],
     ['Monto total', pMoneyExact(full,monedaPago)+' '+esc(monedaPago)],
-    (costoConv?['Conversión', pMoneyExact(costoConv,monedaConv)+' '+esc(monedaConv)]:null),
+    (costoConv?['Conversión'+(convEsEstimado?' (estimado)':''), pMoneyExact(costoConv,monedaConv)+' '+esc(monedaConv)]:null),
     (e.miParte!==undefined?['Mi parte', curSym()+Math.round(parseFloat(e.miParte)||0).toLocaleString()]:null),
     ['Pagó', esc(e.quien_paga||'—')],
     (parts.length?['Participantes', esc(parts.join(', '))]:null),
