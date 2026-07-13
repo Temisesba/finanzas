@@ -1710,7 +1710,7 @@ details:not([open]) .chev{transform:rotate(-90deg)}
 // v29: nombre clave de esta entrega — cámbialo cada vez que termines un lote
 // de cambios, así en 👥 → 🛠 Panel dev se puede confirmar que el navegador
 // está cargando la versión más reciente y no una copia en caché.
-const BUILD_VERSION='Dalia';
+const BUILD_VERSION='Encina';
 let GAS_URL=localStorage.getItem('gastos_gas_url')||'';
 function v29TieneGasUrl(){ return !!GAS_URL; }
 function v29GuardarGasUrl(url){
@@ -7741,8 +7741,14 @@ function pCicloTarjeta(c,mk){
   }
   if(edoPrev && edoPrev.fechaCorte){ ini=new Date(edoPrev.fechaCorte+'T12:00:00'); ini.setDate(ini.getDate()+1); }
   else {
-    const corte=Math.max(1,Math.min(31,parseInt(c.diaCorte)||new Date(y,m+1,0).getDate()));
-    ini=new Date(y,m-1,Math.min(corte+1,new Date(y,m,0).getDate()));
+    // v46: si no hay estado del mes anterior capturado, el respaldo se
+    // ancla a FIN (la fecha de corte real), no al mes-etiqueta `mk` — si
+    // etiquetas el estado por el mes en que PAGAS (ej. "mes":"2026-07" con
+    // corte real "2026-06-27", como con tarjetas de corte a fin de mes y
+    // pago semanas después), `mk` y el mes de la fecha de corte pueden ser
+    // distintos, y calcular ini desde `mk` chocaba con fin (ciclo de 1 día,
+    // pool de candidatos vacío — "no identifica nada").
+    ini=new Date(fin); ini.setMonth(ini.getMonth()-1); ini.setDate(ini.getDate()+1);
   }
   return {ini:ini.toISOString().substring(0,10), fin:fin.toISOString().substring(0,10), label:fmtDate(ini.toISOString())+' al '+fmtDate(fin.toISOString())};
 }
