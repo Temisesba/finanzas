@@ -7756,10 +7756,22 @@ function pGastosDeTarjetaCiclo(c,mk){
 // Auto-identificar debería poder rescatar). Si se vincula uno, se etiqueta
 // solo con esta tarjeta al confirmar (ver pVincularConfirmar). No se usa
 // para sumar totales — ahí solo cuentan los ya confirmados/tageados.
+// v46: compras en moneda extranjera (ej. viaje) a veces se COBRAN/registran
+// en el banco varios días después de la fecha real de compra, y ese lag
+// puede cruzar el corte del ciclo (compra el 7, corte el 8, cobro el 10 —
+// quedaba FUERA del pool aunque el match por fecha/monto sí habría
+// funcionado). Se amplía el rango del pool ±10 días alrededor del ciclo;
+// pMatchMovimiento sigue exigiendo su propia tolerancia de fecha/monto, esto
+// solo evita descartar el candidato ANTES de siquiera compararlo.
 function pGastosCandidatosParaMatch(c,mk){
   const cy=pCicloTarjeta(c,mk);
-  const tagged=pGastosDeTarjetaCiclo(c,mk);
-  const sinPago=(allExp||[]).filter(e=>!e.pago && e.compartido!=='Cotizacion' && String(e.fecha||'').substring(0,10)>=cy.ini && String(e.fecha||'').substring(0,10)<=cy.fin);
+  const BUFFER_DIAS=10;
+  const d1=new Date(cy.ini+'T12:00:00'); d1.setDate(d1.getDate()-BUFFER_DIAS);
+  const d2=new Date(cy.fin+'T12:00:00'); d2.setDate(d2.getDate()+BUFFER_DIAS);
+  const rangoIni=isoDate(d1), rangoFin=isoDate(d2);
+  const enRango=e=>{ const f=String(e.fecha||'').substring(0,10); return f>=rangoIni && f<=rangoFin; };
+  const tagged=pGastosDeTarjeta(c).filter(enRango);
+  const sinPago=(allExp||[]).filter(e=>!e.pago && e.compartido!=='Cotizacion' && enRango(e));
   const vistos=new Set(tagged.map(g=>String(g.rowIndex)));
   return tagged.concat(sinPago.filter(g=>!vistos.has(String(g.rowIndex))));
 }
