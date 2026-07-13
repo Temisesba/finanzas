@@ -582,7 +582,7 @@ summary{list-style:none}summary::-webkit-details-marker{display:none}
 details:not([open]) .chev{transform:rotate(-90deg)}
 .modal{background:var(--surface);border:1px solid var(--border2);border-radius:16px;width:100%;max-width:540px;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.15);animation:sUp .18s ease}
 @keyframes sUp{from{transform:translateY(14px);opacity:0}to{transform:none;opacity:1}}
-.mhdr{padding:18px 20px 0;display:flex;align-items:center;justify-content:space-between}
+.mhdr{padding:18px 20px 0;display:flex;align-items:center;justify-content:space-between;cursor:move;user-select:none}
 .mtitle{font-family:var(--mono);font-size:15px;font-weight:500}
 .mclose{background:none;border:none;cursor:pointer;color:var(--ink-3);font-size:18px;padding:4px}
 .mclose:hover{color:var(--ink)}
@@ -1710,7 +1710,7 @@ details:not([open]) .chev{transform:rotate(-90deg)}
 // v29: nombre clave de esta entrega — cámbialo cada vez que termines un lote
 // de cambios, así en 👥 → 🛠 Panel dev se puede confirmar que el navegador
 // está cargando la versión más reciente y no una copia en caché.
-const BUILD_VERSION='Iris';
+const BUILD_VERSION='Jazmin';
 let GAS_URL=localStorage.getItem('gastos_gas_url')||'';
 function v29TieneGasUrl(){ return !!GAS_URL; }
 function v29GuardarGasUrl(url){
@@ -2452,17 +2452,25 @@ async function loadExp(){
 function invalidateSesionCache(sesion){
   Object.keys(sesionCache).forEach(k=>{ if(!sesion || k.startsWith(sesion+'|')) delete sesionCache[k]; });
 }
+// v46: normalización de campos de un gasto crudo (tal como llega del
+// backend) — factorizada porque loadExp (allExp) la aplicaba pero
+// pReloadMisGastos (misGastosAll, modo 👤 Personal) NO, así que "Tienda"/
+// "Conversión" en el visor (👁) salían vacíos para cualquier gasto visto
+// en modo Personal, aunque el dato sí existiera en el Sheet.
+function pNormalizarGasto(e){
+  return {
+    ...e,
+    tienda: e.tienda || e.producto || '',
+    producto: e.producto || e.tienda || '',
+    ubicacion: e.ubicacion || e.Ubicacion || '',
+    moneda_pago:e.moneda_pago||appSettings.moneda_local,
+    costo_conv: e.costo_conv || e.otra_moneda || '',
+    moneda_conv:e.moneda_conv||e.moneda||''
+  };
+}
 function applyRowsFromGAS(d){
     if(d.miembros && d.miembros.length){ PEOPLE=d.miembros; applyPeopleUI(); }
-const _rows=(d.gastos||[]).map(e=>({
-  ...e,
-  tienda: e.tienda || e.producto || '',
-  producto: e.producto || e.tienda || '',
-  ubicacion: e.ubicacion || e.Ubicacion || '',
-  moneda_pago:e.moneda_pago||appSettings.moneda_local,
-  costo_conv: e.costo_conv || e.otra_moneda || '',
-  moneda_conv:e.moneda_conv||e.moneda||''
-}));
+const _rows=(d.gastos||[]).map(pNormalizarGasto);
     allProds = _rows.filter(e=>e.tipoFila==='producto');
     allExp   = _rows.filter(e=>e.tipoFila!=='producto');
     v31CaducidadBanner(); // v13: aviso de caducidades al cargar
@@ -3039,31 +3047,28 @@ function openExpView(rowIndex){
   document.getElementById('expViewOverlay').style.display='flex';
 }
 function closeExpView(){ document.getElementById('expViewOverlay').style.display='none'; }
-// v46: arrastrar el visor de detalle (👁) libremente — se abre acoplado a
-// la derecha, pero se puede mover a cualquier parte para compararlo contra
-// lo que quedó abierto detrás (ej. Conciliación) sin que uno tape al otro.
-let pExpViewDrag=null;
-function pExpViewDragStart(ev){
-  if(ev.target.closest('button')) return;
-  const panel=document.querySelector('#expViewOverlay .modal'); if(!panel) return;
+// v46: TODOS los paneles (.modal dentro de un .overlay) se pueden arrastrar
+// desde su encabezado (.mhdr) — un solo mecanismo delegado en vez de cablear
+// el arrastre panel por panel. Útil sobre todo para paneles que NO
+// oscurecen el fondo (ej. el visor 👁, ver #expViewOverlay) y para mover
+// Conciliación/Editar fuera del centro cuando hay varios paneles abiertos
+// a la vez y se quieren acomodar lado a lado.
+let pPanelDrag=null;
+document.addEventListener('mousedown', function(ev){
+  const hdr=ev.target.closest('.mhdr'); if(!hdr) return;
+  if(ev.target.closest('button,input,select,textarea,a')) return;
+  const panel=hdr.closest('.modal'); if(!panel) return;
   const r=panel.getBoundingClientRect();
-  pExpViewDrag={sx:ev.clientX, sy:ev.clientY, ox:r.left, oy:r.top};
+  pPanelDrag={panel, sx:ev.clientX, sy:ev.clientY, ox:r.left, oy:r.top};
   panel.style.position='fixed'; panel.style.left=r.left+'px'; panel.style.top=r.top+'px'; panel.style.right='auto'; panel.style.bottom='auto'; panel.style.margin='0';
-  document.addEventListener('mousemove', pExpViewDragMove);
-  document.addEventListener('mouseup', pExpViewDragEnd);
   ev.preventDefault();
-}
-function pExpViewDragMove(ev){
-  if(!pExpViewDrag) return;
-  const panel=document.querySelector('#expViewOverlay .modal'); if(!panel) return;
-  panel.style.left=(pExpViewDrag.ox+(ev.clientX-pExpViewDrag.sx))+'px';
-  panel.style.top=(pExpViewDrag.oy+(ev.clientY-pExpViewDrag.sy))+'px';
-}
-function pExpViewDragEnd(){
-  pExpViewDrag=null;
-  document.removeEventListener('mousemove', pExpViewDragMove);
-  document.removeEventListener('mouseup', pExpViewDragEnd);
-}
+});
+document.addEventListener('mousemove', function(ev){
+  if(!pPanelDrag) return;
+  pPanelDrag.panel.style.left=(pPanelDrag.ox+(ev.clientX-pPanelDrag.sx))+'px';
+  pPanelDrag.panel.style.top=(pPanelDrag.oy+(ev.clientY-pPanelDrag.sy))+'px';
+});
+document.addEventListener('mouseup', function(){ pPanelDrag=null; });
 function v30ToggleSub(gid){ expandedRows[gid]=!expandedRows[gid]; renderAll(); }
 // v25: desde el form de producto, ir al gasto padre y desplegarlo
 function v37VerCompra(gastoId){
@@ -8195,7 +8200,7 @@ async function pReloadMisGastos(){
   if(!pPass) pPass=localStorage.getItem('gastos_ppass_'+pOwner) || '';
   try{
     const r=await postGAS({action:'getMisGastos', owner:pOwner, pass:pPass});
-    misGastosAll=(r&&r.ok&&Array.isArray(r.gastos))?r.gastos:[];
+    misGastosAll=(r&&r.ok&&Array.isArray(r.gastos))?r.gastos.map(pNormalizarGasto):[];
     misDeudasPorSesion=(r&&r.ok&&r.debtsBySession)?r.debtsBySession:{};
   }catch(e){ misGastosAll=[]; misDeudasPorSesion={}; }
 }
@@ -8435,7 +8440,7 @@ function pRenderMiLista(){
      este visor primero. -->
 <div class="overlay" id="expViewOverlay" style="display:none;z-index:295;align-items:flex-start;justify-content:flex-end;background:transparent;backdrop-filter:none;pointer-events:none;padding:16px">
   <div class="modal" style="max-width:400px;width:100%;max-height:80vh;margin:0;box-shadow:0 10px 40px rgba(0,0,0,.3);pointer-events:auto">
-    <div class="mhdr" style="display:flex;align-items:center;justify-content:space-between;padding:15px 18px;border-bottom:1px solid var(--border);cursor:move;user-select:none" onmousedown="pExpViewDragStart(event)" title="Arrastra para mover">
+    <div class="mhdr" style="display:flex;align-items:center;justify-content:space-between;padding:15px 18px;border-bottom:1px solid var(--border)" title="Arrastra para mover">
       <h2 style="margin:0;font-size:16px">👁 Detalle del gasto <span style="font-size:11px;font-weight:400;color:var(--ink-3)">⠿ arrastrable</span></h2>
       <button class="mclose" onclick="closeExpView()">✕</button>
     </div>
