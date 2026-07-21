@@ -1699,12 +1699,13 @@ details:not([open]) .chev{transform:rotate(-90deg)}
   </div>
   <div class="set-field">
     <label>Tipo de cambio de hoy</label>
+    <div class="set-hint" style="margin-bottom:6px">La app ya trae el tipo de cambio real solita (frankfurter.app, Banco Central Europeo) al escribir un monto — no hace falta que lo pongas aquí. Esto de abajo es solo un respaldo por si no hay internet o tu moneda no está en su catálogo.</div>
     <div style="display:flex;gap:8px;align-items:center">
       <span style="font-size:12px;color:var(--ink-3);white-space:nowrap">1 <span id="setFxParConv">MXN</span> =</span>
       <input type="number" id="setFxTasa" step="0.01" placeholder="Ej. 8.50" style="flex:1;min-width:0">
       <span style="font-size:12px;color:var(--ink-3);white-space:nowrap" id="setFxParLocal">JPY</span>
     </div>
-    <div style="margin-top:6px"><button type="button" class="rt-btn" style="font-size:11px" onclick="pFxGuardarHoy()">💾 Guardar tipo de cambio de hoy</button></div>
+    <div style="margin-top:6px"><button type="button" class="rt-btn" style="font-size:11px" onclick="pFxGuardarHoy()">💾 Guardar como respaldo</button></div>
     <div class="set-hint" id="setFxUltimo"></div>
   </div>
   <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:18px">
@@ -6639,6 +6640,35 @@ function pFxTasaDe(fecha){
   for(const x of fx){ if(x.fecha<=fecha) elegida=x; else break; }
   return elegida?parseFloat(elegida.tasa)||null:(parseFloat(fx[0].tasa)||null);
 }
+// v29: tipo de cambio REAL del día — frankfurter.app (datos del Banco
+// Central Europeo), gratis y sin contraseñas. Se usa de primera opción en
+// vez de pedirte que lo escribas a mano; solo si no hay red o la moneda no
+// está en su catálogo (ej. ARS, COP) cae de regreso a lo guardado a mano
+// en Ajustes. Caché en memoria por fecha+par para no golpear la API en
+// cada tecla que escribas.
+const _fxRealCache={};
+async function pFxRealDe(fecha, monedaLocal, monedaConv){
+  if(!monedaLocal || !monedaConv || monedaLocal===monedaConv) return 1;
+  const key=fecha+'|'+monedaConv+'|'+monedaLocal;
+  if(key in _fxRealCache) return _fxRealCache[key];
+  try{
+    const hoy=new Date().toISOString().substring(0,10);
+    const fechaUrl=(fecha && fecha<hoy) ? fecha : 'latest';
+    const url='https://api.frankfurter.dev/v1/'+fechaUrl+'?from='+encodeURIComponent(monedaConv)+'&to='+encodeURIComponent(monedaLocal);
+    const r=await fetch(url);
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const d=await r.json();
+    const tasa=d && d.rates ? parseFloat(d.rates[monedaLocal]) : null;
+    _fxRealCache[key]=(tasa && !isNaN(tasa)) ? tasa : null;
+  }catch(e){ _fxRealCache[key]=null; }
+  return _fxRealCache[key];
+}
+// v29: el tipo de cambio a usar para tus 2 monedas configuradas — real
+// primero, tuyo (a mano) como respaldo.
+async function pTasaCambioDelDia(fecha){
+  const real=await pFxRealDe(fecha, appSettings.moneda_local, appSettings.moneda_conv);
+  return real || pFxTasaDe(fecha);
+}
 // v29: el monto de un gasto EN LA MONEDA de una tarjeta específica — para
 // tarjetas que cobran en otra moneda que tu moneda local (ej. viviendo en
 // Japón con una tarjeta mexicana). Usa primero el campo que ya venga en
@@ -6676,7 +6706,7 @@ function pGastoEnMonedaOrNull(g, moneda){
 // tu moneda local, calcula la conversión; si pagaste algo en línea en la
 // otra moneda (ej. MXN) y lo capturas directo en Conversión, calcula el
 // Monto en tu moneda local. No pisa nada si el campo destino ya tiene algo.
-function pAutoConvertir(origen){
+async function pAutoConvertir(origen){
   const costoEl=document.getElementById('iCosto'), convEl=document.getElementById('iConv');
   const mpEl=document.getElementById('iMonedaPago'), mcEl=document.getElementById('iMonedaConv');
   const dateEl=document.getElementById('iDate');
@@ -6684,7 +6714,7 @@ function pAutoConvertir(origen){
   const pago=(mpEl&&mpEl.value)||appSettings.moneda_local;
   const conv=(mcEl&&mcEl.value)||appSettings.moneda_conv;
   const fecha=(dateEl&&dateEl.value)||new Date().toISOString().substring(0,10);
-  const tasa=pFxTasaDe(fecha); if(!tasa) return;
+  const tasa=await pTasaCambioDelDia(fecha); if(!tasa) return;
   if(origen==='costo'){
     if(convEl.value.trim()) return;
     const costo=parseFloat(costoEl.value); if(!costo) return;
@@ -6702,9 +6732,10 @@ function pAutoConvertir(origen){
   }
 }
 function pOtraMoneda(m){ return m===appSettings.moneda_local?appSettings.moneda_conv:appSettings.moneda_local; }
-function pConvertirMonto(monto, monedaOrigen, fecha){
-  const tasa=pFxTasaDe(fecha||new Date().toISOString().substring(0,10));
-  if(!tasa || !monto) return null;
+async function pConvertirMonto(monto, monedaOrigen, fecha){
+  if(!monto) return null;
+  const tasa=await pTasaCambioDelDia(fecha||new Date().toISOString().substring(0,10));
+  if(!tasa) return null;
   if(monedaOrigen===appSettings.moneda_local) return Math.round(monto/tasa*100)/100;
   if(monedaOrigen===appSettings.moneda_conv) return Math.round(monto*tasa*100)/100;
   return null;
@@ -6738,11 +6769,11 @@ function pPedirMontoMoneda(titulo, sugerido, monedaSugerida){
     let monedaSel=monedaDef;
     const montoEl=ov.querySelector('#pmmMonto');
     const convEl=ov.querySelector('#pmmConv');
-    const actualizarConv=()=>{
+    const actualizarConv=async ()=>{
       const m=parseFloat(montoEl.value)||0;
       const otraM=pOtraMoneda(monedaSel);
-      const conv=pConvertirMonto(m, monedaSel, new Date().toISOString().substring(0,10));
-      convEl.textContent = conv!==null ? ('≈ '+curSym(otraM)+conv.toLocaleString()+' '+otraM+' (tipo de cambio del día)') : (m?('Sin tipo de cambio del día capturado — se guardará solo en '+monedaSel):'');
+      const conv=await pConvertirMonto(m, monedaSel, new Date().toISOString().substring(0,10));
+      convEl.textContent = conv!==null ? ('≈ '+curSym(otraM)+conv.toLocaleString()+' '+otraM+' (tipo de cambio del día)') : (m?('Sin tipo de cambio del día disponible — se guardará solo en '+monedaSel):'');
     };
     ov.querySelectorAll('#pmmMonedaGroup .tbtn').forEach(b=>{
       b.addEventListener('click', ()=>{
@@ -6754,11 +6785,11 @@ function pPedirMontoMoneda(titulo, sugerido, monedaSugerida){
     montoEl.addEventListener('input', actualizarConv);
     const cerrar=(val)=>{ ov.remove(); resolve(val); };
     ov.querySelector('#pmmCancel').addEventListener('click', ()=>cerrar(null));
-    ov.querySelector('#pmmOk').addEventListener('click', ()=>{
+    ov.querySelector('#pmmOk').addEventListener('click', async ()=>{
       const m=parseFloat(montoEl.value)||0;
       if(!m){ montoEl.focus(); return; }
       const otraM=pOtraMoneda(monedaSel);
-      const conv=pConvertirMonto(m, monedaSel, new Date().toISOString().substring(0,10));
+      const conv=await pConvertirMonto(m, monedaSel, new Date().toISOString().substring(0,10));
       cerrar({monto:m, moneda:monedaSel, montoConv:conv, monedaConv:otraM});
     });
     montoEl.focus();
