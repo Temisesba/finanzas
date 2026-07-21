@@ -3527,7 +3527,7 @@ let daysHtml = sortedDays.map(d => {
     // Agregados por persona: compartido pagado, prestó, devolvió, y TOTAL pagado (desembolso real)
     const pAgg2={}; PEOPLE.forEach(n=>pAgg2[n]={C:0,L:0,D:0,paid:0});
     data.forEach(e=>{ const a=parseFloat(e.costo)||0; const q=e.quien_paga;
-      if(e.compartido==='VariosPagan'){
+      if(e.compartido==='VariosPagan' || (e.compartido==='Compartido' && Array.isArray(e.pagadores) && e.pagadores.length)){
         (Array.isArray(e.pagadores)?e.pagadores:[]).forEach(p=>{ if(pAgg2[p.persona]){ const m=parseFloat(p.monto)||0; pAgg2[p.persona].C+=m; pAgg2[p.persona].paid+=m; } });
         return;
       }
