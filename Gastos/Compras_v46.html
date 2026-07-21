@@ -3848,24 +3848,31 @@ function pRenderGraficoPresupuesto(){
     return '<line x1="'+padL+'" y1="'+y+'" x2="'+(W-padR)+'" y2="'+y+'" stroke="var(--border2)" stroke-width="1"/><text x="'+(padL-6)+'" y="'+(parseFloat(y)+3)+'" font-size="9" fill="var(--ink-3)" text-anchor="end">'+curSym()+(val>=1000?Math.round(val/1000)+'k':val)+'</text>';
   }).join('');
   const xTicks=[1,5,10,15,20,25,diasMes].filter((v,i,arr)=>arr.indexOf(v)===i && v<=diasMes).map(dia=>'<text x="'+xFor(dia).toFixed(1)+'" y="'+(H-8)+'" font-size="9" fill="var(--ink-3)" text-anchor="middle">'+dia+'</text>').join('');
-  // v29: cada mes anterior lleva su nombre pegado al final de su línea —
-  // así se sabe a cuál mes corresponde cada una, sin tener que adivinar.
-  const anterioresSvg=anteriores.map(s=>{
-    const [,mNum]=s.mk.split('-');
-    const finalV=s.serie[s.serie.length-1]||0;
-    const lbl=MESES_CORTOS_GRAF[parseInt(mNum,10)-1]||'?';
-    return '<path d="'+pathFor(s.serie)+'" fill="none" stroke="var(--ink-3)" stroke-width="1.5" stroke-opacity="0.4"/>'
-      +'<text x="'+(xFor(s.dias)+3).toFixed(1)+'" y="'+(yFor(finalV)+3).toFixed(1)+'" font-size="9" fill="var(--ink-3)">'+esc(lbl)+'</text>';
-  }).join('');
+  const anterioresSvg=anteriores.map(s=>'<path d="'+pathFor(s.serie)+'" fill="none" stroke="var(--ink-3)" stroke-width="1.5" stroke-opacity="0.4"/>').join('');
   const actualSvg='<path d="'+pathFor(actual.serie.slice(0,diaHoy))+'" fill="none" stroke="var(--loan)" stroke-width="2.5"/>';
   const proyeccionSvg=proyeccion.length>1?('<path d="'+pathFor(proyeccion,diaHoy)+'" fill="none" stroke="var(--loan)" stroke-width="2" stroke-dasharray="4,3" stroke-opacity="0.7"/>'):'';
-  const actualLabel='<text x="'+(xFor(diasMes)+3).toFixed(1)+'" y="'+(yFor(proyeccion.length?proyeccion[proyeccion.length-1]:gastoHoyAcum)+3).toFixed(1)+'" font-size="9" font-weight="700" fill="var(--loan)">Hoy</text>';
   const limitesSvg=limites.map(l=>'<line x1="'+padL+'" y1="'+yFor(l.val).toFixed(1)+'" x2="'+(W-padR)+'" y2="'+yFor(l.val).toFixed(1)+'" stroke="'+l.color+'" stroke-width="1.5" stroke-dasharray="5,3"/>').join('');
   const puntoHoy='<circle cx="'+xFor(diaHoy).toFixed(1)+'" cy="'+yFor(gastoHoyAcum).toFixed(1)+'" r="3.5" fill="var(--loan)"><title>Hoy (día '+diaHoy+'): '+pMoney(gastoHoyAcum)+'</title></circle>';
+  // v29: cada mes lleva su nombre al final de su línea (el actual dice
+  // "Actual", no "Hoy" — esa palabra es solo para el punto de hoy). Cuando
+  // varios meses terminan en montos parecidos sus etiquetas se
+  // amontonaban una encima de otra — se ordenan por altura y se separan
+  // un mínimo entre sí antes de dibujarlas.
+  const labels=anteriores.map(s=>{
+    const [,mNum]=s.mk.split('-');
+    const finalV=s.serie[s.serie.length-1]||0;
+    return { x:xFor(s.dias)+3, y:yFor(finalV), text:MESES_CORTOS_GRAF[parseInt(mNum,10)-1]||'?', color:'var(--ink-3)', bold:false };
+  });
+  labels.push({ x:xFor(diasMes)+3, y:yFor(proyeccion.length?proyeccion[proyeccion.length-1]:gastoHoyAcum), text:'Actual', color:'var(--loan)', bold:true });
+  labels.sort((a,b)=>a.y-b.y);
+  const minGap=11;
+  for(let i=1;i<labels.length;i++){ if(labels[i].y-labels[i-1].y<minGap) labels[i].y=labels[i-1].y+minGap; }
+  labels.forEach(l=>{ l.y=Math.min(Math.max(l.y, padT+8), H-padB-2); });
+  const labelsSvg=labels.map(l=>'<text x="'+l.x.toFixed(1)+'" y="'+l.y.toFixed(1)+'" font-size="9"'+(l.bold?' font-weight="700"':'')+' fill="'+l.color+'">'+esc(l.text)+'</text>').join('');
   return '<div class="budget-card" style="grid-column:1/-1">'
     +'<h3>📊 Comparativo entre meses</h3>'
     +'<div style="font-size:11px;color:var(--ink-3);margin-bottom:8px">Gasto acumulado del mes, día por día. En gris los meses anteriores (con su nombre al final de cada línea), en dorado el mes actual (punteado = a dónde vas si sigues a este ritmo).</div>'
-    +'<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:auto;display:block">'+gridLines+anterioresSvg+limitesSvg+actualSvg+proyeccionSvg+puntoHoy+actualLabel+xTicks+'</svg>'
+    +'<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:auto;display:block">'+gridLines+anterioresSvg+limitesSvg+actualSvg+proyeccionSvg+puntoHoy+labelsSvg+xTicks+'</svg>'
     +'<div style="display:flex;gap:14px;flex-wrap:wrap;font-size:10.5px;color:var(--ink-3);margin-top:6px">'
       +'<span><span style="display:inline-block;width:14px;height:2px;background:var(--ink-3);opacity:.4;vertical-align:middle;margin-right:4px"></span>Meses anteriores</span>'
       +'<span><span style="display:inline-block;width:14px;height:2px;background:var(--loan);vertical-align:middle;margin-right:4px"></span>Mes actual</span>'
@@ -6409,7 +6416,7 @@ let pPass  = '';          // contraseña personal (memoria + localStorage)
 let pOwner = '';          // = myName()
 let vPass  = '';          // v29: contraseña de datos sensibles (memoria + sessionStorage — se olvida al cerrar la pestaña)
 let pSection = 'resumen';  // resumen | deudas | fijos | tarjetas | movs
-let pFijoFiltro = 'todos'; // todos | pendientes | pagados | vencidos | tarjetas | servicios | suscripciones | cancelados
+let pFijoFiltro = 'historial'; // historial | todos | pendientes | pagados | vencidos | tarjetas | servicios | suscripciones | cancelados
 
 function pOpen(){
   // Botón 👤 de la cabecera → abre la pestaña Salud
@@ -7189,14 +7196,18 @@ function pFijoPasaFiltro(f, mk){
 }
 function pRenderFijos(){
   const mk=pMesKey();
-  // v29: "📅 Historial por mes" ahora es una pestañita más (antes vivía
-  // como un plegable hasta el fondo, casi nadie lo encontraba) — al
-  // elegirla se ve ESO en vez de la lista normal; el botón "＋ Nuevo pago
-  // fijo" y las demás pestañas se quedan arriba para volver fácil.
-  const filtros=[['todos','Todos'],['pendientes','Pendientes'],['pagados','Pagados'],['vencidos','Vencidos'],['tarjetas','Tarjetas'],['servicios','Servicios'],['suscripciones','Suscripciones'],['cancelados','🚫 Cancelados'],['historial','📅 Historial por mes']];
+  // v29: "📅 Historial por mes" va al lado de "＋ Nuevo pago fijo", mismo
+  // tamaño — es la vista que se ve primero al entrar a Pagos fijos; el
+  // resto de los filtros (Ver todos, Pendientes, etc.) quedan abajo, más
+  // chicos, para cuando quieras la lista separada.
+  const topButtons=`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+    <button class="rt-btn" style="font-weight:600" onclick="pOpenForm('fijo','')">＋ Nuevo pago fijo</button>
+    <button class="rt-btn" style="font-weight:600;${pFijoFiltro==='historial'?'border-color:var(--personal);color:var(--personal)':''}" onclick="pSetFijoFiltro('historial')">📅 Historial por mes</button>
+  </div>`;
+  const filtros=[['todos','Ver todos'],['pendientes','Pendientes'],['pagados','Pagados'],['vencidos','Vencidos'],['tarjetas','Tarjetas'],['servicios','Servicios'],['suscripciones','Suscripciones'],['cancelados','🚫 Cancelados']];
   const chips=`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">${filtros.map(([k,l])=>`<button class="rt-btn" style="font-size:11px;${pFijoFiltro===k?'font-weight:700;border-color:var(--personal);color:var(--personal)':''}" onclick="pSetFijoFiltro('${k}')">${esc(l)}</button>`).join('')}</div>`;
   if(pFijoFiltro==='historial'){
-    return `<button class="rt-btn" style="font-weight:600;margin-bottom:12px" onclick="pOpenForm('fijo','')">＋ Nuevo pago fijo</button>${chips}${pRenderHistorialMensual()}`;
+    return `${topButtons}${chips}${pRenderHistorialMensual()}`;
   }
   // v29: ordenados por fecha de límite de pago (más próximo primero) — antes
   // salían en el orden en que se habían capturado, sin relación con cuándo
@@ -7260,14 +7271,14 @@ function pRenderFijos(){
         <div style="flex:1;min-width:0">
           <div style="font-weight:600;font-size:13px">${esc(f.concepto||'—')} ${alarma}</div>
           <div style="font-size:11px;color:var(--ink-3)">día límite ${f.diaLimite||'?'}${f.fechaPago?(' · pago '+fmtDate(f.fechaPago)):''}${fpClasif?(' · '+fpClasif):''}${f.nota?(' · '+esc(f.nota)):''}</div>
-          ${historialResto}
         </div>
         <div style="font-family:var(--mono);font-weight:700">${pMoney(f.monto)}</div>
       </div>
       <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">${botones}</div>
+      ${historialResto}
     </div>`;
   }).join('') || '<div style="color:var(--ink-3);font-size:13px;padding:20px;text-align:center">Sin pagos fijos con este filtro.</div>';
-  return `<button class="rt-btn" style="font-weight:600;margin-bottom:12px" onclick="pOpenForm('fijo','')">＋ Nuevo pago fijo</button>${chips}${sumaHtml}${rows}`;
+  return `${topButtons}${chips}${sumaHtml}${rows}`;
 }
 //  Vista mensual: fijos + estados de tarjeta, pagado/pendiente/vencido por periodo.
 // v29: "Nombre (día límite): pendiente" o "✓ pagado $monto" — fijos y
