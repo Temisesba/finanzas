@@ -3791,14 +3791,28 @@ function pSeriesMensualesCumulativas(nMeses){
     return {mk, dias, serie};
   });
 }
-// v29: línea de fondo por cada mes anterior, el mes actual resaltado, su
-// proyección punteada (a este ritmo, a dónde llegas) y una línea roja con
-// el límite — el que configuraste (presupuesto manual) o, si no
-// configuraste uno, el que calcula sola la app (Capa 1) llevado a un total
-// del mes. Un solo eje (todo son montos), colores del propio tema de la
-// app (nada de paleta nueva), sin jerga en las etiquetas.
+// v29: cuántos meses de historial hay realmente (desde el gasto más
+// viejo registrado hasta hoy) — para que el gráfico muestre TODOS los
+// meses con datos, no un número fijo. Tope de 12 (un año) para que siga
+// siendo legible.
+function pMesesConDatos(cap){
+  const fuente=personalMode?(misGastosAll||[]):(allExp||[]);
+  let minFecha=null;
+  fuente.forEach(e=>{ if(e.compartido==='Cotizacion'||e.quien_paga==='Cotizacion') return; const d=String(e.fecha||'').substring(0,10); if(d && (!minFecha||d<minFecha)) minFecha=d; });
+  if(!minFecha) return 1;
+  const hoy=new Date(), min=new Date(minFecha+'T00:00:00');
+  const n=(hoy.getFullYear()-min.getFullYear())*12+(hoy.getMonth()-min.getMonth())+1;
+  return Math.max(1, Math.min(cap||12, n));
+}
+const MESES_CORTOS_GRAF=['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+// v29: línea de fondo por CADA mes anterior con datos (etiquetada al
+// final para saber cuál es cuál), el mes actual resaltado, su proyección
+// punteada (a este ritmo, a dónde llegas) y hasta DOS líneas de límite —
+// tu presupuesto manual (si lo configuraste) Y el que calcula sola la app
+// (Capa 1), las dos a la vez si ambas existen. Un solo eje (todo son
+// montos), colores del propio tema de la app, sin jerga en las etiquetas.
 function pRenderGraficoPresupuesto(){
-  const series=pSeriesMensualesCumulativas(4);
+  const series=pSeriesMensualesCumulativas(pMesesConDatos(12));
   const actual=series[series.length-1];
   const anteriores=series.slice(0,-1);
   if(!actual) return '';
@@ -3810,16 +3824,21 @@ function pRenderGraficoPresupuesto(){
   const gastoHoyAcum=actual.serie[diaHoy-1]||0;
   const ritmoDiario=diaHoy>0?gastoHoyAcum/diaHoy:0;
   const proyeccion=[]; for(let dia=diaHoy; dia<=diasMes; dia++) proyeccion.push(ritmoDiario*dia);
-  let limite=pPresupuestoMensual(), limiteLabel='Tu presupuesto';
-  if(!limite){
+  // v29: las dos líneas de límite — tu presupuesto manual (rojo) y el que
+  // calcula sola la app llevado a un total del mes (azul) — se muestran
+  // juntas si ambas existen, no una en lugar de la otra.
+  const limites=[];
+  const presupuestoManual=pPresupuestoMensual();
+  if(presupuestoManual) limites.push({val:presupuestoManual, label:'Tu presupuesto', color:'var(--temis)'});
+  {
     const byDay90=pHistoricoGastoDiario(90);
     const hoyStr=hoy.toISOString().substring(0,10);
     const historico=Object.entries(byDay90).filter(([d])=>d!==hoyStr).map(([,v])=>v);
     const ev=evaluarGasto(0, historico);
-    if(ev.umbral){ limite=ev.umbral*diasMes; limiteLabel='Límite estimado'; }
+    if(ev.umbral) limites.push({val:ev.umbral*diasMes, label:'Límite estimado', color:'var(--lot)'});
   }
-  const maxVal=Math.max(1, limite||0, ...anteriores.flatMap(s=>s.serie), ...actual.serie, ...proyeccion);
-  const W=640,H=220,padL=46,padR=14,padT=14,padB=24;
+  const maxVal=Math.max(1, ...limites.map(l=>l.val), ...anteriores.flatMap(s=>s.serie), ...actual.serie, ...proyeccion);
+  const W=640,H=240,padL=46,padR=38,padT=14,padB=24;
   const plotW=W-padL-padR, plotH=H-padT-padB;
   const denom=Math.max(diasMes,2)-1;
   const xFor=dia=>padL+(plotW*(dia-1)/denom);
@@ -3829,20 +3848,29 @@ function pRenderGraficoPresupuesto(){
     return '<line x1="'+padL+'" y1="'+y+'" x2="'+(W-padR)+'" y2="'+y+'" stroke="var(--border2)" stroke-width="1"/><text x="'+(padL-6)+'" y="'+(parseFloat(y)+3)+'" font-size="9" fill="var(--ink-3)" text-anchor="end">'+curSym()+(val>=1000?Math.round(val/1000)+'k':val)+'</text>';
   }).join('');
   const xTicks=[1,5,10,15,20,25,diasMes].filter((v,i,arr)=>arr.indexOf(v)===i && v<=diasMes).map(dia=>'<text x="'+xFor(dia).toFixed(1)+'" y="'+(H-8)+'" font-size="9" fill="var(--ink-3)" text-anchor="middle">'+dia+'</text>').join('');
-  const anterioresSvg=anteriores.map(s=>'<path d="'+pathFor(s.serie)+'" fill="none" stroke="var(--ink-3)" stroke-width="1.5" stroke-opacity="0.35"/>').join('');
+  // v29: cada mes anterior lleva su nombre pegado al final de su línea —
+  // así se sabe a cuál mes corresponde cada una, sin tener que adivinar.
+  const anterioresSvg=anteriores.map(s=>{
+    const [,mNum]=s.mk.split('-');
+    const finalV=s.serie[s.serie.length-1]||0;
+    const lbl=MESES_CORTOS_GRAF[parseInt(mNum,10)-1]||'?';
+    return '<path d="'+pathFor(s.serie)+'" fill="none" stroke="var(--ink-3)" stroke-width="1.5" stroke-opacity="0.4"/>'
+      +'<text x="'+(xFor(s.dias)+3).toFixed(1)+'" y="'+(yFor(finalV)+3).toFixed(1)+'" font-size="9" fill="var(--ink-3)">'+esc(lbl)+'</text>';
+  }).join('');
   const actualSvg='<path d="'+pathFor(actual.serie.slice(0,diaHoy))+'" fill="none" stroke="var(--loan)" stroke-width="2.5"/>';
   const proyeccionSvg=proyeccion.length>1?('<path d="'+pathFor(proyeccion,diaHoy)+'" fill="none" stroke="var(--loan)" stroke-width="2" stroke-dasharray="4,3" stroke-opacity="0.7"/>'):'';
-  const limiteSvg=limite?('<line x1="'+padL+'" y1="'+yFor(limite).toFixed(1)+'" x2="'+(W-padR)+'" y2="'+yFor(limite).toFixed(1)+'" stroke="var(--temis)" stroke-width="1.5" stroke-dasharray="5,3"/>'):'';
+  const actualLabel='<text x="'+(xFor(diasMes)+3).toFixed(1)+'" y="'+(yFor(proyeccion.length?proyeccion[proyeccion.length-1]:gastoHoyAcum)+3).toFixed(1)+'" font-size="9" font-weight="700" fill="var(--loan)">Hoy</text>';
+  const limitesSvg=limites.map(l=>'<line x1="'+padL+'" y1="'+yFor(l.val).toFixed(1)+'" x2="'+(W-padR)+'" y2="'+yFor(l.val).toFixed(1)+'" stroke="'+l.color+'" stroke-width="1.5" stroke-dasharray="5,3"/>').join('');
   const puntoHoy='<circle cx="'+xFor(diaHoy).toFixed(1)+'" cy="'+yFor(gastoHoyAcum).toFixed(1)+'" r="3.5" fill="var(--loan)"><title>Hoy (día '+diaHoy+'): '+pMoney(gastoHoyAcum)+'</title></circle>';
   return '<div class="budget-card" style="grid-column:1/-1">'
     +'<h3>📊 Comparativo entre meses</h3>'
-    +'<div style="font-size:11px;color:var(--ink-3);margin-bottom:8px">Gasto acumulado del mes, día por día. En gris los meses anteriores, en dorado el mes actual (punteado = a dónde vas si sigues a este ritmo)'+(limite?', línea roja = '+esc(limiteLabel.toLowerCase())+' ('+pMoney(limite)+')':'')+'.</div>'
-    +'<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:auto;display:block">'+gridLines+anterioresSvg+limiteSvg+actualSvg+proyeccionSvg+puntoHoy+xTicks+'</svg>'
+    +'<div style="font-size:11px;color:var(--ink-3);margin-bottom:8px">Gasto acumulado del mes, día por día. En gris los meses anteriores (con su nombre al final de cada línea), en dorado el mes actual (punteado = a dónde vas si sigues a este ritmo).</div>'
+    +'<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:auto;display:block">'+gridLines+anterioresSvg+limitesSvg+actualSvg+proyeccionSvg+puntoHoy+actualLabel+xTicks+'</svg>'
     +'<div style="display:flex;gap:14px;flex-wrap:wrap;font-size:10.5px;color:var(--ink-3);margin-top:6px">'
       +'<span><span style="display:inline-block;width:14px;height:2px;background:var(--ink-3);opacity:.4;vertical-align:middle;margin-right:4px"></span>Meses anteriores</span>'
       +'<span><span style="display:inline-block;width:14px;height:2px;background:var(--loan);vertical-align:middle;margin-right:4px"></span>Mes actual</span>'
       +'<span><span style="display:inline-block;width:14px;height:2px;background:var(--loan);opacity:.6;vertical-align:middle;margin-right:4px"></span>Proyección</span>'
-      +(limite?('<span><span style="display:inline-block;width:14px;height:2px;background:var(--temis);vertical-align:middle;margin-right:4px"></span>'+esc(limiteLabel)+'</span>'):'')
+      +limites.map(l=>'<span><span style="display:inline-block;width:14px;height:2px;background:'+l.color+';vertical-align:middle;margin-right:4px"></span>'+esc(l.label)+' ('+pMoney(l.val)+')</span>').join('')
     +'</div>'
   +'</div>';
 }
@@ -7161,8 +7189,15 @@ function pFijoPasaFiltro(f, mk){
 }
 function pRenderFijos(){
   const mk=pMesKey();
-  const filtros=[['todos','Todos'],['pendientes','Pendientes'],['pagados','Pagados'],['vencidos','Vencidos'],['tarjetas','Tarjetas'],['servicios','Servicios'],['suscripciones','Suscripciones'],['cancelados','🚫 Cancelados']];
+  // v29: "📅 Historial por mes" ahora es una pestañita más (antes vivía
+  // como un plegable hasta el fondo, casi nadie lo encontraba) — al
+  // elegirla se ve ESO en vez de la lista normal; el botón "＋ Nuevo pago
+  // fijo" y las demás pestañas se quedan arriba para volver fácil.
+  const filtros=[['todos','Todos'],['pendientes','Pendientes'],['pagados','Pagados'],['vencidos','Vencidos'],['tarjetas','Tarjetas'],['servicios','Servicios'],['suscripciones','Suscripciones'],['cancelados','🚫 Cancelados'],['historial','📅 Historial por mes']];
   const chips=`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">${filtros.map(([k,l])=>`<button class="rt-btn" style="font-size:11px;${pFijoFiltro===k?'font-weight:700;border-color:var(--personal);color:var(--personal)':''}" onclick="pSetFijoFiltro('${k}')">${esc(l)}</button>`).join('')}</div>`;
+  if(pFijoFiltro==='historial'){
+    return `<button class="rt-btn" style="font-weight:600;margin-bottom:12px" onclick="pOpenForm('fijo','')">＋ Nuevo pago fijo</button>${chips}${pRenderHistorialMensual()}`;
+  }
   // v29: ordenados por fecha de límite de pago (más próximo primero) — antes
   // salían en el orden en que se habían capturado, sin relación con cuándo
   // vencen.
@@ -7185,12 +7220,10 @@ function pRenderFijos(){
     const formaPagoTxt=card?('💳 '+esc(pCardLabel(card))):(f.formaPago==='Efectivo'?'💵 Efectivo':'');
     const clasifTxt=f.categoria?('🏷 '+esc(f.categoria)):'';
     const fpClasif=[formaPagoTxt,clasifTxt].filter(Boolean).join(' · ');
-    // v29: los chips verdes de historial son clicables — si ese pago tiene
-    // un gasto vinculado (gastoRowIndex), abre su detalle en vez de solo
-    // mostrar el mes. Solo se ven de entrada los 8 más recientes; si hay
-    // más (ej. llevas un año de pagos), un plegable "Ver historial
-    // completo" debajo muestra el resto — así no se pierden, solo se
-    // ocultan hasta que los pidas.
+    // v29: ya no se muestran los chips verdes de cada periodo directo en la
+    // fila (saturaba la vista) — un solo plegable "Ver pagos previos" con
+    // TODO el historial de este concepto. Si ese pago tiene un gasto
+    // vinculado, es clicable y abre su detalle.
     const pChip=k=>{
       const p=(f.pagos||{})[k];
       const label='✓ '+esc(k)+((p&&typeof p==='object'&&p.fecha)?(' · '+fmtDate(p.fecha)):'');
@@ -7200,8 +7233,7 @@ function pRenderFijos(){
         : '<span class="chip" style="font-size:10px;margin:2px;background:var(--shared-bg);color:var(--shared)" title="Este pago no tiene un gasto vinculado para ver">'+label+'</span>';
     };
     const periodos=Object.keys(f.pagos||{}).sort().reverse();
-    const historial=periodos.slice(0,8).map(pChip).join('');
-    const historialResto=periodos.length>8?('<details style="margin-top:4px"><summary style="cursor:pointer;font-size:10px;color:var(--ink-3)"><span class="chev">▾</span> Ver historial completo ('+periodos.length+')</summary><div style="margin-top:2px">'+periodos.slice(8).map(pChip).join('')+'</div></details>'):'';
+    const historialResto=periodos.length?('<details style="margin-top:4px"><summary style="cursor:pointer;font-size:10px;color:var(--ink-3)"><span class="chev">▾</span> Ver pagos previos ('+periodos.length+')</summary><div style="margin-top:2px">'+periodos.map(pChip).join('')+'</div></details>'):'';
     let alarma='';
     if(f.cancelado) alarma='<span style="color:var(--ink-3);font-weight:600">🚫 cancelado</span>';
     else if(!pagado && dias!==null){
@@ -7223,12 +7255,11 @@ function pRenderFijos(){
         +'<button class="rt-btn" onclick="pOpenForm(\'fijo\',\''+esc(f.id)+'\')">✏️</button>'
         +'<button class="rt-btn" onclick="pCancelarFijo(\''+esc(f.id)+'\')">🚫 Cancelar</button>'
         +'<button class="shop-del" onclick="pDelItem(\''+esc(f.id)+'\')">🗑</button>';
-    return `<div style="padding:11px;border:1px solid ${pagado?'var(--loan-bdr)':'var(--border)'};border-radius:10px;margin-bottom:8px;background:${f.cancelado?'var(--surface2)':(pagado?'var(--loan-bg)':'var(--surface)')};opacity:${f.cancelado?'.7':'1'}">
+    return `<div id="pfijo-${esc(f.id)}" style="padding:11px;border:1px solid ${pagado?'var(--loan-bdr)':'var(--border)'};border-radius:10px;margin-bottom:8px;background:${f.cancelado?'var(--surface2)':(pagado?'var(--loan-bg)':'var(--surface)')};opacity:${f.cancelado?'.7':'1'}">
       <div style="display:flex;align-items:center;gap:8px">
         <div style="flex:1;min-width:0">
           <div style="font-weight:600;font-size:13px">${esc(f.concepto||'—')} ${alarma}</div>
           <div style="font-size:11px;color:var(--ink-3)">día límite ${f.diaLimite||'?'}${f.fechaPago?(' · pago '+fmtDate(f.fechaPago)):''}${fpClasif?(' · '+fpClasif):''}${f.nota?(' · '+esc(f.nota)):''}</div>
-          ${historial?'<div style="margin-top:4px">'+historial+'</div>':''}
           ${historialResto}
         </div>
         <div style="font-family:var(--mono);font-weight:700">${pMoney(f.monto)}</div>
@@ -7236,10 +7267,7 @@ function pRenderFijos(){
       <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">${botones}</div>
     </div>`;
   }).join('') || '<div style="color:var(--ink-3);font-size:13px;padding:20px;text-align:center">Sin pagos fijos con este filtro.</div>';
-  return `<button class="rt-btn" style="font-weight:600;margin-bottom:12px" onclick="pOpenForm('fijo','')">＋ Nuevo pago fijo</button>${chips}${sumaHtml}${rows}
-    <details style="margin-top:14px"><summary style="cursor:pointer;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-3)"><span class="chev">▾</span> 📅 Historial completo por mes</summary>
-      <div style="margin-top:8px">${pRenderHistorialMensual()}</div>
-    </details>`;
+  return `<button class="rt-btn" style="font-weight:600;margin-bottom:12px" onclick="pOpenForm('fijo','')">＋ Nuevo pago fijo</button>${chips}${sumaHtml}${rows}`;
 }
 //  Vista mensual: fijos + estados de tarjeta, pagado/pendiente/vencido por periodo.
 // v29: "Nombre (día límite): pendiente" o "✓ pagado $monto" — fijos y
@@ -7247,14 +7275,30 @@ function pRenderFijos(){
 // separados en dos bloques). Una vez pagado, se muestra el monto que
 // REALMENTE se pagó (no importa si fue exacto, de más, o si ya se
 // concilió) — el desglose de diferencias vive aparte, en 🔎 Conciliar.
+// v29: te manda directo a ese pago fijo (pestaña "Todos" + scroll con
+// resalte), en vez de dejarte hasta abajo sin saber dónde quedó.
+function pIrAFijoDesdeHistorial(id){
+  pFijoFiltro='todos';
+  pRender();
+  setTimeout(()=>{
+    const el=document.getElementById('pfijo-'+id); if(!el) return;
+    el.scrollIntoView({behavior:'smooth', block:'center'});
+    const prevBg=el.style.background, prevTrans=el.style.transition;
+    el.style.transition='background-color .4s';
+    el.style.background='var(--loan-bg)';
+    setTimeout(()=>{ el.style.background=prevBg; el.style.transition=prevTrans; }, 1500);
+  }, 60);
+}
+function pIrAEstadoDesdeHistorial(estadoId){ pVerConciliacion(estadoId); }
 function pRenderHistorialMensual(){
   const months=new Set([pMesKey()]);
   pItemsOf('estado').forEach(e=>{ if(e.mes) months.add(e.mes); });
   pItemsOf('fijo').forEach(f=>Object.keys(f.pagos||{}).forEach(k=>months.add(k)));
   const list=[...months].sort().reverse().slice(0,12);
-  const fila=(label,dia,pagado,monto,moneda)=>({
+  const mesActual=pMesKey();
+  const fila=(label,dia,pagado,monto,moneda,onclick)=>({
     dia: isNaN(dia)?999:dia, pagado, monto,
-    html:'<div>'+label+': '+(pagado
+    html:'<div class="rt-btn" style="cursor:pointer;border:none;padding:3px 0;background:none;text-align:left;display:block" onclick="'+onclick+'">'+label+': '+(pagado
       ? '<span style="color:var(--shared);font-weight:600">✓ pagado '+pMoney2(monto,moneda)+'</span>'
       : '<span style="color:var(--ink-3)">pendiente</span>')+'</div>'
   });
@@ -7264,17 +7308,18 @@ function pRenderHistorialMensual(){
       const p=(f.pagos||{})[mk];
       const pagado=!!p;
       const monto=pagado?((p&&typeof p==='object')?(parseFloat(p.monto)||0):(parseFloat(f.monto)||0)):0;
-      filas.push(fila(esc(f.concepto||'Pago fijo')+(f.diaLimite?(' ('+esc(f.diaLimite)+')'):''), parseInt(f.diaLimite,10), pagado, monto));
+      filas.push(fila(esc(f.concepto||'Pago fijo')+(f.diaLimite?(' ('+esc(f.diaLimite)+')'):''), parseInt(f.diaLimite,10), pagado, monto, undefined, "pIrAFijoDesdeHistorial('"+esc(f.id)+"')"));
     });
     pItemsOf('estado').filter(e=>e.mes===mk).forEach(e=>{
       const c=pCardById(e.tarjeta)||{};
       const pagado=!!e.pagado;
-      filas.push(fila(esc(pCardLabel(c))+(c.diaLimite?(' ('+esc(c.diaLimite)+')'):''), parseInt(c.diaLimite,10), pagado, parseFloat(e.montoPagado)||0, c.moneda));
+      filas.push(fila(esc(pCardLabel(c))+(c.diaLimite?(' ('+esc(c.diaLimite)+')'):''), parseInt(c.diaLimite,10), pagado, parseFloat(e.montoPagado)||0, c.moneda, "pIrAEstadoDesdeHistorial('"+esc(e.id)+"')"));
     });
     filas.sort((a,b)=>a.dia-b.dia);
     const totalMes=filas.reduce((s,x)=>s+(x.pagado?x.monto:0),0);
     const filasHtml=filas.length?filas.map(x=>x.html).join(''):'<div style="color:var(--ink-3)">Sin pagos fijos ni estados de cuenta este mes</div>';
-    return `<div style="padding:12px;border:1px solid var(--border);border-radius:10px;margin-bottom:10px;background:var(--surface)"><div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px"><strong class="chip" style="font-size:12px;background:var(--surface2);border:1px solid var(--border2)">📅 ${esc(pMesLabelCorto(mk))}</strong><strong style="font-family:var(--mono);font-size:12px">${pMoney2(totalMes)}</strong></div><div style="font-size:12px;line-height:1.6">${filasHtml}</div></div>`;
+    const abierto=mk===mesActual?' open':'';
+    return `<details${abierto} style="border:1px solid var(--border);border-radius:10px;margin-bottom:10px;background:var(--surface)"><summary style="cursor:pointer;padding:12px;display:flex;align-items:center;justify-content:space-between;gap:8px;list-style:none"><strong class="chip" style="font-size:12px;background:var(--surface2);border:1px solid var(--border2)"><span class="chev">▾</span> 📅 ${esc(pMesLabelCorto(mk))}</strong><strong style="font-family:var(--mono);font-size:12px">${pMoney2(totalMes)}</strong></summary><div style="padding:0 12px 12px;font-size:12px;line-height:1.6">${filasHtml}</div></details>`;
   }).join('');
 }
 function pToggleFijoPagado(id){
@@ -8962,8 +9007,12 @@ function pRenderEstadosTarjeta(c){
     const co=pConciliacionEstado(e);
     // v29: check visual para pagado/pendiente (en vez de solo texto), con
     // fecha de pago inline y opción de deshacer sin abrir el formulario.
+    // v29: "No intereses" no se escribe en el chip — es el caso obvio/
+    // esperado (pagaste justo lo que tocaba para no generar intereses).
+    // Si el pago fue distinto (pago mínimo, otro monto), sí se dice qué fue.
+    const tipoPagoTxt = (e.tipoPagoRealizado && e.tipoPagoRealizado!=='No intereses') ? (' · '+esc(e.tipoPagoRealizado)) : '';
     const pagadoChip=e.pagado
-      ? '<button class="rt-btn" style="font-size:10px;padding:3px 8px;background:var(--shared-bg);color:var(--shared);border-color:var(--shared-bdr);font-weight:700" onclick="pToggleEstadoPagado(\''+esc(e.id)+'\')" title="Deshacer">✅ Pagado '+(e.fechaPago?fmtDate(e.fechaPago):'')+(e.montoPagado?(' · '+pMoney(e.montoPagado,c.moneda)):'')+(e.tipoPagoRealizado?(' · '+esc(e.tipoPagoRealizado)):'')+' · deshacer</button>'
+      ? '<button class="rt-btn" style="font-size:10px;padding:3px 8px;background:var(--shared-bg);color:var(--shared);border-color:var(--shared-bdr);font-weight:700" onclick="pToggleEstadoPagado(\''+esc(e.id)+'\')" title="Deshacer">✅ Pagado '+(e.fechaPago?fmtDate(e.fechaPago):'')+(e.montoPagado?(' · '+pMoney(e.montoPagado,c.moneda)):'')+tipoPagoTxt+' · deshacer</button>'
       : '<button class="rt-btn" style="font-size:10px;padding:3px 8px" onclick="pToggleEstadoPagado(\''+esc(e.id)+'\')">☐ Marcar pagado</button>';
     // v29: "conciliado" es distinto de "pagado" — pagado es que ya
     // depositaste el dinero (aunque no hayas revisado movimiento por
@@ -8980,13 +9029,7 @@ function pRenderEstadosTarjeta(c){
     const pdfBtn=e.pdfUrl
       ?'<a class="rt-btn" style="font-size:10px;padding:3px 8px;text-decoration:none" href="'+esc(e.pdfUrl)+'" target="_blank">📄 PDF</a>'
       :'<span class="chip" style="font-size:10px;color:var(--temis)">📄 Falta PDF</span>';
-    // v29: si ya está pagado y coincidió con el "pago para no generar
-    // intereses" (tipoPagoRealizado), el desglose app/no intereses/dif es
-    // redundante y confuso junto al chip de "✅ Pagado" — se sobreentiende.
-    // Solo vale la pena mostrarlo cuando el pago fue distinto (pago mínimo,
-    // otro monto) o cuando todavía no está pagado.
-    const ocultarDesglose = e.pagado && e.tipoPagoRealizado==='No intereses';
-    const desgloseHTML = ocultarDesglose ? '' : `
+    const desgloseHTML = `
         <span style="color:${pEstadoColor(co.estado)};font-weight:600">${pEstadoLabel(co.estado)}</span>
         <span>app ${pMoney(co.totalApp,c.moneda)}</span>
         <span title="Monto a pagar para no generar intereses">no intereses ${pMoney(e.noIntereses||0,c.moneda)}</span>
