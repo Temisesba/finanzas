@@ -4261,7 +4261,7 @@ async function analyzeGemini(){
     const r=await postGAS(body);
     if(!r.ok)throw new Error(r.error||'Error');
 
-    fillAI(r.result);
+    await fillAI(r.result);
 
     btn.disabled=false;
     btn.innerHTML='🤖 Releer con IA';
@@ -4276,18 +4276,25 @@ async function analyzeGemini(){
 function showBannerClaude(reason){const b=document.getElementById('aiBanner');b.style.display='block';b.innerHTML='<div class="ai-banner"><span>⚠️ '+esc(reason)+'. ¿Usar Claude?</span><button onclick="analyzeClaude()">Usar Claude ✨</button></div>';}
 async function analyzeClaude(){
   document.getElementById('aiBanner').innerHTML='<div class="ai-banner"><span class="spin"></span> Claude analizando…</div>';
-  try{const r=await postGAS({action:'analyzeClaude',base64:tb64,mimeType:tMime,moneda_local:appSettings.moneda_local,moneda_conv:appSettings.moneda_conv});if(!r.ok)throw new Error(r.error||'Error Claude');document.getElementById('aiBanner').style.display='none';document.getElementById('aiBtns').style.display='none';fillAI(r.result);}
+  try{const r=await postGAS({action:'analyzeClaude',base64:tb64,mimeType:tMime,moneda_local:appSettings.moneda_local,moneda_conv:appSettings.moneda_conv});if(!r.ok)throw new Error(r.error||'Error Claude');document.getElementById('aiBanner').style.display='none';document.getElementById('aiBtns').style.display='none';await fillAI(r.result);}
   catch(e){document.getElementById('aiBanner').innerHTML='<div class="ai-banner">⚠️ '+esc(e.message)+' — rellena manualmente.</div>';}
 }
-function fillAI(res){
+async function fillAI(res){
   if(res.monto)      document.getElementById('iCosto').value=res.monto;
   if(res.concepto)   document.getElementById('iConc').value=res.concepto;
   if(res.tienda)     document.getElementById('iTienda').value=res.tienda;
   if(res.fecha)      document.getElementById('iDate').value=String(res.fecha).substring(0,10);
   if(res.hora)       document.getElementById('iHoraCompra').value=String(res.hora).substring(0,5);
   if(res.moneda_pago) document.getElementById('iMonedaPago').value=res.moneda_pago;
-  if(res.conversion)  document.getElementById('iConv').value=res.conversion;
   if(res.moneda_conv) document.getElementById('iMonedaConv').value=res.moneda_conv;
+  // v29: la conversión ya NO la calcula la IA (era su propia estimación al
+  // leer el ticket, podía estar desactualizada) — se deja que traiga el
+  // tipo de cambio REAL (frankfurter.app). Solo si eso falla (sin red, o
+  // moneda que ese servicio no cubre) se usa como último recurso lo que
+  // la IA alcanzó a estimar.
+  if(typeof pAutoConvertir==='function') await pAutoConvertir('costo');
+  const convEl=document.getElementById('iConv');
+  if(res.conversion && convEl && !convEl.value.trim()) convEl.value=res.conversion;
   if(res.categoria){const sel=document.getElementById('iCat');for(let i=0;i<sel.options.length;i++){if(sel.options[i].value.toLowerCase().includes(res.categoria.toLowerCase())){sel.selectedIndex=i;break;}}}
   // Combine notes: voucher note + metodo_pago
   if(res.notas&&res.notas!=='null'){const ex=document.getElementById('iNotas').value.trim();document.getElementById('iNotas').value=ex?ex+' · '+res.notas:res.notas;}
