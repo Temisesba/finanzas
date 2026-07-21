@@ -1721,7 +1721,7 @@ details:not([open]) .chev{transform:rotate(-90deg)}
 // de cambios, así en 👥 → 🛠 Panel dev se puede confirmar que el navegador
 // está cargando la versión más reciente y no una copia en caché.
 const BUILD_VERSION='Narciso';
-(function(){ const bv=document.getElementById('devBuildName'); if(bv) bv.textContent='· '+BUILD_VERSION; })();
+(function(){ const bv=document.getElementById('devBuildName'); if(bv) bv.textContent='· Versión: '+BUILD_VERSION; })();
 let GAS_URL=localStorage.getItem('gastos_gas_url')||'';
 function v29TieneGasUrl(){ return !!GAS_URL; }
 function v29GuardarGasUrl(url){
@@ -2906,6 +2906,32 @@ function v31Deudas(){
   allExp.forEach(e=>{
     if(e.compartido==='Cotizacion'||e.quien_paga==='Cotizacion') return;
     const a=parseFloat(e.costo)||0; if(a<=0) return;
+    // v29: "Compartido" con varios pagadores (montos distintos, ej.
+    // 50/20/20/10 para algo que se reparte parejo) — el ajuste sale de
+    // comparar lo que cada quien puso contra su parte pareja (costo /
+    // participantes). Quien puso de más queda como acreedor neto, quien
+    // puso de menos como deudor neto (y quien puso dinero sin ser de los
+    // que se reparten el gasto queda acreedor puro, se le debe todo).
+    // Se resuelve en pares con el mismo algoritmo greedy de v31Simplificar,
+    // pero acotado a ESTE gasto.
+    if(e.compartido==='Compartido' && Array.isArray(e.pagadores) && e.pagadores.length){
+      const parts=v31ParticipantesEf(e); const n=parts.length||1; const share=a/n;
+      const net={};
+      parts.forEach(p=>{ net[p]=(net[p]||0)-share; });
+      e.pagadores.forEach(pg=>{ if(!PEOPLE.includes(pg.persona)) return; net[pg.persona]=(net[pg.persona]||0)+(parseFloat(pg.monto)||0); });
+      const deudores=[], acreedores=[];
+      Object.entries(net).forEach(([nm,v])=>{ if(v<-0.5) deudores.push({nm,v}); else if(v>0.5) acreedores.push({nm,v}); });
+      deudores.sort((x,y)=>x.v-y.v); acreedores.sort((x,y)=>y.v-x.v);
+      let i=0,j=0;
+      while(i<deudores.length && j<acreedores.length){
+        const pay=Math.min(-deudores[i].v, acreedores[j].v);
+        if(pay>0.5) add(deudores[i].nm, acreedores[j].nm, pay);
+        deudores[i].v+=pay; acreedores[j].v-=pay;
+        if(Math.abs(deudores[i].v)<0.5) i++;
+        if(Math.abs(acreedores[j].v)<0.5) j++;
+      }
+      return;
+    }
     const q=e.quien_paga; if(!PEOPLE.includes(q)) return;
     if(e.compartido==='Compartido'){
       const parts=v31ParticipantesEf(e); const n=parts.length||1; const share=a/n;
@@ -3030,6 +3056,7 @@ function renderList(data){
   if(!data.length){
     list.innerHTML='<div class="empty-st">Sin gastos en esta vista.</div>'
       +'<div style="margin:14px 0 6px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-3)">🌐 Deudas externas (fuera de sesiones)</div>'
+      +pResumenDeudasExternasHTML()
       +deudasExternas.map(pDeudaExternaRowHTML).join('');
     return;
   }
@@ -3055,7 +3082,7 @@ function renderList(data){
     const pc=chipFor(e.quien_paga);
     const tc2=e.compartido==='Compartido'?'<span class="chip cs">🤝</span>':e.compartido==='VariosPagan'?'<span class="chip cs" title="Varios pagan — cada quien su parte">🙌</span>':e.compartido==='Prestamo'?'<span class="chip cp">💸</span>':e.compartido==='Personal'?'<span class="chip cv">👤</span>':e.compartido==='Devolucion'?'<span class="chip cd">↩️</span>':e.compartido==='Cotizacion'?'<span class="chip cq">💬</span>':'<span style="color:var(--ink-3);font-size:11px">—</span>';
     const cc2=e.categoria?'<span class="chip cc2">'+esc(e.categoria)+'</span>':'<span style="color:var(--ink-3);font-size:11px">—</span>';
-const pagadoresNota=(e.compartido==='VariosPagan'&&Array.isArray(e.pagadores)&&e.pagadores.length)?'<div class="note">🙌 '+e.pagadores.map(p=>esc(p.persona)+': '+pMoney(parseFloat(p.monto)||0)).join(' · ')+'</div>':'';
+const pagadoresNota=((e.compartido==='VariosPagan'||e.compartido==='Compartido')&&Array.isArray(e.pagadores)&&e.pagadores.length)?'<div class="note">🙌 '+e.pagadores.map(p=>esc(p.persona)+': '+pMoney(parseFloat(p.monto)||0)).join(' · ')+'</div>':'';
 const note=(e.notas?'<div class="note">'+esc(e.notas)+'</div>':'')+miParteNota+pagadoresNota;
     const pagoCel=e.pago?pagoChip(e.pago):'<span style="color:var(--ink-3);font-size:11px">—</span>';
 const prod=(e.tienda||e.producto)?'<div class="prod">🏪 '+esc(e.tienda||e.producto)+'</div>':'';
@@ -3068,7 +3095,7 @@ const proy=e.proyecto?'<div class="prod" title="Vinculado desde itinerario">🧳
     const myActs='<button class="ibtn" onclick="openExpView('+e.rowIndex+')" title="Ver todo">👁</button><button class="ibtn" onclick="pEditPersonal('+e.rowIndex+',\''+sesArg+'\')" title="Editar en su sesión">✏️</button><button class="ibtn" onclick="delExp('+e.rowIndex+')" title="Eliminar">🗑</button>';
     return '<div class="erow"><span class="dc">'+fmtDate(e.fecha)+'</span><span class="cc">'+prodBadge+esc(e.concepto||'—')+prod+proy+note+'</span><span class="ac" style="text-align:right">'+amtStr+convStr+'</span><span>'+pc+'</span><span>'+tc2+'</span><span>'+cc2+'</span><span>'+pagoCel+'</span><span>'+foto+'</span><span class="row-acts">'+(esMio?myActs:((personalMode?'<button class="ibtn" onclick="pViewOriginal('+e.rowIndex+')" title="Ver original y sesión">👁</button>':'')+'<button class="ibtn" onclick="editExp('+e.rowIndex+')" title="Editar">✏️</button><button class="ibtn" onclick="delExp('+e.rowIndex+')" title="Eliminar">🗑</button>'))+'</span></div>'+subRows;
   }).join('') + (deudasExternas.length
-    ? '<div style="margin:14px 0 6px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-3)">🌐 Deudas externas (fuera de sesiones)</div>'+deudasExternas.map(pDeudaExternaRowHTML).join('')
+    ? '<div style="margin:14px 0 6px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-3)">🌐 Deudas externas (fuera de sesiones)</div>'+pResumenDeudasExternasHTML()+deudasExternas.map(pDeudaExternaRowHTML).join('')
     : '');
 }
 function pGoSalud(){ const t=document.getElementById('tabSalud'); if(t){ t.style.display=''; switchPage('salud',t); } }
@@ -3745,6 +3772,80 @@ function pEvaluarPresupuestoManualYAvisar(){
     }
   }
 }
+// ══ Presupuesto — gráfico comparativo entre meses ══
+// Arma, para los últimos `nMeses` (incluido el actual), la serie de gasto
+// ACUMULADO día a día — mismo criterio (mi parte, sin cotizaciones) que
+// pHistoricoGastoDiario.
+function pSeriesMensualesCumulativas(nMeses){
+  const byDay=pHistoricoGastoDiario(31*(nMeses+1));
+  const hoy=new Date();
+  const meses=[];
+  for(let i=nMeses-1;i>=0;i--){
+    const d=new Date(hoy.getFullYear(), hoy.getMonth()-i, 1);
+    meses.push({y:d.getFullYear(), m:d.getMonth(), mk:d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')});
+  }
+  return meses.map(({y,m,mk})=>{
+    const dias=new Date(y,m+1,0).getDate();
+    const serie=[]; let acc=0;
+    for(let dia=1; dia<=dias; dia++){ acc+=(byDay[mk+'-'+String(dia).padStart(2,'0')]||0); serie.push(acc); }
+    return {mk, dias, serie};
+  });
+}
+// v29: línea de fondo por cada mes anterior, el mes actual resaltado, su
+// proyección punteada (a este ritmo, a dónde llegas) y una línea roja con
+// el límite — el que configuraste (presupuesto manual) o, si no
+// configuraste uno, el que calcula sola la app (Capa 1) llevado a un total
+// del mes. Un solo eje (todo son montos), colores del propio tema de la
+// app (nada de paleta nueva), sin jerga en las etiquetas.
+function pRenderGraficoPresupuesto(){
+  const series=pSeriesMensualesCumulativas(4);
+  const actual=series[series.length-1];
+  const anteriores=series.slice(0,-1);
+  if(!actual) return '';
+  const hayDatos=actual.serie.some(v=>v>0)||anteriores.some(s=>s.serie.some(v=>v>0));
+  if(!hayDatos) return '';
+  const hoy=new Date();
+  const diaHoy=Math.min(hoy.getDate(), actual.dias);
+  const diasMes=actual.dias;
+  const gastoHoyAcum=actual.serie[diaHoy-1]||0;
+  const ritmoDiario=diaHoy>0?gastoHoyAcum/diaHoy:0;
+  const proyeccion=[]; for(let dia=diaHoy; dia<=diasMes; dia++) proyeccion.push(ritmoDiario*dia);
+  let limite=pPresupuestoMensual(), limiteLabel='Tu presupuesto';
+  if(!limite){
+    const byDay90=pHistoricoGastoDiario(90);
+    const hoyStr=hoy.toISOString().substring(0,10);
+    const historico=Object.entries(byDay90).filter(([d])=>d!==hoyStr).map(([,v])=>v);
+    const ev=evaluarGasto(0, historico);
+    if(ev.umbral){ limite=ev.umbral*diasMes; limiteLabel='Límite estimado'; }
+  }
+  const maxVal=Math.max(1, limite||0, ...anteriores.flatMap(s=>s.serie), ...actual.serie, ...proyeccion);
+  const W=640,H=220,padL=46,padR=14,padT=14,padB=24;
+  const plotW=W-padL-padR, plotH=H-padT-padB;
+  const denom=Math.max(diasMes,2)-1;
+  const xFor=dia=>padL+(plotW*(dia-1)/denom);
+  const yFor=val=>padT+plotH-(plotH*Math.min(val,maxVal)/maxVal);
+  const pathFor=(serie,fromDia)=>serie.map((v,i)=>{ const dia=(fromDia||1)+i; return (i===0?'M':'L')+xFor(dia).toFixed(1)+','+yFor(v).toFixed(1); }).join(' ');
+  const gridLines=[0,0.25,0.5,0.75,1].map(f=>{ const y=(padT+plotH*(1-f)).toFixed(1); const val=Math.round(maxVal*f);
+    return '<line x1="'+padL+'" y1="'+y+'" x2="'+(W-padR)+'" y2="'+y+'" stroke="var(--border2)" stroke-width="1"/><text x="'+(padL-6)+'" y="'+(parseFloat(y)+3)+'" font-size="9" fill="var(--ink-3)" text-anchor="end">'+curSym()+(val>=1000?Math.round(val/1000)+'k':val)+'</text>';
+  }).join('');
+  const xTicks=[1,5,10,15,20,25,diasMes].filter((v,i,arr)=>arr.indexOf(v)===i && v<=diasMes).map(dia=>'<text x="'+xFor(dia).toFixed(1)+'" y="'+(H-8)+'" font-size="9" fill="var(--ink-3)" text-anchor="middle">'+dia+'</text>').join('');
+  const anterioresSvg=anteriores.map(s=>'<path d="'+pathFor(s.serie)+'" fill="none" stroke="var(--ink-3)" stroke-width="1.5" stroke-opacity="0.35"/>').join('');
+  const actualSvg='<path d="'+pathFor(actual.serie.slice(0,diaHoy))+'" fill="none" stroke="var(--loan)" stroke-width="2.5"/>';
+  const proyeccionSvg=proyeccion.length>1?('<path d="'+pathFor(proyeccion,diaHoy)+'" fill="none" stroke="var(--loan)" stroke-width="2" stroke-dasharray="4,3" stroke-opacity="0.7"/>'):'';
+  const limiteSvg=limite?('<line x1="'+padL+'" y1="'+yFor(limite).toFixed(1)+'" x2="'+(W-padR)+'" y2="'+yFor(limite).toFixed(1)+'" stroke="var(--temis)" stroke-width="1.5" stroke-dasharray="5,3"/>'):'';
+  const puntoHoy='<circle cx="'+xFor(diaHoy).toFixed(1)+'" cy="'+yFor(gastoHoyAcum).toFixed(1)+'" r="3.5" fill="var(--loan)"><title>Hoy (día '+diaHoy+'): '+pMoney(gastoHoyAcum)+'</title></circle>';
+  return '<div class="budget-card" style="grid-column:1/-1">'
+    +'<h3>📊 Comparativo entre meses</h3>'
+    +'<div style="font-size:11px;color:var(--ink-3);margin-bottom:8px">Gasto acumulado del mes, día por día. En gris los meses anteriores, en dorado el mes actual (punteado = a dónde vas si sigues a este ritmo)'+(limite?', línea roja = '+esc(limiteLabel.toLowerCase())+' ('+pMoney(limite)+')':'')+'.</div>'
+    +'<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:auto;display:block">'+gridLines+anterioresSvg+limiteSvg+actualSvg+proyeccionSvg+puntoHoy+xTicks+'</svg>'
+    +'<div style="display:flex;gap:14px;flex-wrap:wrap;font-size:10.5px;color:var(--ink-3);margin-top:6px">'
+      +'<span><span style="display:inline-block;width:14px;height:2px;background:var(--ink-3);opacity:.4;vertical-align:middle;margin-right:4px"></span>Meses anteriores</span>'
+      +'<span><span style="display:inline-block;width:14px;height:2px;background:var(--loan);vertical-align:middle;margin-right:4px"></span>Mes actual</span>'
+      +'<span><span style="display:inline-block;width:14px;height:2px;background:var(--loan);opacity:.6;vertical-align:middle;margin-right:4px"></span>Proyección</span>'
+      +(limite?('<span><span style="display:inline-block;width:14px;height:2px;background:var(--temis);vertical-align:middle;margin-right:4px"></span>'+esc(limiteLabel)+'</span>'):'')
+    +'</div>'
+  +'</div>';
+}
 function renderBudget(){
   const c=document.getElementById('budgetContent');if(!c)return;
   const fy=n=>curSym()+Math.round(n).toLocaleString();
@@ -3803,7 +3904,7 @@ function renderBudget(){
       +proyeccionMsg
       +'</div>';
   }
-  c.innerHTML='<div class="budget-grid"><div class="budget-card"><h3>Cómo vas hoy</h3>'+alertBox+'</div>'+presuHTML+'<div class="budget-card"><h3>Por mes</h3>'+mHTML+'</div><div class="budget-card" style="grid-column:1/-1"><h3>Por categoría</h3><div style="display:grid;grid-template-columns:1fr 1fr">'+catHTML+'</div></div></div>';
+  c.innerHTML='<div class="budget-grid"><div class="budget-card"><h3>Cómo vas hoy</h3>'+alertBox+'</div>'+presuHTML+pRenderGraficoPresupuesto()+'<div class="budget-card"><h3>Por mes</h3>'+mHTML+'</div><div class="budget-card" style="grid-column:1/-1"><h3>Por categoría</h3><div style="display:grid;grid-template-columns:1fr 1fr">'+catHTML+'</div></div></div>';
 }
 
 // ── Lightbox ──────────────────────────────────────────────
@@ -3989,24 +4090,23 @@ function v31ToggleParticipante(n, fixed){
 // mientras está activo.
 let currentVariosPagan=false;
 let currentPagadores={}; // {persona: monto}
+// v29: "Varios pagan" ya no oculta "¿cómo se divide?" — se puede combinar
+// con 🤝 Compartido para el caso de "cada quien puso una cantidad distinta
+// para algo que se reparte parejo" (el ajuste de quién debe/le deben sale
+// solo comparando lo que cada quien puso contra su parte pareja). Si NO se
+// elige Compartido, sigue siendo el caso simple sin deuda (ej. boletos).
 function onToggleVariosPagan(){
   currentVariosPagan = document.getElementById('chkVariosPagan').checked;
-  const payerField=document.getElementById('payerGroup').closest('.field');
-  const tipoField=document.getElementById('tipoField');
-  const participantesField=document.getElementById('participantesField');
   const pagadoresField=document.getElementById('pagadoresField');
   if(currentVariosPagan){
-    if(tipoField) tipoField.style.display='none';
-    if(participantesField) participantesField.style.display='none';
     document.querySelectorAll('#payerGroup .tbtn').forEach(b=>b.style.display='none');
     if(pagadoresField) pagadoresField.style.display='block';
     v32RenderPagadores();
   } else {
-    if(tipoField) tipoField.style.display='';
     document.querySelectorAll('#payerGroup .tbtn').forEach(b=>b.style.display='');
     if(pagadoresField) pagadoresField.style.display='none';
-    v31RenderParticipantes();
   }
+  v31RenderParticipantes();
 }
 function v32RenderPagadores(){
   const box=document.getElementById('pagadoresBox'); if(!box) return;
@@ -4024,7 +4124,28 @@ function v32SetPagadorMonto(persona, val){
   const n=parseFloat(val);
   if(val==='' || isNaN(n)) delete currentPagadores[persona];
   else currentPagadores[persona]=n;
+  v32AutoCompletarUltimoPagador();
   v32ActualizarHintPagadores();
+}
+// v29: si ya se llenó el monto de todos menos UNA persona, se le pone
+// automáticamente la diferencia contra el total — así no hay que sacar la
+// cuenta a mano para el último. Se actualiza el input directo (sin
+// re-renderizar toda la caja) para no quitarle el foco a quien esté
+// escribiendo en ese momento.
+function v32AutoCompletarUltimoPagador(){
+  const costo=parseFloat(document.getElementById('iCosto').value)||0;
+  if(!costo || PEOPLE.length<2) return;
+  const faltantes=PEOPLE.filter(n=>currentPagadores[n]===undefined);
+  if(faltantes.length!==1) return;
+  const otro=faltantes[0];
+  const sumaOtros=PEOPLE.filter(n=>n!==otro).reduce((s,n)=>s+(parseFloat(currentPagadores[n])||0),0);
+  const diff=Math.round((costo-sumaOtros)*100)/100;
+  if(diff<=0) return;
+  currentPagadores[otro]=diff;
+  const box=document.getElementById('pagadoresBox'); if(!box) return;
+  const idx=PEOPLE.indexOf(otro);
+  const inputs=box.querySelectorAll('input[type=number]');
+  if(inputs[idx]) inputs[idx].value=diff;
 }
 function v32PartesIguales(){
   const costo=parseFloat(document.getElementById('iCosto').value)||0;
@@ -4225,8 +4346,17 @@ async function saveExpense(){
     pagadoresBody = Object.keys(currentPagadores).filter(n=>(parseFloat(currentPagadores[n])||0)>0).map(n=>({persona:n, monto:parseFloat(currentPagadores[n])||0}));
     if(!pagadoresBody.length){ showToast('Pon cuánto puso cada quien'); return; }
     quienPagaBody = pagadoresBody.map(p=>p.persona).join(' + ');
-    compartidoBody = 'VariosPagan';
-    participantesBody = [];
+    if(currentType==='Compartido'){
+      // v29: varios pagan + Compartido = cada quien puso lo suyo hacia un
+      // gasto que se reparte parejo entre los participantes — si lo que
+      // alguien puso no coincide con su parte pareja, sí genera deuda
+      // (el ajuste lo calcula v31Deudas comparando pagado vs. parte).
+      compartidoBody = 'Compartido';
+      participantesBody = currentParticipantes.slice();
+    } else {
+      compartidoBody = 'VariosPagan';
+      participantesBody = [];
+    }
   }
   // v29: respeta la sesión elegida en el selector del modal (tanto al crear
   // como al editar) — antes al editar se sobrescribía sola con
@@ -4433,13 +4563,15 @@ function editExp(rowIndex){
   if(chkCot) { chkCot.checked = isCot; }
   onToggleCotizacion(); // Activa la visualización N/A y oscurece botones
 
-  if(e.compartido==='VariosPagan'){
-    // v29: "Varios pagan" — activar el checkbox y precargar el monto de
+  if(e.compartido==='VariosPagan' || (e.compartido==='Compartido' && Array.isArray(e.pagadores) && e.pagadores.length)){
+    // v29: "Varios pagan" (sin deuda) o "Compartido" con varios pagadores
+    // (con ajuste/deuda) — activar el checkbox y precargar el monto de
     // cada quien desde e.pagadores, en vez del selector de un solo pagador.
     currentPagadores={};
     (Array.isArray(e.pagadores)?e.pagadores:[]).forEach(p=>{ if(p&&p.persona) currentPagadores[p.persona]=parseFloat(p.monto)||0; });
     const chk=document.getElementById('chkVariosPagan'); if(chk) chk.checked=true;
     onToggleVariosPagan();
+    if(e.compartido==='Compartido') setType('Compartido');
   } else {
     if(e.quien_paga) setPayer(e.quien_paga);
     if(e.compartido) setType(e.compartido);
@@ -6990,11 +7122,23 @@ function pRenderDeudasSesionHTML(){
     ${rows}
   </div>`;
 }
+// v29: "cuánto debo / me deben" SOLO de deudas externas (fuera de
+// sesiones) — usa lo que resta después de pagos parciales, no el monto
+// original completo.
+function pResumenDeudasExternasHTML(){
+  let meDeben=0, debo=0;
+  pItemsOf('deuda').forEach(d=>{ const resta=pDeudaResta(d); if(d.dir==='medeben') meDeben+=resta; else debo+=resta; });
+  if(!meDeben && !debo) return '';
+  return '<div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">'
+    +'<div style="flex:1;min-width:120px;background:var(--shared-bg);border:1px solid var(--shared-bdr);border-radius:9px;padding:9px"><div style="font-size:10px;color:var(--shared)">Me deben</div><div style="font-family:var(--mono);font-weight:700;color:var(--shared)">'+pMoney(meDeben)+'</div></div>'
+    +'<div style="flex:1;min-width:120px;background:var(--temis-bg);border:1px solid var(--temis-bdr);border-radius:9px;padding:9px"><div style="font-size:10px;color:var(--temis)">Debo</div><div style="font-family:var(--mono);font-weight:700;color:var(--temis)">'+pMoney(debo)+'</div></div>'
+    +'</div>';
+}
 function pRenderDeudas(){
   const sesionHtml=personalMode?pRenderDeudasSesionHTML():'';
   const items=pItemsOf('deuda');
   const rows=items.map(pDeudaExternaRowHTML).join('') || '<div style="color:var(--ink-3);font-size:13px;padding:20px;text-align:center">Sin deudas. Agrega préstamos o pagos pendientes con gente fuera de las sesiones.</div>';
-  return `${sesionHtml}<div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-3);margin-bottom:6px">🌐 Deudas externas (fuera de sesiones)</div><button class="rt-btn" style="font-weight:600;margin-bottom:12px" onclick="pOpenForm('deuda','')">＋ Nueva deuda</button>${rows}`;
+  return `${sesionHtml}<div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-3);margin-bottom:6px">🌐 Deudas externas (fuera de sesiones)</div>${pResumenDeudasExternasHTML()}<button class="rt-btn" style="font-weight:600;margin-bottom:12px" onclick="pOpenForm('deuda','')">＋ Nueva deuda</button>${rows}`;
 }
 // ── PAGOS FIJOS (con alarmas y marcado por mes) ──
 function pSetFijoFiltro(f){ pFijoFiltro=f; pRender(); }
@@ -7049,7 +7193,7 @@ function pRenderFijos(){
     // ocultan hasta que los pidas.
     const pChip=k=>{
       const p=(f.pagos||{})[k];
-      const label='✓ '+esc(k)+((p&&typeof p==='object'&&p.fecha)?(' · '+esc(p.fecha)):'');
+      const label='✓ '+esc(k)+((p&&typeof p==='object'&&p.fecha)?(' · '+fmtDate(p.fecha)):'');
       const rowIdx=(p&&typeof p==='object'&&p.gastoRowIndex)?p.gastoRowIndex:'';
       return rowIdx
         ? '<button type="button" class="chip" style="font-size:10px;margin:2px;background:var(--shared-bg);color:var(--shared);border:none;cursor:pointer" title="Ver el gasto de este pago" onclick="pOpenLinkedGasto(\''+esc(rowIdx)+'\')">'+label+'</button>'
@@ -7070,7 +7214,7 @@ function pRenderFijos(){
     // quincena extra, un catch-up de un mes anterior, etc.), intuyendo el
     // periodo de la fecha que captures ahí mismo. Así ya no hace falta un
     // botón aparte de "＋ Otro pago".
-    const pagadoChip=pagado?'<button class="rt-btn" onclick="pToggleFijoPagado(\''+esc(f.id)+'\')">✓ Pagado '+(fechaPagado||'este mes')+' (deshacer)</button>':'';
+    const pagadoChip=pagado?'<button class="rt-btn" onclick="pToggleFijoPagado(\''+esc(f.id)+'\')">✓ Pagado '+(fechaPagado?fmtDate(fechaPagado):'este mes')+' (deshacer)</button>':'';
     const botones=f.cancelado
       ? '<button class="rt-btn" style="font-weight:600" onclick="pReactivarFijo(\''+esc(f.id)+'\')">↩️ Reactivar</button><button class="rt-btn" onclick="pOpenForm(\'fijo\',\''+esc(f.id)+'\')">✏️</button><button class="shop-del" onclick="pDelItem(\''+esc(f.id)+'\')">🗑</button>'
       : pagadoChip
@@ -7083,7 +7227,7 @@ function pRenderFijos(){
       <div style="display:flex;align-items:center;gap:8px">
         <div style="flex:1;min-width:0">
           <div style="font-weight:600;font-size:13px">${esc(f.concepto||'—')} ${alarma}</div>
-          <div style="font-size:11px;color:var(--ink-3)">día límite ${f.diaLimite||'?'}${f.fechaPago?(' · pago '+esc(f.fechaPago)):''}${fpClasif?(' · '+fpClasif):''}${f.nota?(' · '+esc(f.nota)):''}</div>
+          <div style="font-size:11px;color:var(--ink-3)">día límite ${f.diaLimite||'?'}${f.fechaPago?(' · pago '+fmtDate(f.fechaPago)):''}${fpClasif?(' · '+fpClasif):''}${f.nota?(' · '+esc(f.nota)):''}</div>
           ${historial?'<div style="margin-top:4px">'+historial+'</div>':''}
           ${historialResto}
         </div>
@@ -7098,20 +7242,39 @@ function pRenderFijos(){
     </details>`;
 }
 //  Vista mensual: fijos + estados de tarjeta, pagado/pendiente/vencido por periodo.
+// v29: "Nombre (día límite): pendiente" o "✓ pagado $monto" — fijos y
+// tarjetas fusionados en una sola lista, ordenados por día límite (ya no
+// separados en dos bloques). Una vez pagado, se muestra el monto que
+// REALMENTE se pagó (no importa si fue exacto, de más, o si ya se
+// concilió) — el desglose de diferencias vive aparte, en 🔎 Conciliar.
 function pRenderHistorialMensual(){
   const months=new Set([pMesKey()]);
   pItemsOf('estado').forEach(e=>{ if(e.mes) months.add(e.mes); });
   pItemsOf('fijo').forEach(f=>Object.keys(f.pagos||{}).forEach(k=>months.add(k)));
   const list=[...months].sort().reverse().slice(0,12);
+  const fila=(label,dia,pagado,monto,moneda)=>({
+    dia: isNaN(dia)?999:dia, pagado, monto,
+    html:'<div>'+label+': '+(pagado
+      ? '<span style="color:var(--shared);font-weight:600">✓ pagado '+pMoney2(monto,moneda)+'</span>'
+      : '<span style="color:var(--ink-3)">pendiente</span>')+'</div>'
+  });
   return list.map(mk=>{
-    // v29: suma de pagos fijos de ese mes (lo ya pagado usa el monto
-    // registrado ese mes; lo pendiente usa el monto esperado).
-    const totalMes=pItemsOf('fijo').reduce((s,f)=>{ const p=(f.pagos||{})[mk]; const monto=(p&&typeof p==='object')?(parseFloat(p.monto)||0):(parseFloat(f.monto)||0); return s+monto; },0);
-    // v29: formato compacto "Nombre (día límite)" — ya se sabe qué mes es
-    // por el encabezado del bloque, no hace falta repetirlo por renglón.
-    const fijos=pItemsOf('fijo').map(f=>{ const st=pEstadoPagoMes(f,mk); return '<div>• '+esc(f.concepto||'Pago fijo')+(f.diaLimite?(' ('+esc(f.diaLimite)+')'):'')+': <span style="color:'+st.col+';font-weight:600">'+st.txt+'</span></div>'; }).join('');
-    const edos=pItemsOf('estado').filter(e=>e.mes===mk).map(e=>{ const c=pCardById(e.tarjeta)||{}; const co=pConciliacionEstado(e); return '<div>• '+esc(pCardLabel(c))+(c.diaLimite?(' ('+esc(c.diaLimite)+')'):'')+': <span style="color:'+pEstadoColor(co.estado)+';font-weight:600">'+pEstadoLabel(co.estado)+'</span>'+(co.dif?(' · dif '+pMoney(Math.abs(co.dif),c.moneda)):'')+'</div>'; }).join('') || '<div style="color:var(--ink-3)">• Sin estados de cuenta cargados</div>';
-    return `<div style="padding:12px;border:1px solid var(--border);border-radius:10px;margin-bottom:10px;background:var(--surface)"><div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px"><strong class="chip" style="font-size:12px;background:var(--surface2);border:1px solid var(--border2)">📅 ${esc(pMesLabelCorto(mk))}</strong><strong style="font-family:var(--mono);font-size:12px">${pMoney(totalMes)}</strong></div><div style="font-size:12px;line-height:1.6">${fijos}${edos}</div></div>`;
+    const filas=[];
+    pItemsOf('fijo').forEach(f=>{
+      const p=(f.pagos||{})[mk];
+      const pagado=!!p;
+      const monto=pagado?((p&&typeof p==='object')?(parseFloat(p.monto)||0):(parseFloat(f.monto)||0)):0;
+      filas.push(fila(esc(f.concepto||'Pago fijo')+(f.diaLimite?(' ('+esc(f.diaLimite)+')'):''), parseInt(f.diaLimite,10), pagado, monto));
+    });
+    pItemsOf('estado').filter(e=>e.mes===mk).forEach(e=>{
+      const c=pCardById(e.tarjeta)||{};
+      const pagado=!!e.pagado;
+      filas.push(fila(esc(pCardLabel(c))+(c.diaLimite?(' ('+esc(c.diaLimite)+')'):''), parseInt(c.diaLimite,10), pagado, parseFloat(e.montoPagado)||0, c.moneda));
+    });
+    filas.sort((a,b)=>a.dia-b.dia);
+    const totalMes=filas.reduce((s,x)=>s+(x.pagado?x.monto:0),0);
+    const filasHtml=filas.length?filas.map(x=>x.html).join(''):'<div style="color:var(--ink-3)">Sin pagos fijos ni estados de cuenta este mes</div>';
+    return `<div style="padding:12px;border:1px solid var(--border);border-radius:10px;margin-bottom:10px;background:var(--surface)"><div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px"><strong class="chip" style="font-size:12px;background:var(--surface2);border:1px solid var(--border2)">📅 ${esc(pMesLabelCorto(mk))}</strong><strong style="font-family:var(--mono);font-size:12px">${pMoney2(totalMes)}</strong></div><div style="font-size:12px;line-height:1.6">${filasHtml}</div></div>`;
   }).join('');
 }
 function pToggleFijoPagado(id){
@@ -8073,10 +8236,21 @@ function pFormFieldsHTML(tipo, it){
             <button type="button" class="rt-btn" id="pfDeudaFotoDel" style="${it.fotoUrl?'':'display:none;'}" onclick="pDeudaFotoClear()">✕ Quitar</button>
           </div>
         </div>`
-      + (Object.keys(it.pagos||{}).length ? `<div class="pf-field"><label>Pagos registrados</label>
-          <div style="font-size:12px;line-height:1.7">${Object.entries(it.pagos||{}).sort().map(([k,p])=>'• '+esc(k)+': '+pMoney(parseFloat(p.monto)||0,p.moneda)).join('<br>')}</div>
+      + (Object.keys(it.pagos||{}).length ? (()=>{
+          // v29: solo el mes en curso se ve directo; el resto queda
+          // colapsado detrás de "Ver pagos previos" (mismo criterio que el
+          // historial de pagos fijos) para no saturar el formulario.
+          const mk=pMesKey();
+          const entradas=Object.entries(it.pagos||{}).sort().reverse();
+          const actual=entradas.filter(([k])=>k.startsWith(mk));
+          const previos=entradas.filter(([k])=>!k.startsWith(mk));
+          const fila=([k,p])=>'• '+esc(k)+': '+pMoney(parseFloat(p.monto)||0,p.moneda);
+          return `<div class="pf-field"><label>Pagos registrados</label>
+          <div style="font-size:12px;line-height:1.7">${actual.length?actual.map(fila).join('<br>'):'<span style="color:var(--ink-3)">Sin pagos este mes</span>'}</div>
+          ${previos.length?('<details style="margin-top:4px"><summary style="cursor:pointer;font-size:11px;color:var(--ink-3)"><span class="chev">▾</span> Ver pagos previos ('+previos.length+')</summary><div style="font-size:12px;line-height:1.7;margin-top:4px">'+previos.map(fila).join('<br>')+'</div></details>'):''}
           <div style="font-size:12px;font-weight:700;margin-top:4px">Resta: ${pMoney(pDeudaResta(it))}</div>
-        </div>` : '');
+        </div>`;
+        })() : '');
   }
   if(tipo==='fijo'){
     const fm=it.formaPago||'';
@@ -8175,6 +8349,7 @@ function pFormFieldsHTML(tipo, it){
           ${FCopy('Usuario','pfAppUsuario',it.appUsuario,'placeholder="Usuario o correo" autocomplete="off"')}
           ${FCopy('Contraseña','pfAppPass',it.appPass,'placeholder="Contraseña de la app" autocomplete="off"')}
           ${FCopy('Número de cuenta','pfAppCuenta',it.appCuenta,'placeholder="Cuenta / cliente" autocomplete="off"')}
+          ${TA('Notas confidenciales (opcional)','pfNotaConfidencial',it.notaConfidencial,'placeholder="Ej. preguntas de seguridad, dónde está el token…" rows="2"')}
           <div style="font-size:10px;color:var(--ink-3)">Se guardan tal cual en tu Sheet privado. Ya NO se muestran en la lista de tarjetas — solo aquí, en Editar (pide tu contraseña de datos sensibles cada vez).</div>
           </div>
         </details>`;
@@ -8357,7 +8532,7 @@ async function pFormSave(){
         else throw new Error((up&&up.error)||'No se pudo subir la foto');
       }catch(e){ showToast('⚠ '+e.message); btnReady(); return; }
     }
-    item={...base, nombre:pFval('pfTarjNombre').trim(), titular:pFval('pfTitular').trim(), banco:pFval('pfBanco').trim(), ctipo:pFval('pfCtipo'), moneda:pFval('pfTarjMoneda'), red:pFval('pfRed'), fotoUrl, termFisica:pFval('pfTermFis').trim(), termVirtual:pFval('pfTermVir').trim(), diaCorte:pFval('pfDiaCorte'), diaDisponible:pFval('pfDiaDisponible'), diaLimite:pFval('pfDiaLimite'), creditoMax:parseFloat(pFval('pfCreditoMax'))||0, interesAnual:parseFloat(pFval('pfInteres'))||0, comisionTardio:parseFloat(pFval('pfComisionTardio'))||0, comisionInactividad:parseFloat(pFval('pfComisionInactividad'))||0, requisitoMinimo:pFval('pfRequisitoMinimo').trim(), cat:parseFloat(pFval('pfCat'))||0, anualidad:pFval('pfAnualidad').trim(), clabe:pFval('pfClabe').trim(), numFisica:pFval('pfNumFis').trim(), numVirtual:pFval('pfNumVir').trim(), venceFisica:pFval('pfVenceFis').trim(), venceVirtual:pFval('pfVenceVir').trim(), pin:pFval('pfPin').trim(), appUsuario:pFval('pfAppUsuario').trim(), appPass:pFval('pfAppPass').trim(), appCuenta:pFval('pfAppCuenta').trim(), nota:pFval('pfNotaTarj').trim()};
+    item={...base, nombre:pFval('pfTarjNombre').trim(), titular:pFval('pfTitular').trim(), banco:pFval('pfBanco').trim(), ctipo:pFval('pfCtipo'), moneda:pFval('pfTarjMoneda'), red:pFval('pfRed'), fotoUrl, termFisica:pFval('pfTermFis').trim(), termVirtual:pFval('pfTermVir').trim(), diaCorte:pFval('pfDiaCorte'), diaDisponible:pFval('pfDiaDisponible'), diaLimite:pFval('pfDiaLimite'), creditoMax:parseFloat(pFval('pfCreditoMax'))||0, interesAnual:parseFloat(pFval('pfInteres'))||0, comisionTardio:parseFloat(pFval('pfComisionTardio'))||0, comisionInactividad:parseFloat(pFval('pfComisionInactividad'))||0, requisitoMinimo:pFval('pfRequisitoMinimo').trim(), cat:parseFloat(pFval('pfCat'))||0, anualidad:pFval('pfAnualidad').trim(), clabe:pFval('pfClabe').trim(), numFisica:pFval('pfNumFis').trim(), numVirtual:pFval('pfNumVir').trim(), venceFisica:pFval('pfVenceFis').trim(), venceVirtual:pFval('pfVenceVir').trim(), pin:pFval('pfPin').trim(), appUsuario:pFval('pfAppUsuario').trim(), appPass:pFval('pfAppPass').trim(), appCuenta:pFval('pfAppCuenta').trim(), notaConfidencial:pFval('pfNotaConfidencial').trim(), nota:pFval('pfNotaTarj').trim()};
   } else if(t==='estado'){
     if(!pFval('pfTarjeta')){ showToast('Elige tarjeta'); return; }
     const prev=pFormId?pItems.find(x=>x.id===pFormId):null;
@@ -8652,7 +8827,7 @@ function pEstadoStatusBadgeHTML(c){
     // de que no hay nada pendiente cuando en realidad falta capturar/revisar
     // el estado más reciente.
     if(e.fechaLimite && e.fechaLimite<hoy) return '<span style="color:var(--loan);font-weight:700">🆕 Posible estado nuevo pendiente</span>';
-    return '<span style="color:var(--shared);font-weight:700">✅ Pagado'+(e.fechaPago?(' '+esc(e.fechaPago)):'')+'</span>';
+    return '<span style="color:var(--shared);font-weight:700">✅ Pagado'+(e.fechaPago?(' '+fmtDate(e.fechaPago)):'')+'</span>';
   }
   if(e.fechaLimite && e.fechaLimite<hoy) return '<span style="color:var(--temis);font-weight:700">🔴 Retrasado</span>';
   return '<span style="color:var(--loan);font-weight:700">⚠️ Pendiente de pago</span>';
@@ -8788,7 +8963,7 @@ function pRenderEstadosTarjeta(c){
     // v29: check visual para pagado/pendiente (en vez de solo texto), con
     // fecha de pago inline y opción de deshacer sin abrir el formulario.
     const pagadoChip=e.pagado
-      ? '<button class="rt-btn" style="font-size:10px;padding:3px 8px;background:var(--shared-bg);color:var(--shared);border-color:var(--shared-bdr);font-weight:700" onclick="pToggleEstadoPagado(\''+esc(e.id)+'\')" title="Deshacer">✅ Pagado '+esc(e.fechaPago||'')+(e.montoPagado?(' · '+pMoney(e.montoPagado,c.moneda)):'')+(e.tipoPagoRealizado?(' · '+esc(e.tipoPagoRealizado)):'')+' · deshacer</button>'
+      ? '<button class="rt-btn" style="font-size:10px;padding:3px 8px;background:var(--shared-bg);color:var(--shared);border-color:var(--shared-bdr);font-weight:700" onclick="pToggleEstadoPagado(\''+esc(e.id)+'\')" title="Deshacer">✅ Pagado '+(e.fechaPago?fmtDate(e.fechaPago):'')+(e.montoPagado?(' · '+pMoney(e.montoPagado,c.moneda)):'')+(e.tipoPagoRealizado?(' · '+esc(e.tipoPagoRealizado)):'')+' · deshacer</button>'
       : '<button class="rt-btn" style="font-size:10px;padding:3px 8px" onclick="pToggleEstadoPagado(\''+esc(e.id)+'\')">☐ Marcar pagado</button>';
     // v29: "conciliado" es distinto de "pagado" — pagado es que ya
     // depositaste el dinero (aunque no hayas revisado movimiento por
@@ -9150,7 +9325,7 @@ function pMiListaRows(){
     const pagado=(f.pagos||{})[mk];
     const fechaPagado=pagado&&typeof pagado==='object'?pagado.fecha:'';
     rows.push({fecha: pFechaDia(f.diaLimite), concepto:'🔁 '+(f.concepto||''), monto:parseFloat(f.monto)||0,
-      nota:(pagado?'✓ pagado'+(fechaPagado?' '+fechaPagado:'')+' · ':'⏳ pendiente · ')+(card?('sale de '+card.ctipo+' '+(card.banco||'')+(card.terminacion?' ····'+card.terminacion:'')):'sin tarjeta'), tipo:'fijo'});
+      nota:(pagado?'✓ pagado'+(fechaPagado?' '+fmtDate(fechaPagado):'')+' · ':'⏳ pendiente · ')+(card?('sale de '+card.ctipo+' '+(card.banco||'')+(card.terminacion?' ····'+card.terminacion:'')):'sin tarjeta'), tipo:'fijo'});
   });
   // 3) Cuotas MSI de este mes
   pItemsOf('msi').forEach(m=>{
