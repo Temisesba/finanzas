@@ -3932,10 +3932,15 @@ function renderBudget(){
     else if(pct>=90) msg='Estás por llegar al límite de tu presupuesto.';
     else if(pct>=70) msg='Vas al '+pct+'% de tu presupuesto del mes.';
     const proyeccionMsg=(proyeccion>presupuesto)?('<div style="font-size:11px;color:var(--loan);margin-top:6px">📈 A este ritmo terminarás el mes en '+fy(proyeccion)+'.</div>'):'';
+    // v29: además del % y "acumulado de presupuesto", cuánto queda
+    // disponible para gastar (o cuánto te pasaste, en negativo).
+    const disponible=presupuesto-acumulado;
+    const disponibleHTML='<div style="font-size:11px;margin-top:2px"><span style="color:var(--ink-3)">'+(disponible>=0?'Aún puedes gastar: ':'Te pasaste por: ')+'</span><strong style="color:'+(disponible>=0?'var(--shared)':'var(--temis)')+'">'+fy(Math.abs(disponible))+'</strong></div>';
     presuHTML='<div class="budget-card"><h3>🎯 Presupuesto del mes <button class="rt-btn" style="font-size:10px;float:right" onclick="pAbrirConfigPresupuesto()">✏️ Editar</button></h3>'
       +'<div style="font-size:12px;margin-bottom:6px">'+esc(msg)+'</div>'
       +'<div style="background:var(--surface2);border-radius:8px;height:12px;overflow:hidden"><div style="width:'+pct+'%;height:100%;background:'+col+'"></div></div>'
       +'<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--ink-3);margin-top:4px"><span>'+fy(acumulado)+' de '+fy(presupuesto)+'</span><span>'+pct+'%</span></div>'
+      +disponibleHTML
       +proyeccionMsg
       +'</div>';
   }
