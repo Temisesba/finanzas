@@ -4159,28 +4159,7 @@ function v32SetPagadorMonto(persona, val){
   const n=parseFloat(val);
   if(val==='' || isNaN(n)) delete currentPagadores[persona];
   else currentPagadores[persona]=n;
-  v32AutoCompletarUltimoPagador();
   v32ActualizarHintPagadores();
-}
-// v29: si ya se llenó el monto de todos menos UNA persona, se le pone
-// automáticamente la diferencia contra el total — así no hay que sacar la
-// cuenta a mano para el último. Se actualiza el input directo (sin
-// re-renderizar toda la caja) para no quitarle el foco a quien esté
-// escribiendo en ese momento.
-function v32AutoCompletarUltimoPagador(){
-  const costo=parseFloat(document.getElementById('iCosto').value)||0;
-  if(!costo || PEOPLE.length<2) return;
-  const faltantes=PEOPLE.filter(n=>currentPagadores[n]===undefined);
-  if(faltantes.length!==1) return;
-  const otro=faltantes[0];
-  const sumaOtros=PEOPLE.filter(n=>n!==otro).reduce((s,n)=>s+(parseFloat(currentPagadores[n])||0),0);
-  const diff=Math.round((costo-sumaOtros)*100)/100;
-  if(diff<=0) return;
-  currentPagadores[otro]=diff;
-  const box=document.getElementById('pagadoresBox'); if(!box) return;
-  const idx=PEOPLE.indexOf(otro);
-  const inputs=box.querySelectorAll('input[type=number]');
-  if(inputs[idx]) inputs[idx].value=diff;
 }
 function v32PartesIguales(){
   const costo=parseFloat(document.getElementById('iCosto').value)||0;
@@ -7235,13 +7214,20 @@ function pRenderFijos(){
     // fila (saturaba la vista) — un solo plegable "Ver pagos previos" con
     // TODO el historial de este concepto. Si ese pago tiene un gasto
     // vinculado, es clicable y abre su detalle.
+    // v29: una fila por pago, formato "✓ Pagado 12JUL2026 · $monto" — antes
+    // se veía "2026-07 · 12JUL2026" (periodo Y fecha juntos, sin separación
+    // visual entre pagos) que era confuso; ahora cada uno en su propio
+    // renglón, con el monto que de verdad se pagó esa vez.
     const pChip=k=>{
       const p=(f.pagos||{})[k];
-      const label='✓ '+esc(k)+((p&&typeof p==='object'&&p.fecha)?(' · '+fmtDate(p.fecha)):'');
+      const monto=(p&&typeof p==='object')?(parseFloat(p.monto)||0):(parseFloat(f.monto)||0);
+      const fecha=(p&&typeof p==='object'&&p.fecha)?fmtDate(p.fecha):'';
+      const label='✓ Pagado'+(fecha?(' '+fecha):'')+' · '+pMoney(monto);
       const rowIdx=(p&&typeof p==='object'&&p.gastoRowIndex)?p.gastoRowIndex:'';
+      const estilo='display:block;width:100%;text-align:left;padding:3px 0;font-size:11px;background:none;border:none;color:var(--shared)';
       return rowIdx
-        ? '<button type="button" class="chip" style="font-size:10px;margin:2px;background:var(--shared-bg);color:var(--shared);border:none;cursor:pointer" title="Ver el gasto de este pago" onclick="pOpenLinkedGasto(\''+esc(rowIdx)+'\')">'+label+'</button>'
-        : '<span class="chip" style="font-size:10px;margin:2px;background:var(--shared-bg);color:var(--shared)" title="Este pago no tiene un gasto vinculado para ver">'+label+'</span>';
+        ? '<button type="button" style="'+estilo+';cursor:pointer" title="Ver el gasto de este pago" onclick="pOpenLinkedGasto(\''+esc(rowIdx)+'\')">'+label+'</button>'
+        : '<div style="'+estilo+'">'+label+'</div>';
     };
     const periodos=Object.keys(f.pagos||{}).sort().reverse();
     const historialResto=periodos.length?('<details style="margin-top:4px"><summary style="cursor:pointer;font-size:10px;color:var(--ink-3)"><span class="chev">▾</span> Ver pagos previos ('+periodos.length+')</summary><div style="margin-top:2px">'+periodos.map(pChip).join('')+'</div></details>'):'';
