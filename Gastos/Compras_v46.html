@@ -1807,17 +1807,52 @@ function applyPeopleUI(){
   if(hb) hb.textContent=personalMode?'👤':'👥';
 }
 function sesionPass(s){ return localStorage.getItem('gastos_pass_'+s) || ''; }
+// v29: lista de sesiones — cache-first (localStorage) así el selector no
+// se queda vacío mientras responde el servidor; se refresca sola en
+// segundo plano cada vez que se llama.
+function pCacheSesionesLista(){ try{ return JSON.parse(localStorage.getItem('gastos_cache_sesiones')||'null'); }catch(e){ return null; } }
 async function loadSesiones(){
+  const cache=pCacheSesionesLista();
+  if(cache && cache.length) SESIONES=cache;
   try{
     const r=await postGAS({action:'getSesiones'});
-    if(r && Array.isArray(r.sesiones) && r.sesiones.length) SESIONES=r.sesiones;
-    else SESIONES=['Principal'];
-  }catch(e){ SESIONES=['Principal']; }
+    if(r && Array.isArray(r.sesiones) && r.sesiones.length){
+      SESIONES=r.sesiones;
+      try{ localStorage.setItem('gastos_cache_sesiones', JSON.stringify(SESIONES)); }catch(e){}
+    } else if(!cache) SESIONES=['Principal'];
+  }catch(e){ if(!cache) SESIONES=['Principal']; }
 }
-// Devuelve true si quedó una sesión activa validada; si no, muestra el gate
+// v29: los miembros de una sesión quedan guardados junto con su último
+// getGastos (gastos_cache_sesion_<sesion>) — se reusa esa misma caché para
+// no tener que esperar al servidor solo para saber quiénes son.
+function pCacheSesionMiembros(sesion){
+  try{
+    const d=JSON.parse(localStorage.getItem('gastos_cache_sesion_'+sesion)||'null');
+    return (d && Array.isArray(d.miembros) && d.miembros.length) ? d.miembros : null;
+  }catch(e){ return null; }
+}
+// Devuelve true si quedó una sesión activa validada; si no, muestra el gate.
+// v29: cache-first — si este dispositivo ya entró antes a esa sesión, se
+// entra de inmediato con lo guardado (sin esperar al servidor) y la
+// validación real de la contraseña sigue en segundo plano; solo te regresa
+// al candado si de verdad resulta inválida (no por estar sin conexión).
+// La primera vez en un dispositivo nuevo (sin nada guardado) sí espera,
+// como antes.
 async function ensureSesion(){
-  await loadSesiones();
+  loadSesiones(); // no bloquea — SESIONES se actualiza sola cuando responda
   const saved=localStorage.getItem('gastos_sesion');
+  if(saved){
+    const miembrosCache=pCacheSesionMiembros(saved);
+    if(miembrosCache){
+      activeSesion=saved; PEOPLE=miembrosCache; applyPeopleUI();
+      v29CheckSesion(saved, sesionPass(saved)).then(chk=>{
+        if(chk.ok){ PEOPLE=chk.miembros; applyPeopleUI(); if(typeof renderNames==='function') renderNames(); }
+        else if(chk.error!=='red'){ v29ShowGate(); }
+      });
+      return true;
+    }
+  }
+  await loadSesiones();
   if(saved && SESIONES.includes(saved)){
     const chk=await v29CheckSesion(saved, sesionPass(saved));
     if(chk.ok){ activeSesion=saved; PEOPLE=chk.miembros; applyPeopleUI(); return true; }
@@ -2471,12 +2506,31 @@ async function loadSesionCards(){
 }
 async function loadExp(){
   v29UpdateActividadBadge(); // no bloquea: solo actualiza el contador de 🗑 Actividad
+  // v29: cache-first — si ya hay algo guardado en ESTE dispositivo (de una
+  // vez anterior), se pinta con eso de inmediato, sin esperar a la red; la
+  // actualización real llega después, en segundo plano, y repinta sola
+  // cuando esté. Antes SIEMPRE se esperaba la respuesta (o el error) del
+  // servidor antes de mostrar cualquier cosa, aunque ya hubiera datos
+  // guardados — en una conexión lenta/inestable eso se sentía como que la
+  // app no abría "aunque estuviera offline".
+  const lsKey='gastos_cache_sesion_'+activeSesion;
+  let pintadoDeCache=false;
+  const cacheKey=activeSesion+'|'+sesionPass(activeSesion);
+  if(!sesionCache[cacheKey]){
+    try{
+      const ls=JSON.parse(localStorage.getItem(lsKey)||'null');
+      if(ls){ applyRowsFromGAS(ls); pintadoDeCache=true; }
+    }catch(e){}
+  }
+  if(!navigator.onLine){
+    if(!pintadoDeCache && !allExp.length) document.getElementById('expList').innerHTML='<div class="empty-st">📴 Sin conexión y todavía sin datos guardados en este dispositivo.</div>';
+    return;
+  }
   try{
     loadSesionCards();
-    const cacheKey=activeSesion+'|'+sesionPass(activeSesion);
     const cached=sesionCache[cacheKey];
     if(cached && Date.now()-cached.t<5*60*1000){
-      applyRowsFromGAS(cached.d);
+      if(!pintadoDeCache) applyRowsFromGAS(cached.d);
       return;
     }
     const r=await fetch(GAS_URL+'?action=getGastos&sesion='+encodeURIComponent(activeSesion)+'&pass='+encodeURIComponent(sesionPass(activeSesion))+'&t='+Date.now());
@@ -2485,9 +2539,10 @@ async function loadExp(){
     if(d.error==='PASSWORD'){ localStorage.removeItem('gastos_pass_'+activeSesion); v29ShowGate(); return; }
     if(d.error) throw new Error(d.error);
     sesionCache[cacheKey]={t:Date.now(), d};
+    try{ localStorage.setItem(lsKey, JSON.stringify(d)); }catch(e){}
     applyRowsFromGAS(d);
   }catch(e){
-    document.getElementById('expList').innerHTML='<div class="empty-st">⚠️ Error: '+esc(e.message)+'</div>';
+    if(!pintadoDeCache && !allExp.length) document.getElementById('expList').innerHTML='<div class="empty-st">⚠️ Error: '+esc(e.message)+'</div>';
   }
 }
 function invalidateSesionCache(sesion){
@@ -6476,13 +6531,27 @@ async function pAuthAndLoad(){
   }catch(e){ pShowGate(false); }
 }
 
+// v29: cache-first — si ya hay items guardados en este dispositivo (de una
+// vez anterior), pItems arranca con eso y se pinta de inmediato (pRender)
+// sin esperar al servidor; la respuesta real llega después y repinta sola.
+// Los que ya llaman pLoad() seguido de pRender() no se rompen — ese
+// segundo pRender() nomás vuelve a pintar con los datos ya frescos.
 async function pLoad(){
+  if(!pItems.length){
+    try{
+      const ls=JSON.parse(localStorage.getItem('gastos_cache_pitems_'+pOwner)||'null');
+      if(ls && Array.isArray(ls) && ls.length){ pItems=ls; pLoaded=true; if(typeof pRender==='function') pRender(); }
+    }catch(e){}
+  }
   try{
     const r=await postGAS({action:'personalList', owner:pOwner, pass:pPass});
     // v29: sin red, no pisa lo que ya había en memoria (podrían ser cambios
     // hechos offline todavía sin sincronizar) — solo actualiza si la
     // respuesta realmente trajo datos.
-    if(r && r.ok && Array.isArray(r.items)) pItems = r.items;
+    if(r && r.ok && Array.isArray(r.items)){
+      pItems = r.items;
+      try{ localStorage.setItem('gastos_cache_pitems_'+pOwner, JSON.stringify(r.items)); }catch(e){}
+    }
     pLoaded = true;
     // v46: si ya guardaste tu par de monedas (JPY/MXN, etc.) desde este
     // login en OTRO dispositivo, tráelo aquí — antes solo el número del
