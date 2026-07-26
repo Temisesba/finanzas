@@ -4480,7 +4480,17 @@ tienda:document.getElementById('iTienda').value.trim(),
 producto:document.getElementById('iTienda').value.trim(),
 quien_paga:quienPagaBody,compartido:compartidoBody,participantes:participantesBody,pagadores:pagadoresBody,pago:pagoBuild(),notas:document.getElementById('iNotas').value.trim(),categoria:document.getElementById('iCat').value,
 sesion:saveSesion};
-  if(ei) body.rowIndex=ei;
+  if(ei){
+    body.rowIndex=ei;
+    // v29: si esta edición termina encolada sin conexión, va con la "foto"
+    // de cómo estaba el gasto al abrir Editar — sirve para detectar si
+    // alguien más lo cambió en el servidor mientras tanto (ver
+    // sincronizarPendientes/detectarConflictoGasto).
+    if(window.__gastoEditBaseline && String(window.__gastoEditBaseline.rowIndex)===String(ei)){
+      body._baseline=window.__gastoEditBaseline.campos;
+    }
+    window.__gastoEditBaseline=null;
+  }
   // v29: si marcaste MSI aquí en +Gasto, esto NO se guarda como un gasto
   // suelto — se registra como Compra a MSI de verdad (misma vista que
   // 🗓️ Compra a MSI), para que sí entre al calendario de cuotas y a la
@@ -4619,9 +4629,18 @@ function pAplicarGastoLocal(body, rowIndex){
   }
 }
 
+// v29: campos que se comparan para detectar choques al editar un gasto sin
+// conexión — se guarda una "foto" de estos al abrir Editar (ver editExp) y
+// se compara contra el servidor al sincronizar (ver detectarConflictoGasto).
+const P_CAMPOS_CONFLICTO=['fecha','costo','moneda_pago','costo_conv','moneda_conv','concepto','tienda','quien_paga','compartido','pago','notas','categoria'];
 function editExp(rowIndex){
   const e = allExp.find(x => x.rowIndex === rowIndex) || (misGastosAll||[]).find(x => x.rowIndex === rowIndex);
   if(!e) return;
+  // v29: "foto" del gasto tal como estaba al abrir Editar — si el guardado
+  // termina encolado sin conexión, sincronizarPendientes() la usa para ver
+  // si alguien más lo cambió en el servidor mientras tanto.
+  const baseline={}; P_CAMPOS_CONFLICTO.forEach(k=>baseline[k]=e[k]);
+  window.__gastoEditBaseline={rowIndex, campos:baseline};
 
   openModal(); // Esto abre la ventana en blanco primero
 
@@ -6429,12 +6448,22 @@ async function sincronizarPendientes(){
   _sincronizando=true; actualizarIndicadorConexion();
   try{
     for(const op of cola){
+      let conflicto=null;
       if(op.action==='personalSave' && op.item && op.item.id && op._baseUpdatedAt){
-        const conflicto=await detectarConflictoPersonal(op);
+        conflicto=await detectarConflictoPersonal(op);
         if(conflicto){
           const resuelto=await mostrarModalConflicto(conflicto);
           if(!resuelto) break; // el usuario todavía no decide: se detiene aquí, se reintenta después
           op.item=resuelto;
+        }
+      } else if(op.action==='updateGasto' && op._baseline){
+        // v29: mismo criterio que Itinerario — también los gastos de
+        // sesión (no solo Finanzas) se revisan por choques al sincronizar.
+        conflicto=await detectarConflictoGasto(op);
+        if(conflicto){
+          const resuelto=await mostrarModalConflicto(conflicto);
+          if(!resuelto) break;
+          Object.assign(op, resuelto); // aplica los campos elegidos de vuelta al gasto antes de mandarlo
         }
       }
       try{
@@ -6461,25 +6490,82 @@ async function detectarConflictoPersonal(op){
     return {local:op.item, servidor};
   }catch(e){ return null; }
 }
+// v29: trae tal cual está HOY en el servidor un gasto puntual (por
+// sesión+rowIndex) — se reusa getGastos y se busca la fila, para no tener
+// que agregar un endpoint nuevo solo para esto.
+async function pFetchGastoActual(sesion, rowIndex){
+  try{
+    const r=await fetch(GAS_URL+'?action=getGastos&sesion='+encodeURIComponent(sesion)+'&pass='+encodeURIComponent(sesionPass(sesion))+'&t='+Date.now());
+    if(!r.ok) return null;
+    const d=await r.json();
+    return (d.gastos||[]).find(g=>String(g.rowIndex)===String(rowIndex))||null;
+  }catch(e){ return null; }
+}
+// v29: un gasto de sesión (no solo Finanzas) también puede chocar — si lo
+// editaste sin conexión y, mientras tanto, alguien más lo cambió en el
+// servidor. Se compara la "foto" tomada al abrir Editar (op._baseline)
+// contra lo que hay hoy en el servidor, campo por campo.
+async function detectarConflictoGasto(op){
+  const fresh=await pFetchGastoActual(op.sesion, op.rowIndex);
+  if(!fresh) return null; // ya no existe (se borró) o no se pudo revisar: sin conflicto, se deja pasar
+  const campos=Object.keys(op._baseline);
+  const huboCambioAjeno=campos.some(k=>String(op._baseline[k]??'')!==String(fresh[k]??''));
+  if(!huboCambioAjeno) return null; // el servidor sigue igual a como estaba cuando abriste Editar
+  const local={}, servidor={};
+  campos.forEach(k=>{ local[k]=op[k]; servidor[k]=fresh[k]; });
+  return {local, servidor};
+}
+// v29: elegir campo por campo (tuyo/servidor), con botones para aplicar
+// todo de un lado de una — mismo criterio que el modal de conflictos de
+// Itinerario. Devuelve el objeto ya resuelto (mezcla de ambos según lo
+// elegido) o null si se cierra sin decidir.
 function mostrarModalConflicto(conflicto){
   return new Promise(resolve=>{
     const {local, servidor}=conflicto;
     const claves=new Set([...Object.keys(local||{}), ...Object.keys(servidor||{})]);
     const campos=[...claves].filter(k=>!['id','tipo','fecha_actualizacion','fecha_captura'].includes(k) && String(local[k]??'')!==String(servidor[k]??''));
+    const eleccion={}; campos.forEach(k=>eleccion[k]='local'); // por default, tuyo
     const ov=document.createElement('div');
     ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10000;display:flex;align-items:center;justify-content:center;padding:16px';
-    ov.innerHTML='<div style="background:var(--bg);border-radius:12px;padding:16px;max-width:420px;width:100%;max-height:80vh;overflow:auto;box-shadow:0 10px 40px rgba(0,0,0,.35)">'
-      +'<div style="font-weight:700;font-size:14px;margin-bottom:6px">⚠️ Cambios en paralelo</div>'
-      +'<div style="font-size:12px;color:var(--ink-3);margin-bottom:10px">"'+esc(local.concepto||local.persona||local.nombre||'Este registro')+'" se editó desde otro dispositivo/sesión mientras este estaba sin conexión. ¿Qué versión conservas?</div>'
-      +(campos.length?('<div style="font-size:11px;background:var(--surface2);border-radius:8px;padding:8px;margin-bottom:10px">'+campos.map(k=>'<div style="margin-bottom:4px"><strong>'+esc(k)+'</strong><br>📱 tuyo: '+esc(String(local[k]??'—'))+'<br>☁️ servidor: '+esc(String(servidor[k]??'—'))+'</div>').join('')+'</div>'):'<div style="font-size:11px;color:var(--ink-3);margin-bottom:10px">(sin diferencias visibles en los campos principales)</div>')
-      +'<div style="display:flex;gap:8px">'
-        +'<button type="button" class="rt-btn" id="confLocal" style="flex:1">📱 Mi versión</button>'
-        +'<button type="button" class="notes-save-btn" id="confServidor" style="flex:1">☁️ La del servidor</button>'
+    const filaHtml=k=>'<div class="pf-conf-row" data-campo="'+esc(k)+'" style="margin-bottom:8px;padding:8px;background:var(--surface2);border-radius:8px">'
+      +'<div style="font-size:11px;font-weight:700;margin-bottom:4px">'+esc(k)+'</div>'
+      +'<div style="display:flex;gap:6px">'
+        +'<button type="button" class="rt-btn conf-opt" data-val="local" style="flex:1;font-size:11px;text-align:left;background:var(--shared-bg);border-color:var(--shared-bdr);font-weight:700">📱 '+esc(String(local[k]??'—'))+'</button>'
+        +'<button type="button" class="rt-btn conf-opt" data-val="servidor" style="flex:1;font-size:11px;text-align:left">☁️ '+esc(String(servidor[k]??'—'))+'</button>'
       +'</div>'
     +'</div>';
+    ov.innerHTML='<div style="background:var(--bg);border-radius:12px;padding:16px;max-width:420px;width:100%;max-height:80vh;overflow:auto;box-shadow:0 10px 40px rgba(0,0,0,.35)">'
+      +'<div style="font-weight:700;font-size:14px;margin-bottom:6px">⚠️ Cambios en paralelo</div>'
+      +'<div style="font-size:12px;color:var(--ink-3);margin-bottom:10px">"'+esc(local.concepto||local.persona||local.nombre||'Este registro')+'" se editó desde otro dispositivo/sesión mientras este estaba sin conexión. Elige, campo por campo, cuál conservar:</div>'
+      +(campos.length?campos.map(filaHtml).join(''):'<div style="font-size:11px;color:var(--ink-3);margin-bottom:10px">(sin diferencias visibles en los campos principales)</div>')
+      +'<div style="display:flex;gap:8px;margin:4px 0 10px">'
+        +'<button type="button" class="rt-btn" id="confTodoLocal" style="flex:1;font-size:11px">📱 Usar todo lo mío</button>'
+        +'<button type="button" class="rt-btn" id="confTodoServidor" style="flex:1;font-size:11px">☁️ Usar todo lo del servidor</button>'
+      +'</div>'
+      +'<button type="button" class="notes-save-btn" id="confAplicar" style="width:100%">Aplicar</button>'
+    +'</div>';
     document.body.appendChild(ov);
-    ov.querySelector('#confLocal').addEventListener('click', ()=>{ ov.remove(); resolve(local); });
-    ov.querySelector('#confServidor').addEventListener('click', ()=>{ ov.remove(); resolve(servidor); });
+    const marcar=(fila,val)=>{
+      fila.querySelectorAll('.conf-opt').forEach(b=>{
+        const on=b.dataset.val===val;
+        b.style.background=on?'var(--shared-bg)':'';
+        b.style.borderColor=on?'var(--shared-bdr)':'var(--border2)';
+        b.style.fontWeight=on?'700':'400';
+      });
+      eleccion[fila.dataset.campo]=val;
+    };
+    ov.querySelectorAll('.pf-conf-row').forEach(fila=>{
+      fila.querySelectorAll('.conf-opt').forEach(b=>b.addEventListener('click', ()=>marcar(fila,b.dataset.val)));
+    });
+    const confTodoLocal=ov.querySelector('#confTodoLocal'), confTodoServidor=ov.querySelector('#confTodoServidor');
+    if(confTodoLocal) confTodoLocal.addEventListener('click', ()=>ov.querySelectorAll('.pf-conf-row').forEach(fila=>marcar(fila,'local')));
+    if(confTodoServidor) confTodoServidor.addEventListener('click', ()=>ov.querySelectorAll('.pf-conf-row').forEach(fila=>marcar(fila,'servidor')));
+    ov.querySelector('#confAplicar').addEventListener('click', ()=>{
+      const resultado={...servidor, ...local};
+      campos.forEach(k=>{ resultado[k]=eleccion[k]==='servidor'?servidor[k]:local[k]; });
+      ov.remove();
+      resolve(resultado);
+    });
   });
 }
 function actualizarIndicadorConexion(){
