@@ -6548,6 +6548,17 @@ async function sincronizarPendientes(){
       }
       try{
         const r=await postGASReal(op);
+        if(r && (r.deleted || r.rowChanged)){
+          // v29: el registro ya no existe, o la fila ya no es el mismo
+          // gasto (se recorrió por un borrado en otra parte) mientras esto
+          // estaba en la cola sin conexión. No es un error de red que se
+          // vaya a resolver solo reintentando — se saca de la cola y se
+          // avisa, en vez de bloquear el resto de los pendientes para
+          // siempre o sobrescribir/duplicar algo en silencio.
+          quitarDeColaPendiente(op._opId);
+          showToast('⚠ '+(r.deleted?'Un cambio sin sincronizar ya no aplica (el registro se borró en otro dispositivo)':'Un gasto editado sin conexión no se pudo sincronizar (la fila cambió en el servidor) — revísalo manualmente'));
+          continue;
+        }
         if(!(r&&r.ok)) throw new Error((r&&r.error)||'error');
         quitarDeColaPendiente(op._opId);
       }catch(e){ break; } // se detiene en el primer error para no desordenar la cola; se reintenta luego
@@ -6803,6 +6814,10 @@ async function pSaveItem(item){
     }
     pRender(); return true;
   }
+  // v29: si el servidor dice que este registro ya no existe (lo borraron
+  // desde otro dispositivo mientras tanto), no se reintenta como si fuera
+  // un error de red — se avisa claro para no perder el cambio en silencio.
+  if(r && r.deleted){ showToast('⚠ Este registro ya no existe (se borró en otro dispositivo) — tu cambio no se guardó'); pLoaded=false; await pLoad(); return false; }
   showToast('⚠ No se guardó: '+((r&&r.error)||'error')); return false;
 }
 // v29: cuando marcas MSI en +Gasto, se crea un item Personal 'msi' real
