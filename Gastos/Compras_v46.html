@@ -2399,7 +2399,7 @@ function registrarServiceWorker(){
 async function init(){
   registrarServiceWorker();
   if(typeof actualizarIndicadorConexion==='function') actualizarIndicadorConexion();
-  if(navigator.onLine && typeof sincronizarPendientes==='function' && cargarColaPendiente().length) sincronizarPendientes();
+  if(typeof sincronizarPendientes==='function' && cargarColaPendiente().length) sincronizarPendientes();
   if(!v29TieneGasUrl()){
     document.getElementById('gasUrlGate').style.display='flex';
     return; // v29: sin URL configurada, no se intenta conectar a nada
@@ -2522,10 +2522,11 @@ async function loadExp(){
       if(ls){ applyRowsFromGAS(ls); pintadoDeCache=true; }
     }catch(e){}
   }
-  if(!navigator.onLine){
-    if(!pintadoDeCache && !allExp.length) document.getElementById('expList').innerHTML='<div class="empty-st">📴 Sin conexión y todavía sin datos guardados en este dispositivo.</div>';
-    return;
-  }
+  // v29: NO se usa navigator.onLine para decidir si intentar la red — ese
+  // valor es poco confiable en varios navegadores de celular (a veces
+  // marca "sin conexión" aunque sí haya internet), y eso dejaba la lista
+  // vacía sin siquiera intentar. Mejor intentar siempre y que el propio
+  // fetch (con su try/catch) diga si de verdad falló.
   try{
     loadSesionCards();
     const cached=sesionCache[cacheKey];
@@ -6384,13 +6385,17 @@ async function postGASReal(body){
 }
 async function postGAS(body){
   const action=(body&&body.action)||'';
-  if(esAccionEscritura(action) && !navigator.onLine) return encolarCambioOffline(body);
+  // v29: NO se usa navigator.onLine para decidir si intentar la red primero
+  // — ese valor es poco confiable en varios navegadores de celular (a
+  // veces marca "sin conexión" aunque sí haya internet), y encolaba
+  // gastos nuevos sin ni siquiera intentar mandarlos. Siempre se intenta
+  // de verdad; solo se encola si el fetch de verdad falla.
   try{ return await postGASReal(body); }
   catch(e){ if(esAccionEscritura(action)) return encolarCambioOffline(body); throw e; }
 }
 let _sincronizando=false;
 async function sincronizarPendientes(){
-  if(_sincronizando || !navigator.onLine) return;
+  if(_sincronizando) return;
   const cola=cargarColaPendiente();
   if(!cola.length){ actualizarIndicadorConexion(); return; }
   _sincronizando=true; actualizarIndicadorConexion();
@@ -6458,7 +6463,7 @@ function actualizarIndicadorConexion(){
 }
 window.addEventListener('online', ()=>{ actualizarIndicadorConexion(); sincronizarPendientes(); });
 window.addEventListener('offline', actualizarIndicadorConexion);
-setInterval(()=>{ if(navigator.onLine && cargarColaPendiente().length) sincronizarPendientes(); }, 60000);
+setInterval(()=>{ if(cargarColaPendiente().length) sincronizarPendientes(); }, 60000);
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 let _t;function showToast(msg){const ex=document.querySelector('.toast');if(ex)ex.remove();clearTimeout(_t);const t=document.createElement('div');t.className='toast';t.textContent=msg;document.body.appendChild(t);_t=setTimeout(()=>t.remove(),2800);}
 
