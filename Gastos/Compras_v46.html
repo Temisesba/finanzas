@@ -1750,6 +1750,14 @@ function togglePagoPopover(){
 let SESIONES=[];            // nombres de sesiones disponibles
 let activeSesion='';        // sesión activa
 let PEOPLE=['Lot','Temis']; // miembros de la sesión activa; los primeros 2 encabezan la UI
+// v29: declaradas aquí (no más abajo, con el resto de "modo Personal") para
+// que ensureSesion()/applyPeopleUI()/buildPersonFilters() las puedan leer
+// desde el arranque cache-first sin esperar la red — si no, revientan con
+// "Cannot access before initialization" (TDZ) al cargar la app.
+let personalMode = false;   // toggle de cabecera: activa/desactiva la vista personal
+let misGastosAll=[];        // v45: mis gastos de todas las sesiones
+let misDeudasPorSesion={};  // v29: {sesion:{contraparte:neto}} — calculado en el backend, misma fuente que miParte
+const normTxt = s => String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().trim();
 const P1=()=>PEOPLE[0]||'Lot';
 const P2=()=>PEOPLE[1]||'Temis';
 const P_EMOJI=['💙','🧡','💚','💜','🩵','🤎','🩷','💛'];
@@ -1839,6 +1847,16 @@ function pCacheSesionMiembros(sesion){
 // La primera vez en un dispositivo nuevo (sin nada guardado) sí espera,
 // como antes.
 async function ensureSesion(){
+  // v29: cede el control un instante (setTimeout 0) ANTES de hacer nada —
+  // así el resto del script (declaraciones let/const más abajo en el
+  // archivo) termina de ejecutarse primero. Sin esto, la rama cache-first
+  // de aquí abajo puede llamar a applyPeopleUI()/render() de forma
+  // síncrona durante la primerísima pasada del script, antes de llegar a
+  // esas declaraciones — y eso revienta con "Cannot access before
+  // initialization" (TDZ). Es la misma clase de bug que ya se corrigió
+  // moviendo personalMode/misGastosAll/normTxt más arriba; esto es un
+  // respaldo genérico por si hay alguna otra variable en ese mismo caso.
+  await new Promise(res=>setTimeout(res,0));
   loadSesiones(); // no bloquea — SESIONES se actualiza sola cuando responda
   const saved=localStorage.getItem('gastos_sesion');
   if(saved){
@@ -5701,7 +5719,7 @@ async function v31ProdFormSubmit(){
 }
 
 // ══ v13: Caducidad, sugerencias, historial y escáner ══
-const normTxt = s => String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
+// (normTxt esta declarada mas arriba, junto a PEOPLE - la usa applyPeopleUI desde el arranque cache-first)
 
 // --- 🔔 Banner "por caducar" (al cargar) ---
 function v31CaducidadBanner(){
@@ -9320,11 +9338,13 @@ async function pEnviarNoIdentificados(estadoId){
 //  v37 — MI LISTA (vista personal fusionada, estilo gastos) +
 //  alarmas de tarjetas + modo Personal (toggle de cabecera)
 // ═══════════════════════════════════════════════════════════════
-let personalMode = false;
-
-// Toggle de cabecera: activa/desactiva la vista personal
-let misGastosAll=[]; // v45: mis gastos de todas las sesiones
-let misDeudasPorSesion={}; // v29: {sesion:{contraparte:neto}} — calculado en el backend, misma fuente que miParte
+// v29: personalMode/misGastosAll/misDeudasPorSesion se declaran arriba,
+// junto a PEOPLE/activeSesion (ver ~línea 1750) — ensureSesion() ahora
+// puede llamar a applyPeopleUI()/buildPersonFilters() de forma síncrona
+// (cache-first, sin esperar la red) y esas funciones leen personalMode;
+// si se declaraba aquí abajo, tronaba con "Cannot access before
+// initialization" al cargar (TDZ) porque ese código corría antes de
+// llegar a esta línea.
 async function pReloadMisGastos(){
   if(!pOwner) pOwner=myName();
   if(!pOwner) return;
