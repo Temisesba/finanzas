@@ -3106,8 +3106,9 @@ function renderList(data){
   // solo en Finanzas. Antes aparecían como filas de solo lectura mezcladas
   // con gastos reales, lo cual confundía (sobre todo ahora que los pagos SÍ
   // crean un gasto real cuando se registran). Las deudas externas SÍ se
-  // agregan abajo cuando el filtro activo es Préstamo/↩️.
-  const deudasExternas = activeF==='Prestamo' ? pItemsOf('deuda') : [];
+  // agregan abajo cuando el filtro activo es Préstamo/↩️ — pero SOLO en
+  // 👤 Personal (son tuyas, no de la sesión compartida que estés viendo).
+  const deudasExternas = (activeF==='Prestamo' && personalMode) ? pItemsOf('deuda') : [];
   if(!data.length && !deudasExternas.length){list.innerHTML='<div class="empty-st">Sin gastos en esta vista.</div>';return;}
   if(!data.length){
     list.innerHTML='<div class="empty-st">Sin gastos en esta vista.</div>'
@@ -4472,6 +4473,18 @@ sesion:saveSesion};
   }
   // v12: si hay productos, la compra necesita un GastoId propio para enlazarlos
   const prodsLimpios = prodDraft.filter(p=>p.concepto.trim()!=='');
+  // v29: si la suma de los productos (precio × piezas) no coincide con el
+  // total del ticket, avisa antes de guardar — típico de que la IA leyó
+  // mal un precio o se le pasó un producto. Tolera una diferencia chica
+  // (impuestos/redondeo) para no molestar en cada ticket.
+  if(prodsLimpios.length){
+    const sumaProductos=prodsLimpios.reduce((s,p)=>s+((parseFloat(p.precioInd)||0)*(parseFloat(p.piezas)||1)),0);
+    const totalTicket=parseFloat(body.costo)||0;
+    const diff=Math.abs(sumaProductos-totalTicket);
+    if(sumaProductos>0 && totalTicket>0 && diff>Math.max(1,totalTicket*0.05)){
+      if(!confirm('Los productos suman '+pMoney(sumaProductos)+', pero el total del ticket es '+pMoney(totalTicket)+' (diferencia de '+pMoney(diff)+'). ¿Aún así quieres guardarlo?')) return;
+    }
+  }
   let gid = '';
   if(ei){ const old=allExp.find(x=>x.rowIndex==ei); gid = (old&&old.gastoId)||''; }
   if(prodsLimpios.length && !gid){ gid='G-'+Date.now().toString(36).toUpperCase(); body.gastoId=gid; }
