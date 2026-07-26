@@ -2412,6 +2412,16 @@ function v29SubmitGasUrl(){
 }
 function registrarServiceWorker(){
   if(!('serviceWorker' in navigator)) return;
+  // v29: con el service worker en modo "caché primero", una actualización
+  // se descarga sola en segundo plano pero normalmente solo se ve hasta
+  // la SIGUIENTE apertura — aquí, en cuanto esa nueva versión termina de
+  // instalarse y toma control, se recarga la página sola una vez, para no
+  // quedarte viendo una versión vieja sin darte cuenta.
+  let yaRecargo=false;
+  navigator.serviceWorker.addEventListener('controllerchange', ()=>{
+    if(yaRecargo) return; yaRecargo=true;
+    location.reload();
+  });
   navigator.serviceWorker.register('sw.js').catch(()=>{});
 }
 async function init(){
