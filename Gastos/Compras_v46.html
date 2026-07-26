@@ -1059,6 +1059,8 @@ details:not([open]) .chev{transform:rotate(-90deg)}
       <div class="sep-line"></div>
       <label>Cat:</label>
       <select id="catSelect" onchange="renderAll()" style="min-width:140px"><option value="">Todas</option></select>
+      <label id="viajeSelectLbl" style="display:none">🧳 Viaje:</label>
+      <select id="viajeSelect" onchange="renderAll()" style="min-width:140px;display:none"><option value="">Todos</option></select>
       <button class="btn-clr" id="btnClearColFilters" style="display:none" onclick="clearColFilters()">✕ Filtros col.</button>
     </div>
     <div class="search-bar">
@@ -1108,6 +1110,7 @@ details:not([open]) .chev{transform:rotate(-90deg)}
       <button class="ptab2 on" id="st-hist"  onclick="setStatSection('hist',this)">📅 Historial</button>
       <button class="ptab2"    id="st-cat"   onclick="setStatSection('cat',this)">🏷 Categorías</button>
       <button class="ptab2"    id="st-person" onclick="setStatSection('person',this)">👤 Persona</button>
+      <button class="ptab2"    id="st-viaje" onclick="setStatSection('viaje',this)">🧳 Por viaje</button>
     </div>
     <div id="statsGrid"></div>
   </div>
@@ -2600,6 +2603,7 @@ const _rows=(d.gastos||[]).map(pNormalizarGasto);
     allExp   = _rows.filter(e=>e.tipoFila!=='producto');
     v31CaducidadBanner(); // v13: aviso de caducidades al cargar
     populateCatSelect();
+    populateViajeSelect();
     refreshTiendasDatalist();
     renderAll();
     if(currentPage==='stats')  renderStats();
@@ -2613,6 +2617,34 @@ function populateCatSelect(){
   sel.innerHTML='<option value="">Todas</option>';
   cats.forEach(c=>{const o=document.createElement('option');o.value=c;o.textContent=c;sel.appendChild(o);});
   sel.value=cur;
+}
+// v29: gastos ligados desde Itinerario traen el nombre del viaje en
+// "proyecto" — si hay al menos uno, aparece este filtro (si no, se queda
+// oculto para no ensuciar la vista de quien no usa Itinerario).
+function populateViajeSelect(){
+  const sel=document.getElementById('viajeSelect'); const lbl=document.getElementById('viajeSelectLbl');
+  if(!sel) return;
+  const viajes=[...new Set([...(allExp||[]),...(misGastosAll||[])].map(e=>e.proyecto).filter(Boolean))].sort();
+  const cur=sel.value;
+  sel.innerHTML='<option value="">Todos</option>';
+  viajes.forEach(v=>{const o=document.createElement('option');o.value=v;o.textContent=v;sel.appendChild(o);});
+  sel.value=viajes.includes(cur)?cur:'';
+  const mostrar=viajes.length>0;
+  sel.style.display=mostrar?'':'none';
+  if(lbl) lbl.style.display=mostrar?'':'none';
+}
+// v29: te manda a Gastos ya filtrado por ese viaje — se llama desde
+// Estadísticas → Por viaje.
+function pIrAGastosDeViaje(viaje){
+  const tabGastos=document.querySelector('.ptab[onclick*="\'gastos\'"]');
+  if(tabGastos) switchPage('gastos', tabGastos);
+  populateViajeSelect();
+  const sel=document.getElementById('viajeSelect');
+  if(sel){
+    if(![...sel.options].some(o=>o.value===viaje)){ const o=document.createElement('option'); o.value=viaje; o.textContent=viaje; sel.appendChild(o); }
+    sel.value=viaje;
+  }
+  renderAll();
 }
 function refreshTiendasDatalist(){
   const tiendas=[...new Set(allExp.map(e=>e.tienda).filter(Boolean))].sort();
@@ -2802,6 +2834,8 @@ function getFilteredBase(){
   if(from) data=data.filter(e=>e.fecha>=from);
   if(to)   data=data.filter(e=>e.fecha<=to);
   if(cat)  data=data.filter(e=>e.categoria===cat);
+  const viajeSel=document.getElementById('viajeSelect');
+  if(viajeSel && viajeSel.value) data=data.filter(e=>e.proyecto===viajeSel.value);
   // v29: en Personal, "Compartido" solo muestra lo de OTRAS sesiones (lo de tu
   // sesión activa ya lo ves en la vista normal de esa sesión); Préstamo y
   // Cotización sí deben verse sin importar la sesión de origen.
@@ -3672,6 +3706,52 @@ let daysHtml = sortedDays.map(d => {
       + balanceBox
       + (gCot>0?`<div style="margin-top:8px;background:var(--cot-bg);border:1px solid var(--cot-bdr);border-radius:10px;padding:12px;font-size:12px;color:var(--cot)">💬 Cotizaciones: <strong>${fy(gCot)}</strong> estimado</div>`:'')
       + `<div class="stats-legend">${PEOPLE.map(n=>'<span><span class="leg-dot" style="background:'+pColor(n).col+'"></span>'+esc(n)+' personal</span>').join('')}<span><span class="leg-dot" style="background:var(--shared);opacity:.7"></span>Parte del compartido</span></div>`;
+
+  // ── POR VIAJE (gastos ligados desde Itinerario, agrupados por Proyecto) ──
+  } else if (statSection === 'viaje') {
+    const porViaje={};
+    data.forEach(e=>{
+      const v=String(e.proyecto||'').trim(); if(!v) return;
+      if(!porViaje[v]) porViaje[v]={total:0, fechaMin:'', fechaMax:'', porCat:{}, porPersona:{}};
+      const nodo=porViaje[v];
+      const a=parseFloat(e.costo)||0;
+      nodo.total+=a;
+      const d=String(e.fecha||'').substring(0,10);
+      if(d && (!nodo.fechaMin||d<nodo.fechaMin)) nodo.fechaMin=d;
+      if(d && (!nodo.fechaMax||d>nodo.fechaMax)) nodo.fechaMax=d;
+      const cat=e.categoria||'Sin categoría';
+      nodo.porCat[cat]=(nodo.porCat[cat]||0)+a;
+      // "quién pagó" — cada quien puso lo suyo (Varios pagan / Compartido con
+      // pagadores) o, si no, el pagador único del gasto.
+      if((e.compartido==='VariosPagan'||e.compartido==='Compartido') && Array.isArray(e.pagadores) && e.pagadores.length){
+        e.pagadores.forEach(p=>{ nodo.porPersona[p.persona]=(nodo.porPersona[p.persona]||0)+(parseFloat(p.monto)||0); });
+      } else if(e.quien_paga){
+        nodo.porPersona[e.quien_paga]=(nodo.porPersona[e.quien_paga]||0)+a;
+      }
+    });
+    const viajes=Object.keys(porViaje).sort((a,b)=>(porViaje[b].fechaMax||'').localeCompare(porViaje[a].fechaMax||''));
+    if(!viajes.length){
+      grid.innerHTML='<div style="padding:50px;text-align:center;color:var(--ink-3)">Sin gastos ligados a un viaje todavía — se ligan solos desde la app de Itinerario.</div>';
+    } else {
+      grid.innerHTML = viajes.map(v=>{
+        const nodo=porViaje[v];
+        const catHtml=Object.entries(nodo.porCat).sort((a,b)=>b[1]-a[1]).map(([k,val])=>'<div class="avg-row"><span class="avg-label">'+esc(k)+'</span><span class="avg-val">'+fy(val)+'</span></div>').join('');
+        const persHtml=Object.entries(nodo.porPersona).sort((a,b)=>b[1]-a[1]).map(([k,val])=>'<div class="avg-row"><span class="avg-label">'+pEmoji(k)+' '+esc(k)+'</span><span class="avg-val">'+fy(val)+'</span></div>').join('');
+        const rango=nodo.fechaMin?(fmtDate(nodo.fechaMin)+(nodo.fechaMax&&nodo.fechaMax!==nodo.fechaMin?(' – '+fmtDate(nodo.fechaMax)):'')):'';
+        return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:12px">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:4px">
+            <div style="font-size:14px;font-weight:700">🧳 ${esc(v)}</div>
+            <button class="rt-btn" style="font-size:10px" onclick="pIrAGastosDeViaje('${esc(v)}')">Ver estos gastos</button>
+          </div>
+          <div style="font-size:11px;color:var(--ink-3);margin-bottom:8px">${esc(rango)}</div>
+          <div style="font-family:var(--mono);font-size:18px;font-weight:700;color:var(--shared);margin-bottom:10px">${fy(nodo.total)}</div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:16px">
+            <div><div style="font-size:10px;font-weight:600;text-transform:uppercase;color:var(--ink-3);margin-bottom:4px">Por categoría</div>${catHtml||'<div style="color:var(--ink-3);font-size:11px">—</div>'}</div>
+            <div><div style="font-size:10px;font-weight:600;text-transform:uppercase;color:var(--ink-3);margin-bottom:4px">Quién pagó</div>${persHtml||'<div style="color:var(--ink-3);font-size:11px">—</div>'}</div>
+          </div>
+        </div>`;
+      }).join('');
+    }
   }
   } finally { PEOPLE = __PEOPLE_BACKUP; }
 }
@@ -9449,6 +9529,7 @@ async function pReloadMisGastos(){
     const r=await postGAS({action:'getMisGastos', owner:pOwner, pass:pPass});
     misGastosAll=(r&&r.ok&&Array.isArray(r.gastos))?r.gastos.map(pNormalizarGasto):[];
     misDeudasPorSesion=(r&&r.ok&&r.debtsBySession)?r.debtsBySession:{};
+    if(typeof populateViajeSelect==='function') populateViajeSelect();
   }catch(e){ /* v29: sin red — conserva lo que ya había en memoria (posibles cambios offline) en vez de vaciarlo */ }
 }
 // v29: contraseña de datos sensibles (CLABE, número completo, PIN de tarjetas) —
