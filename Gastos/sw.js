@@ -1,8 +1,13 @@
 // Service Worker de Gastos — permite abrir y editar la app sin conexión.
-// Estrategia: red primero, caché solo como respaldo. Mientras haya señal, todo se sirve
-// siempre fresco desde la red; la copia en caché solo se usa el momento puntual en que
-// el fetch a la red falla de verdad. (Mismo patrón que Itinerario/sw.js.)
-const CACHE_NAME = 'gastos-shell-v1';
+// Estrategia: caché primero, red en segundo plano (stale-while-revalidate).
+// Compras_v46.html es grande (500KB+) y va creciendo — con "red primero"
+// (como se hizo al inicio) cada apertura esperaba la descarga COMPLETA del
+// archivo antes de mostrar nada, y en una conexión lenta/inestable eso se
+// sentía como "tarda mucho en cargar" aunque ya hubiera una copia guardada
+// en el dispositivo. Ahora: si hay una copia en caché, se sirve de
+// inmediato (la app abre al instante) y, al mismo tiempo, se pide la
+// versión fresca en segundo plano para la PRÓXIMA vez que se abra.
+const CACHE_NAME = 'gastos-shell-v2';
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
@@ -25,12 +30,17 @@ self.addEventListener('fetch', (event) => {
   if (req.method !== 'GET' || !esMismoOrigen) return;
 
   event.respondWith(
-    fetch(req, { cache: 'reload' }) // "reload" = ir siempre a la red, ignorando la caché HTTP normal del navegador
-      .then((res) => {
-        const copia = res.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(req, copia));
-        return res;
-      })
-      .catch(() => caches.match(req).then((res) => res || caches.match('Compras_v46.html')))
+    caches.match(req).then((cacheado) => {
+      const enRed = fetch(req)
+        .then((res) => {
+          const copia = res.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(req, copia));
+          return res;
+        })
+        .catch(() => cacheado || caches.match('Compras_v46.html'));
+      // Si ya hay copia guardada, se sirve YA (no se espera a la red);
+      // la red actualiza la caché sola para la próxima apertura.
+      return cacheado || enRed;
+    })
   );
 });
