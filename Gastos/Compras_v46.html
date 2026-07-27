@@ -1629,9 +1629,10 @@ details:not([open]) .chev{transform:rotate(-90deg)}
     <div class="field">
       <label>🧾 Productos del ticket <span style="font-weight:400;color:var(--ink-3);text-transform:none">(la IA los llena; puedes editar)</span></label>
       <div class="prod-scroll">
-        <div id="prodHdr" class="prod-hdr" style="display:none"><span>Producto</span><span>Pzas</span><span>Cant.</span><span>Unidad</span><span>Precio</span><span>Caducidad</span><span title="¿Va a inventario?">📦</span><span></span></div>
+        <div id="prodHdr" class="prod-hdr" style="display:none"><span>Producto</span><span>Pzas</span><span>Cant.</span><span>Unidad</span><span>Precio</span><span>¿Quién?</span><span title="¿Va a inventario?">📦</span><span></span></div>
         <div id="prodList"></div>
       </div>
+      <div id="prodQuienResumen" style="font-size:11px;color:var(--ink-3);margin-top:4px"></div>
       <div style="display:flex;gap:6px;margin-top:4px">
         <button class="rt-btn" onclick="v30ProdAdd()">＋ Agregar producto</button>
         <button class="rt-btn" onclick="v31OpenScan('draft')">📷 Escanear producto</button>
@@ -3376,9 +3377,11 @@ function v30SubTable(hijos){
     const invSI=(p.inventario||'SI')!=='NA';
     const inv='<button class="inv-toggle '+(invSI?'si':'')+'" onclick="v31ToggleInv('+p.rowIndex+')" title="Cambiar inventario">'+(invSI?'📦 SI':'NA')+'</button>';
     const cat=p.categoria?esc(p.categoria):'<span style="color:var(--ink-3)">—</span>';
-    return '<tr><td style="text-align:center">'+inv+'</td><td>'+nom+'</td><td>'+(p.piezas||'')+'</td><td>'+(p.cantidad?esc(p.cantidad)+' '+esc(p.unidad||''):'—')+'</td><td>'+(p.precioInd?curSym()+esc(p.precioInd):'—')+'</td><td style="font-size:10px;color:var(--personal);font-weight:600">'+cat+'</td><td><button class="shop-del" onclick="v35EditProd('+p.rowIndex+')" title="Editar producto (foto, marca, código…)">✏️</button></td></tr>';
+    const quien=p.quienCompra?esc(p.quienCompra):'<span style="color:var(--ink-3)">—</span>';
+    return '<tr><td style="text-align:center">'+inv+'</td><td>'+nom+'</td><td>'+(p.piezas||'')+'</td><td>'+(p.cantidad?esc(p.cantidad)+' '+esc(p.unidad||''):'—')+'</td><td>'+(p.precioInd?curSym()+esc(p.precioInd):'—')+'</td><td style="font-size:10px;color:var(--personal);font-weight:600">'+cat+'</td><td style="font-size:10px;font-weight:600">'+quien+'</td><td><button class="shop-del" onclick="v35EditProd('+p.rowIndex+')" title="Editar producto (foto, marca, código…)">✏️</button></td></tr>';
   };
-  return '<div class="prod-sub"><table><tr><th title="¿Va a inventario?">📦</th><th>Producto</th><th>Pzas</th><th>Cant.</th><th>Precio</th><th>Categoría</th><th></th></tr>'+hijos.map(fila).join('')+'</table></div>';
+  const resumen=v29TextoResumenPorPersona(hijos);
+  return '<div class="prod-sub"><table><tr><th title="¿Va a inventario?">📦</th><th>Producto</th><th>Pzas</th><th>Cant.</th><th>Precio</th><th>Categoría</th><th>¿Quién?</th><th></th></tr>'+hijos.map(fila).join('')+'</table>'+(resumen?'<div style="font-size:11px;color:var(--ink-3);padding:4px 2px">'+resumen+'</div>':'')+'</div>';
 }
 
 function fmtDate(r){if(!r)return '—';try{const s=String(r).substring(0,10);const[y,m,d]=s.split('-');const idx=parseInt(m,10)-1;const mes=(MESES_CORTOS[idx]||m||'?').toUpperCase();return d+mes+y;}catch{return String(r).substring(0,8);}}
@@ -4487,7 +4490,8 @@ async function fillAI(res){
       cantidad: p.cantidad!=null?String(p.cantidad):'',
       unidad:   UNIDADES.includes(String(p.unidad||'').toLowerCase())?String(p.unidad).toLowerCase():'unidad',
       precioInd:p.precio!=null?String(p.precio):'',
-      caducidad:'', inventario:p.inventario===true // v29: por default NO va a inventario a menos que la IA lo marque explícitamente
+      caducidad:'', quienCompra:v29QuienCompraDefault(),
+      inventario:p.inventario===true // v29: por default NO va a inventario a menos que la IA lo marque explícitamente
     })).filter(p=>p.concepto);
     v30RenderProdDraft();
   }
@@ -4514,13 +4518,49 @@ function v30RenderProdDraft(){
       <input type="text" value="${esc(p.cantidad)}" placeholder="500" onchange="prodDraft[${i}].cantidad=this.value">
       <select onchange="prodDraft[${i}].unidad=this.value">${UNIDADES.map(u=>'<option'+(u===p.unidad?' selected':'')+'>'+u+'</option>').join('')}</select>
       <input type="text" value="${esc(p.precioInd)}" placeholder="¥" onchange="prodDraft[${i}].precioInd=this.value">
-      <input type="date" value="${esc(p.caducidad)}" onchange="prodDraft[${i}].caducidad=this.value" title="Caducidad">
+      <select onchange="prodDraft[${i}].quienCompra=this.value;v29RenderQuienResumen()" title="¿Quién compra este producto? (la caducidad ahora se edita con el ✏️)">${v29QuienCompraOpciones(p.quienCompra)}</select>
       <input type="checkbox" ${p.inventario?'checked':''} onchange="prodDraft[${i}].inventario=this.checked" title="¿Va a inventario? (desmarca para regalos u otros = NA)">
-      <span style="display:flex;gap:2px"><button class="shop-del" onclick="v35EditDraft(${i})" title="Editar producto (foto, código, catálogo…)">✏️</button><button class="shop-del" onclick="prodDraft.splice(${i},1);v30RenderProdDraft()" title="Quitar línea">🗑</button></span>
+      <span style="display:flex;gap:2px"><button class="shop-del" onclick="v35EditDraft(${i})" title="Editar producto (foto, caducidad, código, catálogo…)">✏️</button><button class="shop-del" onclick="prodDraft.splice(${i},1);v30RenderProdDraft()" title="Quitar línea">🗑</button></span>
     </div>`).join('');
+  v29RenderQuienResumen();
+}
+// v29: "¿quién compra?" por producto — comparten el ticket pero cada línea
+// puede ser de una persona distinta (o Compartido); independiente de quién
+// pagó el ticket completo. En sesión individual no tiene caso ofrecer
+// "Compartido" — solo está esa persona.
+function v29QuienCompraDefault(){ return PEOPLE.length>1 ? 'Compartido' : (PEOPLE[0]||myName()||''); }
+function v29QuienCompraOpciones(sel){
+  const opts = PEOPLE.length>1 ? ['Compartido', ...PEOPLE] : (PEOPLE.length?PEOPLE.slice():[myName()||'']);
+  const actual = sel || v29QuienCompraDefault();
+  return opts.map(o=>'<option'+(o===actual?' selected':'')+'>'+esc(o)+'</option>').join('');
+}
+// v29: cuánto le toca a cada quien — suma directa de lo suyo + su parte
+// pareja de lo "Compartido" (mismo criterio de reparto parejo que ya usa el
+// resto de la app para gastos compartidos). Se reusa tanto en el editor
+// (prodDraft) como en la subtabla de solo-lectura de la lista de gastos.
+function v29CalcTotalesPorPersona(productos){
+  const totales={}; PEOPLE.forEach(n=>totales[n]=0);
+  let compartido=0;
+  (productos||[]).forEach(p=>{
+    const monto=(parseFloat(p.precioInd)||0)*(parseFloat(p.piezas)||1);
+    const quien=p.quienCompra||v29QuienCompraDefault();
+    if(quien==='Compartido'||!PEOPLE.includes(quien)) compartido+=monto;
+    else totales[quien]=(totales[quien]||0)+monto;
+  });
+  return {totales, compartido};
+}
+function v29TextoResumenPorPersona(productos){
+  if(!productos||!productos.length||PEOPLE.length<2) return '';
+  const {totales,compartido}=v29CalcTotalesPorPersona(productos);
+  const porCabeza=compartido/PEOPLE.length;
+  return '🙋 Le toca: '+PEOPLE.map(n=>n+' '+curSym()+Math.round(totales[n]+porCabeza).toLocaleString()).join(' · ')+(compartido?' (incluye su parte de lo Compartido)':'');
+}
+function v29RenderQuienResumen(){
+  const el=document.getElementById('prodQuienResumen'); if(!el) return;
+  el.textContent=v29TextoResumenPorPersona(prodDraft);
 }
 function v30ProdAdd(){
-  prodDraft.push({concepto:'',piezas:'1',cantidad:'',unidad:'unidad',precioInd:'',caducidad:'',inventario:true,ubicacion:''});
+  prodDraft.push({concepto:'',piezas:'1',cantidad:'',unidad:'unidad',precioInd:'',caducidad:'',quienCompra:v29QuienCompraDefault(),inventario:true,ubicacion:''});
   v30RenderProdDraft();
 }
 
@@ -4616,7 +4656,7 @@ sesion:saveSesion};
           // explícito (p.inventarioId), respétalo; si no tocaste nada, va al
           // PREDETERMINADO (no al que estás viendo ahora mismo — ese criterio
           // es solo para cuando agregas directo desde Inventario).
-          const out={concepto:p.concepto.trim(),marca:p.marca||'',notas:p.notas||'',categoria:p.categoria||'',ubicacion:p.ubicacion||'',piezas:p.piezas,cantidad:p.cantidad,unidad:p.unidad,precioInd:p.precioInd,caducidad:p.caducidad,inventario:p.inventario?'SI':'NA',codigo:p.codigo||'',queda:p.queda??'',inventarioId:p.inventarioId||(inventarios.find(c=>c.def)||inventarios[0]||{}).id||''};
+          const out={concepto:p.concepto.trim(),marca:p.marca||'',notas:p.notas||'',categoria:p.categoria||'',ubicacion:p.ubicacion||'',piezas:p.piezas,cantidad:p.cantidad,unidad:p.unidad,precioInd:p.precioInd,caducidad:p.caducidad,quienCompra:p.quienCompra||v29QuienCompraDefault(),inventario:p.inventario?'SI':'NA',codigo:p.codigo||'',queda:p.queda??'',inventarioId:p.inventarioId||(inventarios.find(c=>c.def)||inventarios[0]||{}).id||''};
           if(p.fotoBase64){ out.fotoBase64=p.fotoBase64; out.fotoMime=p.fotoMime; }
           else if(p.fotoUrl){ out.fotoUrl=p.fotoUrl; }
           else if(c&&c.foto){ out.fotoUrl=c.foto; } // hereda del catálogo solo si no eligió una propia
@@ -4804,6 +4844,7 @@ function editExp(rowIndex){
   prodDraft = prodsDe(e.gastoId).map(p=>({
     concepto:p.concepto||'', marca:p.marca||'', notas:p.notas||'', categoria:p.categoria||'', ubicacion:p.ubicacion||'', piezas:String(p.piezas||''), cantidad:String(p.cantidad||''),
     unidad:p.unidad||'unidad', precioInd:String(p.precioInd||''), caducidad:String(p.caducidad||'').substring(0,10),
+    quienCompra:p.quienCompra||v29QuienCompraDefault(), // v29: producto viejo sin este dato → default de hoy
     inventario:(p.inventario||'SI')!=='NA',
     codigo:String(p.codigo||''), fotoUrl:p.fotoProducto||'',   // v20: la foto existente viaja explícita
     queda:String(p.queda??'')                                    // v22: % queda también viaja
