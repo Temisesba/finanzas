@@ -1549,23 +1549,20 @@ details:not([open]) .chev{transform:rotate(-90deg)}
       <label>Categoría</label>
       <select id="iCat">
         <option value="" selected>— Sin categoría —</option>
-        <option>🍜 Alimentos</option> 
-	<option>🍽️ Restaurante</option> 
-	<option>🏨 Hospedaje</option> 
-        <option>🍺 Salidas / Bares</option>
-        <option>🛒 Supermercado</option>
-        <option>🎌 Entretenimiento</option>
-        <option>👗 Ropa / Compras</option>
+        <option>🥦 Despensa / comida para casa</option>
+        <option>🍟 Antojos / ultraprocesados</option>
+        <option>🍽️ Restaurantes, cafés y delivery</option>
+        <option>🍺 Alcohol y bares</option>
+        <option>🎟️ Entradas y entretenimiento</option>
         <option>🚆 Transporte</option>
-        <option>🏠 Hogar</option>
+        <option>🏨 Hospedaje</option>
+        <option>🏠 Hogar y limpieza</option>
+        <option>💡 Servicios y suscripciones</option>
+        <option>👗 Ropa, accesorios, belleza y cuidado personal</option>
         <option>💊 Salud</option>
-        <option>📱 Servicios / Tech</option>
-        <option>✈️ Viajes</option>
-        <option>🎁 Regalos</option>
-        <option>📚 Educación</option>
-        <option>🌸 Belleza / Cuidado</option>
-        <option>💸 Transferencias / Finanzas</option>
-        <option>❓ Otro</option>
+        <option>🎁 Regalos y recuerdos</option>
+        <option>💸 Finanzas y transferencias</option>
+        <option>❓ Otro / por revisar</option>
       </select>
     </div>
 
@@ -7759,7 +7756,7 @@ async function pAccionFijo(id){
   document.getElementById('iDate').value=new Date().toISOString().substring(0,10);
   document.getElementById('iCosto').value=Math.round(parseFloat(f.monto)||0);
   document.getElementById('iConc').value=f.concepto||'Pago fijo';
-  document.getElementById('iCat').value=f.categoria||'Servicios';
+  document.getElementById('iCat').value=f.categoria||'💡 Servicios y suscripciones';
   document.getElementById('iNotas').value=(f.nota?f.nota+' · ':'')+'Generado desde pago fijo '+f.id;
   if(f.formaPago==='Tarjeta'&&f.tarjeta){ const mm=document.getElementById('iMetodo'); if(mm){ mm.value='Tarjeta'; onMetodoChange(); const s=document.getElementById('iTarjetaSel'); if(s){ s.value=f.tarjeta; onTarjetaSelChange(); } } }
   window.__pagoFijoPendiente=f.id;
@@ -8251,7 +8248,7 @@ function pMovComoFijoConfirmar(btn){
   document.getElementById('iDate').value=m.fecha||new Date().toISOString().substring(0,10);
   document.getElementById('iCosto').value=parseFloat(m.monto)||parseFloat(f.monto)||0;
   document.getElementById('iConc').value=f.concepto||'Pago fijo';
-  document.getElementById('iCat').value=f.categoria||'Servicios';
+  document.getElementById('iCat').value=f.categoria||'💡 Servicios y suscripciones';
   document.getElementById('iNotas').value='Desde estado de cuenta · '+pCardLabel(c);
   const mm=document.getElementById('iMetodo'); if(mm && cardId){ mm.value='Tarjeta'; onMetodoChange(); const s=document.getElementById('iTarjetaSel'); if(s){ s.value=cardId; onTarjetaSelChange(); } }
   if(c.moneda){ const mp=document.getElementById('iMonedaPago'); if(mp) mp.value=c.moneda; }
@@ -8286,7 +8283,7 @@ function pRegistrarMovComoGasto(btn){
   document.getElementById('iDate').value=m.fecha||new Date().toISOString().substring(0,10);
   document.getElementById('iCosto').value=parseFloat(m.monto)||0;
   document.getElementById('iConc').value=m.descripcion||'Movimiento de estado de cuenta';
-  document.getElementById('iCat').value=m.categoria||'Por revisar';
+  document.getElementById('iCat').value=m.categoria||'❓ Otro / por revisar';
   document.getElementById('iNotas').value='Desde estado de cuenta · '+pCardLabel(c);
   const mm=document.getElementById('iMetodo'); if(mm && cardId){ mm.value='Tarjeta'; onMetodoChange(); const s=document.getElementById('iTarjetaSel'); if(s){ s.value=cardId; onTarjetaSelChange(); } }
   if(c.moneda){ const mp=document.getElementById('iMonedaPago'); if(mp) mp.value=c.moneda; }
@@ -8541,7 +8538,7 @@ async function pLeerEstadoIA(){
     if(x.noIntereses!=null) pF('pfNoIntereses').value=x.noIntereses;
     if(x.fechaCorte) pF('pfFechaCorte').value=String(x.fechaCorte).substring(0,10);
     if(x.fechaLimite) pF('pfFechaLimite').value=String(x.fechaLimite).substring(0,10);
-    const movs=(Array.isArray(x.movimientos)?x.movimientos:[]).map(m=>({fecha:String(m.fecha||'').substring(0,10), descripcion:m.descripcion||'', monto:parseFloat(m.monto)||0, categoria:m.categoria||'Por revisar', estado:m.estado||'pendiente', gastoId:m.gastoId||''}));
+    const movs=(Array.isArray(x.movimientos)?x.movimientos:[]).map(m=>({fecha:String(m.fecha||'').substring(0,10), descripcion:m.descripcion||'', monto:parseFloat(m.monto)||0, categoria:m.categoria||'❓ Otro / por revisar', estado:m.estado||'pendiente', gastoId:m.gastoId||''}));
     if(movs.length){ pF('pfMovRows').innerHTML=movs.map(pMovRowHTML).join(''); pAutoMatchFormMovs(true); }
     showToast('✨ IA leyó '+movs.length+' movimientos');
   }catch(e){ showToast('⚠ IA estado: '+e.message); }
@@ -8991,7 +8988,7 @@ async function pFormSave(){
         document.getElementById('iDate').value=m.fecha||hoy;
         document.getElementById('iCosto').value=parseFloat(m.monto)||parseFloat(item.monto)||0;
         document.getElementById('iConc').value=item.concepto||'Pago fijo';
-        document.getElementById('iCat').value=item.categoria||'Servicios';
+        document.getElementById('iCat').value=item.categoria||'💡 Servicios y suscripciones';
         document.getElementById('iNotas').value='Desde estado de cuenta · '+pCardLabel(c);
         const mm=document.getElementById('iMetodo'); if(mm && cardId){ mm.value='Tarjeta'; onMetodoChange(); const s=document.getElementById('iTarjetaSel'); if(s){ s.value=cardId; onTarjetaSelChange(); } }
         window.__movVincularPendiente=row;
@@ -9463,7 +9460,7 @@ function pRegistrarDiferencia(estadoId){
   document.getElementById('iDate').value=new Date().toISOString().substring(0,10);
   document.getElementById('iCosto').value=dif;
   document.getElementById('iConc').value='Gasto no identificado / diferencia de estado de cuenta';
-  document.getElementById('iCat').value='Por revisar';
+  document.getElementById('iCat').value='❓ Otro / por revisar';
   document.getElementById('iNotas').value='Diferencia estado '+(e.mes||'')+' · '+pCardLabel(co.card)+' · estadoId '+e.id;
   const mm=document.getElementById('iMetodo'); if(mm){ mm.value='Tarjeta'; onMetodoChange(); const s=document.getElementById('iTarjetaSel'); if(s){ s.value=e.tarjeta; onTarjetaSelChange(); } }
   // v29: el monto de arriba ya está en la moneda de LA TARJETA (no siempre
@@ -9498,7 +9495,7 @@ async function pEnviarNoIdentificados(estadoId){
       quien_paga:quien,
       compartido:'Personal',
       pago,
-      categoria:m.categoria||'Por revisar',
+      categoria:m.categoria||'❓ Otro / por revisar',
       notas:'Desde estado de cuenta '+(e.mes||'')+' · '+pCardLabel(c)+' · estadoId '+e.id,
       sesion:ses
     });
