@@ -1614,7 +1614,7 @@ details:not([open]) .chev{transform:rotate(-90deg)}
       <div class="tgroup" id="payerGroup"><!-- v10: se genera desde PEOPLE --></div>
       <label id="chkVariosPaganWrap" style="display:none;align-items:center;gap:8px;cursor:pointer;margin:8px 0 0;font-size:12px">
         <input type="checkbox" id="chkVariosPagan" onchange="onToggleVariosPagan()" style="accent-color:var(--shared);width:15px;height:15px;cursor:pointer">
-        <span>🙌 Varios pagan — cada quien pone lo suyo (sin deuda entre ustedes)</span>
+        <span>🙌 Varios pagan</span>
       </label>
     </div>
 
@@ -1685,7 +1685,7 @@ details:not([open]) .chev{transform:rotate(-90deg)}
 <!-- v9: Panel dev flotante -->
 <div class="notes-panel" id="notesPanel" style="display:none">
   <div class="notes-panel-hdr">
-    <span>🛠 Panel dev <small id="devBuildName" style="opacity:.6;font-weight:400"></small></span>
+    <span>🛠 Panel dev <small id="devBuildName" style="opacity:.6;font-weight:400"></small> <button class="rt-btn" style="font-size:10px;padding:2px 8px" onclick="forceReloadApp()" title="Borra la copia guardada (caché) y vuelve a pedir todo desde internet — úsalo si crees que no ves la versión más reciente">🔄 Recargar app</button></span>
     <button onclick="toggleNotes()">✕</button>
   </div>
   <div class="dev-ver-row">
@@ -1758,6 +1758,26 @@ details:not([open]) .chev{transform:rotate(-90deg)}
 // está cargando la versión más reciente y no una copia en caché.
 const BUILD_VERSION='Narciso';
 (function(){ const bv=document.getElementById('devBuildName'); if(bv) bv.textContent='· Versión: '+BUILD_VERSION; })();
+// v29: el sync con el backend es solo para los DATOS — esto es aparte:
+// fuerza que se vuelva a pedir el HTML/JS de la app en sí (el "software"),
+// por si el navegador se quedó con una copia vieja guardada. Borra el
+// caché del service worker, lo da de baja (se vuelve a registrar solo al
+// recargar) y navega con un parámetro nuevo en la URL para asegurar que ni
+// el caché HTTP del navegador conteste con algo guardado. Mismo mecanismo
+// que "🔄 Recargar app" en Organizador.
+async function forceReloadApp(){
+  try{
+    if('caches' in window){
+      const nombres = await caches.keys();
+      await Promise.all(nombres.map(n=>caches.delete(n)));
+    }
+    if('serviceWorker' in navigator){
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map(r=>r.unregister()));
+    }
+  } catch(e){}
+  location.href = location.pathname + '?_r=' + Date.now();
+}
 let GAS_URL=localStorage.getItem('gastos_gas_url')||'';
 function v29TieneGasUrl(){ return !!GAS_URL; }
 function v29GuardarGasUrl(url){
