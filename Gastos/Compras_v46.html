@@ -9294,12 +9294,26 @@ function pTarjetaEstimadoCiclo(c,mk){
 function pEstadoDeTarjetaMes(cardId, mk){
   return pItemsOf('estado').find(e=>e.tarjeta===cardId && (e.mes||'')===mk);
 }
-// v29: el estado de cuenta más reciente de la tarjeta — se usa para saber si
-// "ya está pagado / pendiente / retrasado" en el resumen plegado, según la
-// fecha de hoy (no hace falta abrir cada tarjeta para saberlo).
+// v29: ¿cuál mes es el que, según el día límite (o de corte, si no hay
+// límite capturado) de la tarjeta, YA debería estar cubierto a estas
+// alturas del calendario? Si el límite de este mes todavía no llega, el
+// vigente es el ciclo pasado (el que sí ya te tocaba resolver).
+function pMesVigenteTarjeta(c){
+  const dia=parseInt(c.diaLimite)||parseInt(c.diaCorte)||0;
+  if(!dia) return pMesKey();
+  const hoy=new Date();
+  let obj=new Date(hoy.getFullYear(), hoy.getMonth(), dia);
+  if(obj>hoy) obj=new Date(hoy.getFullYear(), hoy.getMonth()-1, dia);
+  return obj.getFullYear()+'-'+String(obj.getMonth()+1).padStart(2,'0');
+}
+// v29: antes tomaba el estado MÁS RECIENTE por etiqueta de mes, sin más —
+// eso podía mostrar "✅ Pagado" de un ciclo viejo ya resuelto mientras el
+// ciclo que de verdad tocaba ahora (uno más nuevo, sin estado capturado
+// todavía) se quedaba sin avisar. Ahora calcula el ciclo VIGENTE (ver
+// pMesVigenteTarjeta) y revisa puntualmente ESE — si no hay estado ahí, es
+// pendiente, sin importar que exista uno viejo ya pagado.
 function pEstadoActualDeTarjeta(c){
-  const estados=pItemsOf('estado').filter(e=>e.tarjeta===c.id).sort((a,b)=>(b.mes||'').localeCompare(a.mes||''));
-  return estados[0]||null;
+  return pEstadoDeTarjetaMes(c.id, pMesVigenteTarjeta(c)) || null;
 }
 function pEstadoStatusBadgeHTML(c){
   const e=pEstadoActualDeTarjeta(c);
@@ -9443,11 +9457,17 @@ function pRenderEstadosTarjeta(c){
   const estados=pItemsOf('estado').filter(e=>e.tarjeta===c.id).sort((a,b)=>(b.mes||'').localeCompare(a.mes||''));
   const addBtn='<button class="rt-btn" style="font-size:10px;padding:3px 8px;font-weight:700" onclick="event.stopPropagation();pOpenEstado(\''+esc(c.id)+'\',\'\')">＋ Estado</button>';
   if(!estados.length) return '<div style="margin-top:8px;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;background:var(--surface2);border-radius:8px;font-size:11.5px;color:var(--ink-3)"><span>Sin estados de cuenta ligados a esta tarjeta.</span>'+addBtn+'</div>';
-  // v29: antes, plegado, no se veía nada del último estado (¿ya pagué? ¿cuándo
-  // vence?) — había que abrir para saberlo. Ahora el resumen del más reciente
-  // va directo en el encabezado plegable.
-  const ultimo=estados[0];
-  const resumenCorto=' · 🧾 '+esc(pMesLabelCorto(ultimo.mes))+' '+(ultimo.pagado?'✅ pagado':'☐ pendiente')+(ultimo.fechaLimite?(' · vence '+fmtDate(ultimo.fechaLimite)):'');
+  // v29: antes, plegado, no se veía nada (¿ya pagué? ¿cuándo vence?) — había
+  // que abrir para saberlo. Y no basta con enseñar el estado MÁS RECIENTE
+  // que exista: si ese ciclo ya está pagado pero el que de verdad toca AHORA
+  // (según el día límite de la tarjeta, ver pMesVigenteTarjeta) todavía no
+  // tiene estado capturado, hay que decirlo — no tapar un ciclo pendiente
+  // con uno viejo ya resuelto.
+  const mkVigente=pMesVigenteTarjeta(c);
+  const vigente=pEstadoDeTarjetaMes(c.id, mkVigente);
+  const resumenCorto = vigente
+    ? ' · 🧾 '+esc(pMesLabelCorto(vigente.mes))+' '+(vigente.pagado?'✅ pagado':'☐ pendiente')+(vigente.fechaLimite?(' · vence '+fmtDate(vigente.fechaLimite)):'')
+    : ' · 🧾 '+esc(pMesLabelCorto(mkVigente))+' ⚠️ sin estado capturado (pendiente)';
   return '<details style="margin-top:8px"><summary style="cursor:pointer;background:#d1bd8f;border-radius:6px;padding:7px 10px;font-weight:800;color:var(--ink);display:flex;align-items:center;justify-content:space-between;gap:8px"><span><span class="chev">▾</span> Estados de cuenta'+resumenCorto+'</span>'+addBtn+'</summary>'+estados.map(e=>{
     const co=pConciliacionEstado(e);
     // v29: check visual para pagado/pendiente (en vez de solo texto), con
