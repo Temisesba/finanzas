@@ -1306,6 +1306,40 @@ details:not([open]) .chev{transform:rotate(-90deg)}
         </div>
         <div style="font-size:11px;color:var(--ink-3);margin-top:4px">Solo se guarda en este navegador. Cámbiala aquí si tu backend se movió a otra URL.</div>
       </div>
+      <div class="field">
+        <details>
+          <summary style="cursor:pointer;font-weight:700;color:var(--ink-2)"><span class="chev">▾</span> 📖 Cómo usar la app / criterios de categorías</summary>
+          <div style="font-size:12px;line-height:1.6;color:var(--ink-2);margin-top:8px">
+            <strong>Lo básico</strong>
+            <ul style="margin:4px 0 12px 18px;padding:0">
+              <li style="margin-bottom:4px"><strong>Sesión</strong> = la "cuenta" compartida donde viven los gastos de un grupo (ej. "Lot &amp; Temis"). Todos los que la usan ven y capturan ahí.</li>
+              <li style="margin-bottom:4px"><strong>👤 Personal (yo)</strong> = tu vista fraccionada: junta solo tu parte de todas tus sesiones, para ver tu dinero real sin mezclarte con el de los demás.</li>
+              <li style="margin-bottom:4px"><strong>➕ Gasto</strong>: escríbelo a mano o sube la foto del ticket (📷) para que la IA lo llene sola — siempre revisa antes de guardar.</li>
+              <li style="margin-bottom:4px"><strong>Compartido</strong> = una persona pagó todo y se reparte parejo entre los participantes. <strong>Varios pagan</strong> = cada quien puso lo suyo directo, sin generar deuda.</li>
+              <li style="margin-bottom:4px"><strong>🧾 Productos del ticket</strong>: cada línea puede marcarse de quién es (o Compartido) con el selector "¿Quién?", y la caducidad se edita con su ✏️.</li>
+              <li><strong>💳 Finanzas</strong> es aparte de los gastos de sesión: ahí llevas tarjetas, pagos fijos, deudas e ingresos — con su propia contraseña, privado solo para ti.</li>
+            </ul>
+            <strong>Criterios de clasificación de gastos</strong>
+            <div style="margin-top:6px">
+              <div style="margin-bottom:8px"><strong>🥦 Despensa / comida para casa</strong><br>Ingredientes y alimentos básicos que se compran para preparar o consumir habitualmente en casa. Ejemplos: frutas, verduras, carne, arroz, leche, cereal, pan, agua o jugo para casa.</div>
+              <div style="margin-bottom:8px"><strong>🍟 Antojos / ultraprocesados</strong><br>Productos comprados principalmente como botana, antojo o comida chatarra. Ejemplos: papas, churritos, dulces, galletas, refrescos, bebidas energéticas, pastelitos, hamburguesas o pollo frito cuando se compran como antojo.</div>
+              <div style="margin-bottom:8px"><strong>🍽️ Restaurantes, cafés y delivery</strong><br>Comida o bebidas preparadas para consumo inmediato que suelen incorporar un costo adicional por preparación, servicio, uso del establecimiento o envío. No importa si se consumen en el lugar, se recogen o llegan a domicilio. Ejemplos: comidas en restaurantes, café y pan en una cafetería, Uber Eats, comida para llevar, bentos y ensaladas preparadas de Lawson.</div>
+              <div style="margin-bottom:8px"><strong>🍺 Alcohol y bares</strong><br>Bebidas alcohólicas y los gastos realizados dentro del contexto de una salida a un bar. Ejemplos: cerveza comprada en supermercado, vino, cocteles y agua o jugo consumidos durante una salida a un bar.</div>
+              <div style="margin-bottom:8px"><strong>🎟️ Entradas y entretenimiento</strong><br>Pagos para acceder a actividades recreativas, culturales o turísticas. Ejemplos: cine, museos, conciertos, parques, exposiciones, tours, karaoke y atracciones.</div>
+              <div style="margin-bottom:8px"><strong>🚆 Transporte</strong><br>Traslados y gastos relacionados con la movilidad. Ejemplos: tren, autobús, metro, taxi, Uber, vuelos, gasolina, peajes y estacionamiento.</div>
+              <div style="margin-bottom:8px"><strong>🏨 Hospedaje</strong><br>Pagos por alojamiento temporal. Ejemplos: hoteles, hostales, Airbnb y otros alojamientos durante viajes.</div>
+              <div style="margin-bottom:8px"><strong>🏠 Hogar y limpieza</strong><br>Productos, utensilios y servicios destinados a mantener o equipar la vivienda. Ejemplos: detergente, papel higiénico, utensilios de cocina, muebles, decoración y reparaciones.</div>
+              <div style="margin-bottom:8px"><strong>💡 Servicios y suscripciones</strong><br>Pagos periódicos por servicios del hogar o plataformas. Ejemplos: luz, agua, gas, internet, teléfono, Netflix, aplicaciones y almacenamiento digital.</div>
+              <div style="margin-bottom:8px"><strong>👗 Ropa, accesorios, belleza y cuidado personal</strong><br>Ropa, calzado, accesorios y productos o servicios de cuidado personal. Ejemplos: zapatos, bolsas, joyería, maquillaje, cremas, perfume, peluquería y uñas.</div>
+              <div style="margin-bottom:8px"><strong>💊 Salud</strong><br>Gastos relacionados con atención médica y cuidado de la salud. Ejemplos: consultas, medicamentos, estudios, dentista, vacunas y tratamientos.</div>
+              <div style="margin-bottom:8px"><strong>🎁 Regalos y recuerdos</strong><br>Compras destinadas a otras personas o recuerdos de viaje. Ejemplos: regalos, souvenirs y detalles para familiares o amigos.</div>
+              <div style="margin-bottom:8px"><strong>💸 Finanzas y transferencias</strong><br>Movimientos de dinero que no representan consumo directo. Ejemplos: préstamos a Lot, devolución de préstamos, transferencias entre cuentas, ahorro, inversión, comisiones e intereses.</div>
+              <div style="margin-bottom:8px"><strong>❓ Otro / por revisar</strong><br>Movimientos excepcionales o ambiguos que no pueden clasificarse con claridad.</div>
+            </div>
+            <div style="font-size:11px;color:var(--ink-3);margin-top:4px"><strong>Regla general:</strong> se clasifica según la naturaleza y el propósito del gasto, no únicamente por el establecimiento donde se realizó.</div>
+          </div>
+        </details>
+      </div>
     </div>
   </div>
 </div>
@@ -7218,6 +7252,12 @@ function pDiasPara(diaLimite){
   return Math.round((obj - new Date(hoy.getFullYear(),hoy.getMonth(),hoy.getDate()))/86400000);
 }
 function pMesKey(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
+// v29: ¿este pago fijo debe avisar arriba (badge 🔔 y color de alarma)?
+// Configurable por pago (ver "🔔 Avisarme" en su formulario) — por default
+// SÍ avisa, EXCEPTO los que son "Recordatorio de tarjeta" (se cargan solos
+// al estado de cuenta, que ya tiene su propia alarma; no hace falta avisar
+// dos veces por lo mismo) a menos que el usuario decida lo contrario.
+function pFijoNotifica(f){ return f.notificar!==undefined ? (f.notificar!==false) : (f.tipoPago!=='tarjeta'); }
 //  Próxima fecha (YYYY-MM-DD) en que cae el día `dia` del mes (hoy o el mes que sigue).
 function pProximaFecha(dia){
   if(!dia) return '';
@@ -7251,7 +7291,7 @@ function pRenderAlarmBadge(){
   // cuenta pagos fijos y cuotas MSI vencidos/próximos no pagados este mes
   let alarmas=0; const mk=pMesKey();
   pItemsOf('fijo').forEach(f=>{ const pagado=(f.pagos||{})[mk]; const dias=pDiasPara(f.diaLimite);
-    if(!pagado && dias!==null && dias<=5) alarmas++; });
+    if(!pagado && dias!==null && dias<=5 && pFijoNotifica(f)) alarmas++; });
   pItemsOf('msi').forEach(m=> pMSICuotas(m).forEach(q=>{ if(!q.pagada && q.dias!==null && q.dias<=5) alarmas++; }));
   pItemsOf('tarjeta').forEach(c=>{ if(c.ctipo!=='TDC') return; const e=pEstadoActualDeTarjeta(c); const pagado=e&&e.pagado; const dias=pDiasPara(c.diaLimite);
     if(!pagado && dias!==null && dias<=5) alarmas++; });
@@ -7261,19 +7301,20 @@ function pRenderAlarmBadge(){
 }
 
 function pFechaMesDia(mk,dia){ if(!dia)return ''; return mk+'-'+String(parseInt(dia)).padStart(2,'0'); }
-function pEstadoPagoMes(item,mk){
+function pEstadoPagoMes(item,mk,notifica){
+  if(notifica===undefined) notifica=true; // v29: pagos fijos con "🔔 Avisarme"=No no se pintan de alarma aquí tampoco
   const reg=(item.pagos||{})[mk]; if(reg) return {txt:'✓ pagado', col:'var(--shared)'};
   const fecha=pFechaMesDia(mk,item.diaLimite); if(!fecha) return {txt:'⏳ pendiente', col:'var(--ink-3)'};
   const hoy=new Date().toISOString().substring(0,10);
-  if(fecha<hoy) return {txt:'🔴 vencido', col:'var(--temis)'};
+  if(fecha<hoy) return notifica?{txt:'🔴 vencido', col:'var(--temis)'}:{txt:'vencido', col:'var(--ink-3)'};
   const dias=Math.round((new Date(fecha+'T12:00:00')-new Date(hoy+'T12:00:00'))/86400000);
-  return {txt:dias<=5?'🔔 próximo':'⏳ pendiente', col:dias<=5?'var(--loan)':'var(--ink-3)'};
+  return {txt:(dias<=5&&notifica)?'🔔 próximo':'⏳ pendiente', col:(dias<=5&&notifica)?'var(--loan)':'var(--ink-3)'};
 }
 function pRenderProximos(){
   const mk=pMesKey();
   const rows=[];
   pItemsOf('fijo').forEach(f=>{
-    const st=pEstadoPagoMes(f,mk), card=pCardById(f.tarjeta);
+    const st=pEstadoPagoMes(f,mk,pFijoNotifica(f)), card=pCardById(f.tarjeta);
     rows.push({fecha:pFechaMesDia(mk,f.diaLimite), titulo:(f.tipoPago==='tarjeta'?'💳 ':'🔁 ')+(f.concepto||'Pago fijo'), nota:(card?pCardLabel(card)+' · ':'')+(f.tipoPago==='tarjeta'?'revisar conciliación':'gasto recurrente'), st, action:`pAccionFijo('${esc(f.id)}')`});
   });
   pItemsOf('tarjeta').filter(c=>c.ctipo==='TDC').forEach(c=>{
@@ -7611,8 +7652,9 @@ function pRenderFijos(){
     let alarma='';
     if(f.cancelado) alarma='<span style="color:var(--ink-3);font-weight:600">🚫 cancelado</span>';
     else if(!pagado && dias!==null){
-      if(dias<0) alarma='<span style="color:var(--temis);font-weight:600">🔴 vencido</span>';
-      else if(dias<=5) alarma='<span style="color:var(--loan);font-weight:600">🔔 en '+dias+'d</span>';
+      const notif=pFijoNotifica(f);
+      if(dias<0) alarma=notif?'<span style="color:var(--temis);font-weight:600">🔴 vencido</span>':'<span style="color:var(--ink-3)">vencido hace '+(-dias)+'d</span>';
+      else if(dias<=5) alarma=notif?'<span style="color:var(--loan);font-weight:600">🔔 en '+dias+'d</span>':'<span style="color:var(--ink-3)">en '+dias+'d</span>';
       else alarma='<span style="color:var(--ink-3)">en '+dias+'d</span>';
     }
     // v29: "Registrar pago" ya no desaparece cuando el mes actual ya está
@@ -8700,6 +8742,10 @@ function pFormFieldsHTML(tipo, it){
           <option value="si"${gen?' selected':''}>Sí</option>
           <option value="no"${!gen?' selected':''}>No</option>
         </select></div>`
+      + `<div class="pf-field"><label>🔔 Avisarme cuando se acerque la fecha</label><select id="pfNotificar">
+          <option value="si"${pFijoNotifica(it)?' selected':''}>Sí</option>
+          <option value="no"${!pFijoNotifica(it)?' selected':''}>No</option>
+        </select><div style="font-size:11px;color:var(--ink-3);margin-top:4px">Ponlo en "No" si ya no quieres que este pago cuente en la 🔔 de arriba — por ejemplo, uno que se carga solo a una tarjeta que ya tiene su propia alarma.</div></div>`
       + F('Nota (opcional)','pfNota',it.nota,'placeholder="Ej. pagar en el banco lejano"');
   }
   if(tipo==='tarjeta'){
@@ -8939,7 +8985,7 @@ async function pFormSave(){
     if(!pFval('pfConcepto').trim()){ showToast('Escribe un concepto'); return; }
     const prev=prevItem;
     const tipoPago=pFval('pfTipoPago')||'recurrente';
-    item={...base, concepto:pFval('pfConcepto').trim(), tipoPago, monto:parseFloat(pFval('pfMonto'))||0, frecuencia:pFval('pfFrecuencia')||'mensual', diaLimite:pFval('pfDiaLimite'), fechaPago:pFval('pfFechaPago'), categoria:pFval('pfCategoria').trim(), formaPago:pFval('pfFormaPago'), tarjeta:(pFval('pfFormaPago')==='Tarjeta'?pFval('pfTarjeta'):''), generaGasto:(tipoPago==='tarjeta'?false:(pFval('pfGeneraGasto')!=='no')), nota:pFval('pfNota').trim(), pagos:(prev&&prev.pagos)||{}};
+    item={...base, concepto:pFval('pfConcepto').trim(), tipoPago, monto:parseFloat(pFval('pfMonto'))||0, frecuencia:pFval('pfFrecuencia')||'mensual', diaLimite:pFval('pfDiaLimite'), fechaPago:pFval('pfFechaPago'), categoria:pFval('pfCategoria').trim(), formaPago:pFval('pfFormaPago'), tarjeta:(pFval('pfFormaPago')==='Tarjeta'?pFval('pfTarjeta'):''), generaGasto:(tipoPago==='tarjeta'?false:(pFval('pfGeneraGasto')!=='no')), notificar:(pFval('pfNotificar')!=='no'), nota:pFval('pfNota').trim(), pagos:(prev&&prev.pagos)||{}};
   } else if(t==='tarjeta'){
     if(!pFval('pfBanco').trim() && !pFval('pfTarjNombre').trim()){ showToast('Pon al menos alias o banco'); return; }
     let fotoUrl=pfTarjFotoUrl;
@@ -9377,7 +9423,12 @@ function pRenderEstadosTarjeta(c){
   const estados=pItemsOf('estado').filter(e=>e.tarjeta===c.id).sort((a,b)=>(b.mes||'').localeCompare(a.mes||''));
   const addBtn='<button class="rt-btn" style="font-size:10px;padding:3px 8px;font-weight:700" onclick="event.stopPropagation();pOpenEstado(\''+esc(c.id)+'\',\'\')">＋ Estado</button>';
   if(!estados.length) return '<div style="margin-top:8px;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;background:var(--surface2);border-radius:8px;font-size:11.5px;color:var(--ink-3)"><span>Sin estados de cuenta ligados a esta tarjeta.</span>'+addBtn+'</div>';
-  return '<details style="margin-top:8px"><summary style="cursor:pointer;background:#d1bd8f;border-radius:6px;padding:7px 10px;font-weight:800;color:var(--ink);display:flex;align-items:center;justify-content:space-between;gap:8px"><span><span class="chev">▾</span> Estados de cuenta</span>'+addBtn+'</summary>'+estados.map(e=>{
+  // v29: antes, plegado, no se veía nada del último estado (¿ya pagué? ¿cuándo
+  // vence?) — había que abrir para saberlo. Ahora el resumen del más reciente
+  // va directo en el encabezado plegable.
+  const ultimo=estados[0];
+  const resumenCorto=' · 🧾 '+esc(pMesLabelCorto(ultimo.mes))+' '+(ultimo.pagado?'✅ pagado':'☐ pendiente')+(ultimo.fechaLimite?(' · vence '+fmtDate(ultimo.fechaLimite)):'');
+  return '<details style="margin-top:8px"><summary style="cursor:pointer;background:#d1bd8f;border-radius:6px;padding:7px 10px;font-weight:800;color:var(--ink);display:flex;align-items:center;justify-content:space-between;gap:8px"><span><span class="chev">▾</span> Estados de cuenta'+resumenCorto+'</span>'+addBtn+'</summary>'+estados.map(e=>{
     const co=pConciliacionEstado(e);
     // v29: check visual para pagado/pendiente (en vez de solo texto), con
     // fecha de pago inline y opción de deshacer sin abrir el formulario.
@@ -9403,14 +9454,19 @@ function pRenderEstadosTarjeta(c){
     const pdfBtn=e.pdfUrl
       ?'<a class="rt-btn" style="font-size:10px;padding:3px 8px;text-decoration:none" href="'+esc(e.pdfUrl)+'" target="_blank">📄 PDF</a>'
       :'<span class="chip" style="font-size:10px;color:var(--temis)">📄 Falta PDF</span>';
+    // v29: fecha de corte/límite tal como las llenó la IA (o a mano) desde
+    // ESTE estado en particular — puede variar un poco del día general de la
+    // tarjeta, por eso vale la pena verlas aquí y no solo en el ✏️.
+    const fechasHTML = (e.fechaCorte||e.fechaLimite) ? `<span style="color:var(--ink-3)">${e.fechaCorte?('corte '+fmtDate(e.fechaCorte)):''}${(e.fechaCorte&&e.fechaLimite)?' · ':''}${e.fechaLimite?('límite '+fmtDate(e.fechaLimite)):''}</span>` : '';
     const desgloseHTML = `
         <span style="color:${pEstadoColor(co.estado)};font-weight:600">${pEstadoLabel(co.estado)}</span>
         <span>app ${pMoney(co.totalApp,c.moneda)}</span>
         <span title="Monto a pagar para no generar intereses">no intereses ${pMoney(e.noIntereses||0,c.moneda)}</span>
-        <span style="color:${co.dif?'var(--temis)':'var(--shared)'}">dif ${pMoney(Math.abs(co.dif),c.moneda)}</span>`;
+        <span style="color:${co.dif?'var(--temis)':'var(--shared)'}">dif ${pMoney(Math.abs(co.dif),c.moneda)}</span>
+        ${fechasHTML}`;
     return `<div style="margin:8px 0 0 0;padding:10px;background:var(--surface2);border-radius:8px;font-size:11.5px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-        <strong class="chip" style="font-size:11px;background:var(--surface);border:1px solid var(--border2)">🧾 ${esc(pMesLabelCorto(e.mes))}</strong>
+        <strong class="chip" style="font-size:11px;background:var(--surface);border:1px solid var(--border2);cursor:pointer" onclick="pOpenEstado('${esc(c.id)}','${esc(e.id)}')" title="Abrir editor de este estado">🧾 ${esc(pMesLabelCorto(e.mes))}</strong>
         ${pagadoChip}
         ${desgloseHTML}
         ${conciliadoChip}
