@@ -1756,7 +1756,7 @@ details:not([open]) .chev{transform:rotate(-90deg)}
 // v29: nombre clave de esta entrega — cámbialo cada vez que termines un lote
 // de cambios, así en 👥 → 🛠 Panel dev se puede confirmar que el navegador
 // está cargando la versión más reciente y no una copia en caché.
-const BUILD_VERSION='Nardo';
+const BUILD_VERSION='Amaranto';
 (function(){ const bv=document.getElementById('devBuildName'); if(bv) bv.textContent='· Versión: '+BUILD_VERSION; })();
 // v29: el sync con el backend es solo para los DATOS — esto es aparte:
 // fuerza que se vuelva a pedir el HTML/JS de la app en sí (el "software"),
@@ -5504,8 +5504,13 @@ let shopSaveTimer=null;
 async function v28LoadShopping(){
   if(v27ShopLoaded) return;
   v27SetStatus('shopStatus27','Cargando…');
-  await v29LoadDeptos();
-  listas=await v34LoadContenedores('lista');
+  // v29: v29LoadDeptos (categorías/lugares) y v34LoadContenedores (listas
+  // con nombre) son dos pedidos independientes — antes se pedían uno
+  // DESPUÉS del otro, y encima el 3ro (getShopping) esperaba a ambos. En
+  // paralelo, tarda lo que tarde el más lento de los dos, no la suma —
+  // esto era la causa real de que "Lista" siempre tardara tanto en abrir.
+  const [,listasCargadas]=await Promise.all([v29LoadDeptos(), v34LoadContenedores('lista')]);
+  listas=listasCargadas;
   const box=document.getElementById('listaSelectorBox'); if(box) box.innerHTML=v34SelectorHTML('lista',listas);
   const listaActual=v34ContenedorActual('lista',listas);
   const listaId=listaActual.id;
