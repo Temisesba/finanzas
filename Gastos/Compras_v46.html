@@ -1756,7 +1756,7 @@ details:not([open]) .chev{transform:rotate(-90deg)}
 // v29: nombre clave de esta entrega — cámbialo cada vez que termines un lote
 // de cambios, así en 👥 → 🛠 Panel dev se puede confirmar que el navegador
 // está cargando la versión más reciente y no una copia en caché.
-const BUILD_VERSION='Geranio';
+const BUILD_VERSION='Hibisco';
 (function(){ const bv=document.getElementById('devBuildName'); if(bv) bv.textContent='· Versión: '+BUILD_VERSION; })();
 // v29: el sync con el backend es solo para los DATOS — esto es aparte:
 // fuerza que se vuelva a pedir el HTML/JS de la app en sí (el "software"),
@@ -1851,16 +1851,21 @@ function buildPayerButtons(){
 // (no existe de verdad en la hoja de Sesiones) — ahí el único miembro real
 // es esa persona.
 async function v29ModalSesionCambio(s){
-  if(!s || s===activeSesion){ mModalPeople=null; buildPayerButtons(); v31RenderParticipantes(); return; }
-  let miembros;
+  if(!s) s=activeSesion;
+  // v29: "Personal-<nombre>" se resuelve SIEMPRE así, sin importar si es la
+  // sesión activa o no — antes, si ya estabas en Personal, este caso caía
+  // en el atajo "misma sesión" y usaba PEOPLE (global), que en modo
+  // Personal es de la última sesión de casa que hayas tenido activa, no de
+  // quién eres tú (por eso mostraba a Lot Y Temis).
   if(s.indexOf('Personal-')===0){
-    miembros=[s.slice('Personal-'.length)].filter(Boolean);
-  } else {
-    miembros=pCacheSesionMiembros(s);
-    if(!miembros){
-      const chk=await v29CheckSesion(s, sesionPass(s));
-      if(chk.ok) miembros=chk.miembros;
-    }
+    mModalPeople=[s.slice('Personal-'.length)].filter(Boolean);
+    buildPayerButtons(); v31RenderParticipantes(); return;
+  }
+  if(s===activeSesion){ mModalPeople=null; buildPayerButtons(); v31RenderParticipantes(); return; }
+  let miembros=pCacheSesionMiembros(s);
+  if(!miembros){
+    const chk=await v29CheckSesion(s, sesionPass(s));
+    if(chk.ok) miembros=chk.miembros;
   }
   mModalPeople=(miembros&&miembros.length)?miembros:null;
   buildPayerButtons();
@@ -4260,7 +4265,16 @@ function openLightbox(src){document.getElementById('lbImg').src=src;document.get
 function closeLightbox(){document.getElementById('lightbox').style.display='none';}
 
 // ── Modal ─────────────────────────────────────────────────
-function openModal(){ mModalPeople=null; /* v29: nunca hereda la sesión reasignada de un gasto anterior */ buildPayerButtons(); /* reconstruye "¿Quién paga?" con el PEOPLE de la sesión activa AHORA, no con lo que hubiera armado la última vez — si cambiaste de sesión o agregaste un miembro justo antes de abrir +Gasto, los botones ya salen correctos sin depender de que ese otro flujo haya alcanzado a refrescarlos */ resetModal(); document.getElementById('mTitle').textContent='Nuevo gasto'; document.getElementById('editIdx').value=''; document.getElementById('iDate').value=new Date().toISOString().split('T')[0]; document.getElementById('iCaptura').value=localDateTimeValue(new Date()); if(personalMode){ const me=myName(); if(me) setPayer(me); setType('Personal'); }
+function openModal(){
+  // v29: en modo Personal, PEOPLE (global) es de la última sesión de CASA
+  // que hayas tenido activa — no de "quién eres tú" — usarlo tal cual aquí
+  // hacía que "¿Quién paga?" mostrara a Lot Y Temis (los de esa sesión
+  // vieja) en vez de solo a ti. pOwner sí es confiable: se fija una vez al
+  // entrar a Personal y no cambia con la sesión de casa que hayas tenido
+  // antes.
+  mModalPeople = personalMode ? [pOwner||myName()].filter(Boolean) : null;
+  buildPayerButtons(); /* reconstruye "¿Quién paga?" con los miembros correctos AHORA, no con lo que hubiera armado la última vez */
+  resetModal(); document.getElementById('mTitle').textContent='Nuevo gasto'; document.getElementById('editIdx').value=''; document.getElementById('iDate').value=new Date().toISOString().split('T')[0]; document.getElementById('iCaptura').value=localDateTimeValue(new Date()); if(personalMode){ const me=pOwner||myName(); if(me) setPayer(me); setType('Personal'); }
   // v29: también en +Gasto (no solo al editar) se ve/puede elegir la sesión
   // desde el inicio — antes solo aparecía al editar un gasto ya guardado.
   // v29: "👤 Personal (yo)" también es una opción aquí, aunque no estés en
