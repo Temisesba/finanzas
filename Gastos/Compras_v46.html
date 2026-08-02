@@ -1941,7 +1941,7 @@ async function v29CheckSesion(sesion, pass){
 }
 function v29ShowGate(){
   const sel=document.getElementById('gateSesion');
-  sel.innerHTML='<option value="__PERSONAL__">👤 Personal (yo'+(myName()?': '+esc(myName()):'')+')</option>'+SESIONES.map(s=>'<option value="'+esc(s)+'">'+esc(s)+'</option>').join('');
+  sel.innerHTML='<option value="__PERSONAL__">👤 Personal (yo'+(myName()?': '+esc(myName()):'')+')</option>'+SESIONES.filter(v29PuedoVerSesion).map(s=>'<option value="'+esc(s)+'">'+esc(s)+'</option>').join('');
   const saved=localStorage.getItem('gastos_sesion');
   if(saved && SESIONES.includes(saved)) sel.value=saved;
   document.getElementById('gatePass').value='';
@@ -1969,8 +1969,30 @@ async function v29SwitchSesion(s){
   if(s==='__PERSONAL__'){ closePeople(); pEnterPersonal(); return; }
   personalMode=false; localStorage.removeItem('gastos_personalMode'); pUpdatePersonalBanner();
   const tabSalud=document.getElementById('tabSalud'); if(tabSalud) tabSalud.style.display='none';
-  const cached=sesionPass(s);
-  const chk=await v29CheckSesion(s, cached);
+  const cachedPass=sesionPass(s);
+  // v29: cache-first — mismo criterio que ensureSesion() al abrir la app.
+  // Antes SIEMPRE esperaba la respuesta del servidor (checkSesion) antes de
+  // actualizar nada — ni el selector de sesión, ni la lista de miembros, ni
+  // los gastos — y ese viaje a Apps Script puede tardar varios segundos.
+  // Si ya conoces esta sesión en este dispositivo, entra YA con lo último
+  // visto (se siente instantáneo) y valida/reconcilia en segundo plano.
+  const miembrosCache=pCacheSesionMiembros(s);
+  if(miembrosCache){
+    activeSesion=s; PEOPLE=miembrosCache;
+    localStorage.setItem('gastos_sesion', s);
+    v29ShowSesionLoading();
+    applyPeopleUI(); renderNames();
+    v27ShopLoaded=false; invSharedLoaded=false; invContenedoresLoaded=false;
+    loadExp().then(renderAll); // usa su propio caché de 5 min si sigue fresco
+    showToast('Sesión: '+s);
+    v29CheckSesion(s, cachedPass).then(chk=>{
+      if(activeSesion!==s) return; // el usuario ya cambió a otra cosa mientras tanto
+      if(chk.ok){ PEOPLE=chk.miembros; applyPeopleUI(); renderNames(); }
+      else if(chk.error!=='red'){ closePeople(); v29ShowGate(); document.getElementById('gateSesion').value=s; }
+    });
+    return;
+  }
+  const chk=await v29CheckSesion(s, cachedPass);
   if(chk.ok){
     activeSesion=s; PEOPLE=chk.miembros;
     localStorage.setItem('gastos_sesion', s);
@@ -2017,13 +2039,38 @@ async function v29RenameSesionUI(){
     }else showToast('⚠ '+((r&&r.error)||'No se pudo renombrar'));
   }catch(e){ showToast('⚠ Error de red'); }
 }
+// v29: si ya sabemos (de una vez que la desbloqueaste) quiénes son los
+// miembros de una sesión y tu nombre NO está entre ellos, no te la ofrece
+// en el cambio rápido — evita entrar por accidente a una sesión que no es
+// tuya solo porque su contraseña ya quedó guardada en este dispositivo
+// compartido. Si nunca la has desbloqueado, no sabemos su membresía (el
+// backend no entrega miembros sin la contraseña correcta) — se deja
+// visible; la contraseña sigue siendo el candado real para esa.
+function v29SesionMiembrosMapCached(){
+  try{
+    const raw=localStorage.getItem('gastos_allpeople_cache');
+    if(!raw) return {};
+    const o=JSON.parse(raw);
+    return (o && o.mapa) || {};
+  }catch(e){ return {}; }
+}
+function v29PuedoVerSesion(s){
+  const miNombre=localStorage.getItem('gastos_myname')||'';
+  if(!miNombre) return true; // aún no elegiste quién eres tú: no hay filtro que aplicar
+  const miembrosDeS=v29SesionMiembrosMapCached()[s];
+  if(!Array.isArray(miembrosDeS)) return true; // sin dato confirmado todavía: no se oculta
+  return miembrosDeS.includes(miNombre);
+}
 function v29FillSesionSelect(){
-  const sel=document.getElementById('peopleSesion'); if(sel){
-    const opts=SESIONES.map(s=>'<option value="'+esc(s)+'"'+(!personalMode&&s===activeSesion?' selected':'')+'>'+esc(s)+'</option>').join('');
+  const sel=document.getElementById('peopleSesion');
+  const pintarSesiones=()=>{
+    if(!sel) return;
+    const opts=SESIONES.filter(s=>s===activeSesion||v29PuedoVerSesion(s)).map(s=>'<option value="'+esc(s)+'"'+(!personalMode&&s===activeSesion?' selected':'')+'>'+esc(s)+'</option>').join('');
     sel.innerHTML='<option value="__PERSONAL__"'+(personalMode?' selected':'')+'>👤 Personal (yo'+(myName()?': '+esc(myName()):'')+')</option>'+opts;
-  }
+  };
+  pintarSesiones();
   v29FillSoySelect(PEOPLE); // primero rápido con lo que ya hay (sesión activa)…
-  v29LoadAllPeople().then(v29FillSoySelect); // …y se completa con el resto de tus sesiones
+  v29LoadAllPeople().then(names=>{ v29FillSoySelect(names); pintarSesiones(); }); // …y se completa con el resto de tus sesiones + aplica el filtro de arriba
 }
 function v29FillSoySelect(names){
   const soy=document.getElementById('soySelect'); if(!soy) return;
@@ -2046,16 +2093,17 @@ function v29AllPeopleCached(){
 async function v29LoadAllPeople(force){
   if(!force){ const cached=v29AllPeopleCached(); if(cached) return cached; }
   const set=new Set(PEOPLE);
+  const mapa={}; mapa[activeSesion]=PEOPLE.slice(); // v29: también se guarda para v29PuedoVerSesion
   await Promise.all(SESIONES.filter(s=>s!==activeSesion).map(async s=>{
     const pass=localStorage.getItem('gastos_pass_'+s);
     if(pass===null) return; // no desbloqueada en este dispositivo, no la pedimos
     try{
       const r=await postGAS({action:'checkSesion', sesion:s, pass});
-      if(r&&r.ok&&Array.isArray(r.miembros)) r.miembros.forEach(n=>{ if(n) set.add(n); });
+      if(r&&r.ok&&Array.isArray(r.miembros)){ r.miembros.forEach(n=>{ if(n) set.add(n); }); mapa[s]=r.miembros; }
     }catch(e){}
   }));
   const names=[...set].sort((a,b)=>a.localeCompare(b,'es'));
-  try{ localStorage.setItem('gastos_allpeople_cache', JSON.stringify({t:Date.now(), names})); }catch(e){}
+  try{ localStorage.setItem('gastos_allpeople_cache', JSON.stringify({t:Date.now(), names, mapa})); }catch(e){}
   return names;
 }
 function pSetSoy(n){ if(!n)return; localStorage.setItem('gastos_myname', n); renderNames(); v29FillSesionSelect(); showToast('⭐ Eres '+n); }
@@ -3431,7 +3479,7 @@ function v30SubTable(hijos){
     const invSI=(p.inventario||'SI')!=='NA';
     const inv='<button class="inv-toggle '+(invSI?'si':'')+'" onclick="v31ToggleInv('+p.rowIndex+')" title="Cambiar inventario">'+(invSI?'📦 SI':'NA')+'</button>';
     const cat=p.categoria?esc(p.categoria):'<span style="color:var(--ink-3)">—</span>';
-    const quien=p.quienCompra?esc(p.quienCompra):'<span style="color:var(--ink-3)">—</span>';
+    const quien=p.quienCompra?esc(v29QuienCompraLabel(p.quienCompra)):'<span style="color:var(--ink-3)">—</span>';
     return '<tr><td style="text-align:center">'+inv+'</td><td>'+nom+'</td><td>'+(p.piezas||'')+'</td><td>'+(p.cantidad?esc(p.cantidad)+' '+esc(p.unidad||''):'—')+'</td><td>'+(p.precioInd?curSym()+esc(p.precioInd):'—')+'</td><td style="font-size:10px;color:var(--personal);font-weight:600">'+cat+'</td><td style="font-size:10px;font-weight:600">'+quien+'</td><td><button class="shop-del" onclick="v35EditProd('+p.rowIndex+')" title="Editar producto (foto, marca, código…)">✏️</button></td></tr>';
   };
   const resumen=v29TextoResumenPorPersona(hijos);
@@ -4572,42 +4620,81 @@ function v30RenderProdDraft(){
       <input type="text" value="${esc(p.cantidad)}" placeholder="500" onchange="prodDraft[${i}].cantidad=this.value">
       <select onchange="prodDraft[${i}].unidad=this.value">${UNIDADES.map(u=>'<option'+(u===p.unidad?' selected':'')+'>'+u+'</option>').join('')}</select>
       <input type="text" value="${esc(p.precioInd)}" placeholder="¥" onchange="prodDraft[${i}].precioInd=this.value">
-      <select onchange="prodDraft[${i}].quienCompra=this.value;v29RenderQuienResumen()" title="¿Quién compra este producto? (la caducidad ahora se edita con el ✏️)">${v29QuienCompraOpciones(p.quienCompra)}</select>
+      <button type="button" class="rt-btn" style="font-size:10px;padding:4px 4px;width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" onclick="v29AbrirQuienCompraProducto(${i})" title="¿Quién compra este producto? (la caducidad ahora se edita con el ✏️)">${esc(v29QuienCompraLabel(p.quienCompra))}</button>
       <input type="checkbox" ${p.inventario?'checked':''} onchange="prodDraft[${i}].inventario=this.checked" title="¿Va a inventario? (desmarca para regalos u otros = NA)">
       <span style="display:flex;gap:2px"><button class="shop-del" onclick="v35EditDraft(${i})" title="Editar producto (foto, caducidad, código, catálogo…)">✏️</button><button class="shop-del" onclick="prodDraft.splice(${i},1);v30RenderProdDraft()" title="Quitar línea">🗑</button></span>
     </div>`).join('');
   v29RenderQuienResumen();
 }
 // v29: "¿quién compra?" por producto — comparten el ticket pero cada línea
-// puede ser de una persona distinta (o Compartido); independiente de quién
-// pagó el ticket completo. En sesión individual no tiene caso ofrecer
-// "Compartido" — solo está esa persona.
+// puede ser de una persona, de un subconjunto (ej. 2 de 3, una hamburguesa
+// que comparten solo Lot y Temis sin incluir a la 3ra persona) o de todos
+// ("Compartido"); independiente de quién pagó el ticket completo. Se
+// guarda como texto: 'Compartido', un nombre solo, o nombres separados por
+// coma. En sesión individual no tiene caso ofrecer nada más — solo esa persona.
 function v29QuienCompraDefault(){ return PEOPLE.length>1 ? 'Compartido' : (PEOPLE[0]||myName()||''); }
-function v29QuienCompraOpciones(sel){
-  const opts = PEOPLE.length>1 ? ['Compartido', ...PEOPLE] : (PEOPLE.length?PEOPLE.slice():[myName()||'']);
-  const actual = sel || v29QuienCompraDefault();
-  return opts.map(o=>'<option'+(o===actual?' selected':'')+'>'+esc(o)+'</option>').join('');
+// Expande el texto guardado a la lista real de nombres entre quien se divide.
+function v29ListaQuienCompra(raw){
+  const s=(raw||'').toString().trim();
+  if(!s||s==='Compartido') return PEOPLE.slice();
+  const partes=s.split(',').map(x=>x.trim()).filter(Boolean);
+  return partes.length?partes:PEOPLE.slice();
 }
-// v29: cuánto le toca a cada quien — suma directa de lo suyo + su parte
-// pareja de lo "Compartido" (mismo criterio de reparto parejo que ya usa el
-// resto de la app para gastos compartidos). Se reusa tanto en el editor
-// (prodDraft) como en la subtabla de solo-lectura de la lista de gastos.
+function v29QuienCompraLabel(raw){
+  const lista=v29ListaQuienCompra(raw);
+  if(PEOPLE.length<=1) return lista[0]||myName()||'—';
+  if(lista.length>=PEOPLE.length) return 'Compartido';
+  return lista.join(' + ');
+}
+// v29: popover con checkboxes (selección múltiple) para elegir exactamente
+// quiénes de la sesión comparten esta línea — antes solo dejaba "Compartido"
+// (todos) O una sola persona, sin poder marcar un subconjunto.
+function v29AbrirQuienCompraProducto(i){
+  if(PEOPLE.length<=1) return; // nada que elegir en sesión individual
+  const p=prodDraft[i]; if(!p) return;
+  const actual=v29ListaQuienCompra(p.quienCompra);
+  const ov=document.createElement('div');
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10000;display:flex;align-items:center;justify-content:center;padding:16px';
+  ov.innerHTML=`<div style="background:var(--bg);border-radius:12px;padding:16px;max-width:280px;width:100%;box-shadow:0 10px 40px rgba(0,0,0,.35)">
+    <div style="font-weight:700;font-size:14px;margin-bottom:4px">¿Quién compra "${esc(p.concepto||'este producto')}"?</div>
+    <div style="font-size:11px;color:var(--ink-3);margin-bottom:10px">Marca a todos los que aplica — si los marcas todos es lo mismo que "Compartido".</div>
+    <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px">
+      ${PEOPLE.map(n=>'<label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" class="qc-chk" value="'+esc(n)+'" '+(actual.includes(n)?'checked':'')+' style="width:16px;height:16px"> '+esc(n)+'</label>').join('')}
+    </div>
+    <div style="display:flex;gap:8px">
+      <button type="button" class="rt-btn" style="flex:1" id="qcCancelar">Cancelar</button>
+      <button type="button" class="notes-save-btn" style="flex:1" id="qcAplicar">Aplicar</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+  const cerrar=()=>ov.remove();
+  ov.addEventListener('click', e=>{ if(e.target===ov) cerrar(); });
+  ov.querySelector('#qcCancelar').addEventListener('click', cerrar);
+  ov.querySelector('#qcAplicar').addEventListener('click', ()=>{
+    const marcados=[...ov.querySelectorAll('.qc-chk:checked')].map(c=>c.value);
+    prodDraft[i].quienCompra = marcados.length ? (marcados.length>=PEOPLE.length?'Compartido':marcados.join(', ')) : 'Compartido';
+    cerrar();
+    v30RenderProdDraft();
+  });
+}
+// v29: cuánto le toca a cada quien — cada producto se divide entre exactamente
+// la lista de nombres que le corresponde (todos, uno, o el subconjunto
+// elegido), no siempre entre todos. Se reusa tanto en el editor (prodDraft)
+// como en la subtabla de solo-lectura de la lista de gastos.
 function v29CalcTotalesPorPersona(productos){
   const totales={}; PEOPLE.forEach(n=>totales[n]=0);
-  let compartido=0;
   (productos||[]).forEach(p=>{
     const monto=(parseFloat(p.precioInd)||0)*(parseFloat(p.piezas)||1);
-    const quien=p.quienCompra||v29QuienCompraDefault();
-    if(quien==='Compartido'||!PEOPLE.includes(quien)) compartido+=monto;
-    else totales[quien]=(totales[quien]||0)+monto;
+    const lista=v29ListaQuienCompra(p.quienCompra);
+    const cadaUno=monto/Math.max(lista.length,1);
+    lista.forEach(n=>{ if(totales[n]!==undefined) totales[n]+=cadaUno; });
   });
-  return {totales, compartido};
+  return totales;
 }
 function v29TextoResumenPorPersona(productos){
   if(!productos||!productos.length||PEOPLE.length<2) return '';
-  const {totales,compartido}=v29CalcTotalesPorPersona(productos);
-  const porCabeza=compartido/PEOPLE.length;
-  return '🙋 Le toca: '+PEOPLE.map(n=>n+' '+curSym()+Math.round(totales[n]+porCabeza).toLocaleString()).join(' · ')+(compartido?' (incluye su parte de lo Compartido)':'');
+  const totales=v29CalcTotalesPorPersona(productos);
+  return '🙋 Le toca: '+PEOPLE.map(n=>n+' '+curSym()+Math.round(totales[n]||0).toLocaleString()).join(' · ');
 }
 function v29RenderQuienResumen(){
   const el=document.getElementById('prodQuienResumen'); if(!el) return;
@@ -4797,8 +4884,8 @@ function pAbrirMultiplicador(){
   ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10000;display:flex;align-items:center;justify-content:center;padding:16px';
   ov.innerHTML=`<div style="background:var(--bg);border-radius:12px;padding:16px;max-width:280px;width:100%;box-shadow:0 10px 40px rgba(0,0,0,.35)">
     <div style="font-weight:700;font-size:14px;margin-bottom:10px">🔢 Multiplicación rápida</div>
-    <div class="field" style="margin-bottom:10px"><label>Precio unitario</label><input type="number" id="pmPrecio" placeholder="300" style="width:100%"></div>
-    <div class="field" style="margin-bottom:12px"><label>Cantidad</label><input type="number" id="pmCantidad" placeholder="2" value="2" style="width:100%"></div>
+    <div class="field" style="margin-bottom:10px"><label>Precio unitario</label><input type="number" id="pmPrecio" placeholder="0" style="width:100%"></div>
+    <div class="field" style="margin-bottom:12px"><label>Cantidad</label><input type="number" id="pmCantidad" placeholder="0" style="width:100%"></div>
     <div style="display:flex;gap:8px">
       <button type="button" class="rt-btn" style="flex:1" id="pmCancelar">Cancelar</button>
       <button type="button" class="notes-save-btn" style="flex:1" id="pmCalcular">Calcular</button>
@@ -6337,13 +6424,24 @@ async function v28AddName(){
   const n=inp.value.trim();
   if(!n) return;
   if(PEOPLE.some(p=>p.toLowerCase()===n.toLowerCase())){ showToast('Ese nombre ya existe'); return; }
+  // v29: optimista — se ve agregado de inmediato (Apps Script puede tardar
+  // varios segundos) mientras el guardado real viaja en el fondo; si de
+  // plano falla (no solo sin conexión, eso se encola normal), se revierte.
+  const antes=PEOPLE.slice();
+  PEOPLE=[...PEOPLE,n]; inp.value=''; applyPeopleUI(); renderNames();
   document.getElementById('namesStatus').textContent='Guardando…';
   try{
     const r=await postGAS({action:'addMember', sesion:activeSesion, pass:sesionPass(activeSesion), nombre:n});
-    if(r.ok){ PEOPLE=r.miembros||[...PEOPLE,n]; inp.value=''; applyPeopleUI(); renderNames(); renderAll();
-      document.getElementById('namesStatus').textContent='✓ Agregado'; setTimeout(()=>document.getElementById('namesStatus').textContent='',1500); }
-    else document.getElementById('namesStatus').textContent='⚠ '+(r.error||'Error');
-  }catch(e){ document.getElementById('namesStatus').textContent='⚠ Error de red'; }
+    if(r.ok){
+      if(r.miembros) PEOPLE=r.miembros;
+      applyPeopleUI(); renderNames(); renderAll();
+      document.getElementById('namesStatus').textContent=r.offline?'📥 Guardado (sin conexión, se sincroniza solo)':'✓ Agregado';
+      setTimeout(()=>document.getElementById('namesStatus').textContent='',2000);
+    } else {
+      PEOPLE=antes; applyPeopleUI(); renderNames();
+      document.getElementById('namesStatus').textContent='⚠ '+(r.error||'Error');
+    }
+  }catch(e){ PEOPLE=antes; applyPeopleUI(); renderNames(); document.getElementById('namesStatus').textContent='⚠ Error de red'; }
 }
 async function v28DelName(n){
   if(PEOPLE.length<=1){ showToast('Debe quedar al menos 1 nombre'); return; }
