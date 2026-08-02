@@ -1756,7 +1756,7 @@ details:not([open]) .chev{transform:rotate(-90deg)}
 // v29: nombre clave de esta entrega — cámbialo cada vez que termines un lote
 // de cambios, así en 👥 → 🛠 Panel dev se puede confirmar que el navegador
 // está cargando la versión más reciente y no una copia en caché.
-const BUILD_VERSION='Amaranto';
+const BUILD_VERSION='Alcatraz';
 (function(){ const bv=document.getElementById('devBuildName'); if(bv) bv.textContent='· Versión: '+BUILD_VERSION; })();
 // v29: el sync con el backend es solo para los DATOS — esto es aparte:
 // fuerza que se vuelva a pedir el HTML/JS de la app en sí (el "software"),
@@ -3355,7 +3355,7 @@ const proy=e.proyecto?'<div class="prod" title="Vinculado desde itinerario">🧳
     const foto=e.foto_ticket_url?'<div class="thumb-btn" onclick="openLightbox(\''+esc(e.foto_ticket_url)+'\')" title="Ver"><img src="'+esc(e.foto_ticket_url)+'" alt=""></div>':'<div class="no-photo">—</div>';
     const hijos=prodsDe(e.gastoId);
     const prodBadge=hijos.length?'<span class="prod-badge" onclick="v30ToggleSub(\''+esc(e.gastoId)+'\')" title="Ver productos">🧾 '+hijos.length+'</span> ':'';
-    const subRows = (hijos.length && expandedRows[e.gastoId]) ? v30SubTable(hijos) : '';
+    const subRows = (hijos.length && expandedRows[e.gastoId]) ? v30SubTable(hijos, parseFloat(e.costo)||0) : '';
     const sesArg=String(e.sesion||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
     const myActs='<button class="ibtn" onclick="openExpView('+e.rowIndex+')" title="Ver todo">👁</button><button class="ibtn" onclick="pEditPersonal('+e.rowIndex+',\''+sesArg+'\')" title="Editar en su sesión">✏️</button><button class="ibtn" onclick="delExp('+e.rowIndex+')" title="Eliminar">🗑</button>';
     return '<div class="erow"><span class="dc">'+fmtDate(e.fecha)+'</span><span class="cc">'+prodBadge+esc(e.concepto||'—')+prod+proy+note+'</span><span class="ac" style="text-align:right">'+amtStr+convStr+'</span><span>'+pc+'</span><span>'+tc2+'</span><span>'+cc2+'</span><span>'+pagoCel+'</span><span>'+foto+'</span><span class="row-acts">'+(esMio?myActs:((personalMode?'<button class="ibtn" onclick="pViewOriginal('+e.rowIndex+')" title="Ver original y sesión">👁</button>':'')+'<button class="ibtn" onclick="editExp('+e.rowIndex+')" title="Editar">✏️</button><button class="ibtn" onclick="delExp('+e.rowIndex+')" title="Eliminar">🗑</button>'))+'</span></div>'+subRows;
@@ -3513,7 +3513,7 @@ function v37VerCompra(gastoId){
     } else showToast('Abre la pestaña Gastos para ver la compra');
   },200);
 }
-function v30SubTable(hijos){
+function v30SubTable(hijos, costoReal){
   const fila=p=>{
     const comp=precioComp(p.precioInd,p.cantidad,p.unidad);
     const cad=p.caducidad?fmtDate(p.caducidad):'—';
@@ -3527,7 +3527,7 @@ function v30SubTable(hijos){
     const quien=p.quienCompra?esc(v29QuienCompraLabel(p.quienCompra)):'<span style="color:var(--ink-3)">—</span>';
     return '<tr><td style="text-align:center">'+inv+'</td><td>'+nom+'</td><td>'+(p.piezas||'')+'</td><td>'+(p.cantidad?esc(p.cantidad)+' '+esc(p.unidad||''):'—')+'</td><td>'+(p.precioInd?curSym()+esc(p.precioInd):'—')+'</td><td style="font-size:10px;color:var(--personal);font-weight:600">'+cat+'</td><td style="font-size:10px;font-weight:600">'+quien+'</td><td><button class="shop-del" onclick="v35EditProd('+p.rowIndex+')" title="Editar producto (foto, marca, código…)">✏️</button></td></tr>';
   };
-  const resumen=v29TextoResumenPorPersona(hijos);
+  const resumen=v29TextoResumenPorPersona(hijos, costoReal);
   return '<div class="prod-sub"><table><tr><th title="¿Va a inventario?">📦</th><th>Producto</th><th>Pzas</th><th>Cant.</th><th>Precio</th><th>Categoría</th><th>¿Quién?</th><th></th></tr>'+hijos.map(fila).join('')+'</table>'+(resumen?'<div style="font-size:11px;color:var(--ink-3);padding:4px 2px">'+resumen+'</div>':'')+'</div>';
 }
 
@@ -4741,24 +4741,34 @@ function v29AbrirQuienCompraProducto(i){
 // la lista de nombres que le corresponde (todos, uno, o el subconjunto
 // elegido), no siempre entre todos. Se reusa tanto en el editor (prodDraft)
 // como en la subtabla de solo-lectura de la lista de gastos.
-function v29CalcTotalesPorPersona(productos){
+function v29CalcTotalesPorPersona(productos, costoReal){
   const totales={}; PEOPLE.forEach(n=>totales[n]=0);
+  const sumaProductos=(productos||[]).reduce((s,p)=>s+((parseFloat(p.precioInd)||0)*(parseFloat(p.piezas)||1)),0);
+  // v29 (fix): si hay costo real del ticket, reparte por PROPORCIÓN de cada
+  // producto sobre ESE costo — no sumando los precios individuales tal
+  // cual, que pueden no cuadrar con el total si no se llenó el precio de
+  // cada producto (típico: solo se captura el total del ticket y no cada
+  // línea). Antes esto podía dar $0 para todos aunque el gasto sí tuviera
+  // costo real. Sin costo real disponible, usa el precio individual tal cual.
+  const usarProporcion = costoReal>0 && sumaProductos>0;
   (productos||[]).forEach(p=>{
     const monto=(parseFloat(p.precioInd)||0)*(parseFloat(p.piezas)||1);
     const lista=v29ListaQuienCompra(p.quienCompra);
-    const cadaUno=monto/Math.max(lista.length,1);
+    const valor = usarProporcion ? (costoReal*(monto/sumaProductos)) : monto;
+    const cadaUno=valor/Math.max(lista.length,1);
     lista.forEach(n=>{ if(totales[n]!==undefined) totales[n]+=cadaUno; });
   });
   return totales;
 }
-function v29TextoResumenPorPersona(productos){
+function v29TextoResumenPorPersona(productos, costoReal){
   if(!productos||!productos.length||PEOPLE.length<2) return '';
-  const totales=v29CalcTotalesPorPersona(productos);
+  const totales=v29CalcTotalesPorPersona(productos, costoReal);
   return '🙋 Le toca: '+PEOPLE.map(n=>n+' '+curSym()+Math.round(totales[n]||0).toLocaleString()).join(' · ');
 }
 function v29RenderQuienResumen(){
   const el=document.getElementById('prodQuienResumen'); if(!el) return;
-  el.textContent=v29TextoResumenPorPersona(prodDraft);
+  const costoReal=parseFloat(document.getElementById('iCosto').value)||0;
+  el.textContent=v29TextoResumenPorPersona(prodDraft, costoReal);
 }
 function v30ProdAdd(){
   prodDraft.push({concepto:'',piezas:'1',cantidad:'',unidad:'unidad',precioInd:'',caducidad:'',quienCompra:v29QuienCompraDefault(),inventario:true,ubicacion:''});
