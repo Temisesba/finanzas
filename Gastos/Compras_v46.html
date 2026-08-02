@@ -9774,9 +9774,16 @@ async function pEnterPersonal(skipGastosSwitch){
   document.querySelectorAll('.controls .ftab').forEach(b=>b.classList.remove('on'));
   const allBtn=document.getElementById('fltAll'); if(allBtn) allBtn.classList.add('on');
   const tabSalud=document.getElementById('tabSalud'); if(tabSalud) tabSalud.style.display='';
-  try{ await pLoad(); }catch(e){}
-  // Traer mis gastos de TODAS las sesiones (siempre fresco, nunca de una entrada anterior)
-  await pReloadMisGastos();
+  // v29: pLoad (Finanzas/pItems) y pReloadMisGastos (gastos de todas tus
+  // sesiones) son dos pedidos independientes al backend — antes se hacían
+  // uno DESPUÉS del otro (esperando el primero completo antes de ni
+  // siquiera pedir el segundo), lo que se sentía como "carga en partes" y
+  // tardaba el doble de lo necesario. En paralelo, tarda lo que tarde el
+  // más lento de los dos, no la suma de ambos.
+  await Promise.all([
+    pLoad().catch(()=>{}),
+    pReloadMisGastos()
+  ]);
   pUpdatePersonalBanner();
   if(!skipGastosSwitch){
     const gt=[...document.querySelectorAll('.ptab')].find(b=>/Gastos/.test(b.textContent));
@@ -9795,8 +9802,12 @@ async function pExitPersonal(){
   // entrar a modo Personal (pEnterPersonal la había cambiado a "Personal-<tú>").
   if(__activeSesionAntesDePersonal!=null){ activeSesion=__activeSesionAntesDePersonal; __activeSesionAntesDePersonal=null; }
   v27ShopLoaded=false; invSharedLoaded=false; invContenedoresLoaded=false;
-  invalidateSesionCache(activeSesion);
-  await loadExp(); // v29: recarga la sesión activa en vez de reusar allExp que quedó vacío/viejo
+  // v29: antes se invalidaba el caché de la sesión SIEMPRE al salir de
+  // Personal, aunque no hubieras tocado nada allí — obligaba a un viaje de
+  // red completo cada vez que ibas y venías. Cualquier edición real ya
+  // invalida el caché de su propia sesión sola (ver invalidateSesionCache en
+  // saveExpense) — aquí ya no hace falta forzarlo de más.
+  await loadExp(); // usa el caché de los últimos 5 min si sigue fresco; si no, lo trae de red
   if(currentPage==='salud'){ const gt=[...document.querySelectorAll('.ptab')].find(b=>/Gastos/.test(b.textContent)); if(gt) switchPage('gastos', gt); }
   else renderAll();
   showToast('Volviste a la sesión '+(activeSesion||''));
