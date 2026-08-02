@@ -1552,7 +1552,7 @@ details:not([open]) .chev{transform:rotate(-90deg)}
     <!-- Fechas -->
     <div class="row2-dates">
       <div class="field" style="margin-bottom:0"><label>Fecha de compra *</label><input type="date" id="iDate"></div>
-      <div class="field" style="margin-bottom:0"><label>Hora ticket (opcional)</label><input type="time" id="iHoraCompra"></div>
+      <div class="field" style="margin-bottom:0"><label>Hora ticket</label><input type="time" id="iHoraCompra"></div>
       <div class="field" style="margin-bottom:0"><label>Fecha captura</label><input type="datetime-local" id="iCaptura" readonly style="background:var(--surface2);color:var(--ink-3);cursor:not-allowed"></div>
     </div>
 
@@ -1756,7 +1756,7 @@ details:not([open]) .chev{transform:rotate(-90deg)}
 // v29: nombre clave de esta entrega — cámbialo cada vez que termines un lote
 // de cambios, así en 👥 → 🛠 Panel dev se puede confirmar que el navegador
 // está cargando la versión más reciente y no una copia en caché.
-const BUILD_VERSION='Narciso';
+const BUILD_VERSION='Azalea';
 (function(){ const bv=document.getElementById('devBuildName'); if(bv) bv.textContent='· Versión: '+BUILD_VERSION; })();
 // v29: el sync con el backend es solo para los DATOS — esto es aparte:
 // fuerza que se vuelva a pedir el HTML/JS de la app en sí (el "software"),
