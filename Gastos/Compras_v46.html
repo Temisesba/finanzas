@@ -1756,7 +1756,7 @@ details:not([open]) .chev{transform:rotate(-90deg)}
 // v29: nombre clave de esta entrega — cámbialo cada vez que termines un lote
 // de cambios, así en 👥 → 🛠 Panel dev se puede confirmar que el navegador
 // está cargando la versión más reciente y no una copia en caché.
-const BUILD_VERSION='Cempasuchil';
+const BUILD_VERSION='Gladiola';
 (function(){ const bv=document.getElementById('devBuildName'); if(bv) bv.textContent='· Versión: '+BUILD_VERSION; })();
 // v29: el sync con el backend es solo para los DATOS — esto es aparte:
 // fuerza que se vuelva a pedir el HTML/JS de la app en sí (el "software"),
@@ -4886,7 +4886,11 @@ sesion:saveSesion};
         // del mismo mes desde "🧾 Registrar pago"), no lo pisa — usa un
         // periodo alterno automático.
         if(f.pagos[mk]){ let i=2, alt=mk+'-'+i; while(f.pagos[alt]){ i++; alt=mk+'-'+i; } mk=alt; }
-        f.pagos[mk]={monto:parseFloat(f.monto)||0, fecha:fecha, gastoRef:body.concepto||'', gastoRowIndex:r.rowIndex};
+        // v29 (fix): usaba el monto CONFIGURADO del fijo (f.monto — 0 para
+        // fijos de monto variable como Agua/Luz), no el monto REAL que
+        // acabas de capturar en este gasto — por eso el pago fijo se veía
+        // "pagado ¥0.00" aunque el gasto ligado sí tuviera el monto correcto.
+        f.pagos[mk]={monto:parseFloat(body.costo)||0, fecha:fecha, gastoRef:body.concepto||'', gastoRowIndex:r.rowIndex};
         await pSaveItem(f);
       }
       window.__pagoFijoPendiente='';
