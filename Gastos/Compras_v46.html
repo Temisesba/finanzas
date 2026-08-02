@@ -1756,7 +1756,7 @@ details:not([open]) .chev{transform:rotate(-90deg)}
 // v29: nombre clave de esta entrega — cámbialo cada vez que termines un lote
 // de cambios, así en 👥 → 🛠 Panel dev se puede confirmar que el navegador
 // está cargando la versión más reciente y no una copia en caché.
-const BUILD_VERSION='Buganvilia';
+const BUILD_VERSION='Geranio';
 (function(){ const bv=document.getElementById('devBuildName'); if(bv) bv.textContent='· Versión: '+BUILD_VERSION; })();
 // v29: el sync con el backend es solo para los DATOS — esto es aparte:
 // fuerza que se vuelva a pedir el HTML/JS de la app en sí (el "software"),
@@ -1828,25 +1828,30 @@ function chipFor(name){
   return '<span class="chip" style="background:'+c.bg+';color:'+c.col+';border:1px solid '+c.bdr+'">'+pEmoji(name)+' '+esc(name)+'</span>';
 }
 function myName(){ const n=localStorage.getItem('gastos_myname')||''; return PEOPLE.includes(n)?n:''; }
-// v29: acepta una lista opcional distinta de PEOPLE — se usa cuando el
-// gasto se reasigna a OTRA sesión desde el selector "Sesión:" del propio
-// modal (ver v29ModalSesionCambio), sin tener que cambiar la sesión activa
-// de toda la app solo para ver los botones correctos.
-function buildPayerButtons(lista){
+// v29: usa mGente() (miembros efectivos del modal — ver mModalPeople más
+// abajo) en vez de PEOPLE directo, para poder reflejar una sesión
+// reasignada desde el selector "Sesión:" del propio modal sin tocar la
+// sesión activa real de toda la app.
+function buildPayerButtons(){
   const g=document.getElementById('payerGroup'); if(!g)return;
-  const gente=(lista&&lista.length)?lista:PEOPLE;
-  g.innerHTML = gente.map(n=>'<button class="tbtn" data-payer="'+esc(n)+'" onclick="setPayer(\''+esc(n)+'\')">'+pEmoji(n)+' '+esc(n)+'</button>').join('')
-    + '<button class="tbtn" data-payer="NA" onclick="setPayer(\'NA\')">— N/A</button>';
+  const gente=mGente();
+  // v29: reaplica el "seleccionado" según currentPayer al reconstruir — hace
+  // falta porque v29ModalSesionCambio puede reconstruir estos botones DESPUÉS
+  // (llega la respuesta del servidor) de que ya se haya marcado un pagador.
+  g.innerHTML = gente.map(n=>'<button class="tbtn'+(n===currentPayer?' sel':'')+'" data-payer="'+esc(n)+'" onclick="setPayer(\''+esc(n)+'\')">'+pEmoji(n)+' '+esc(n)+'</button>').join('')
+    + '<button class="tbtn'+((currentPayer==='NA'||currentPayer==='Cotizacion')?' sel':'')+'" data-payer="NA" onclick="setPayer(\'NA\')">— N/A</button>';
   const wrap=document.getElementById('chkVariosPaganWrap'); if(wrap) wrap.style.display=gente.length>=2?'flex':'none';
 }
 // v29: al reasignar el gasto a OTRA sesión desde el selector "Sesión:" del
-// propio modal, "¿Quién paga?" debe reflejar a los miembros de ESA sesión,
-// no de la que tengas activa en el resto de la app — antes ese selector no
-// tenía ni onchange, se quedaba pegado a la sesión activa sin importar cuál
-// eligieras ahí. "Personal-<nombre>" es una sesión sintética (no existe de
-// verdad en la hoja de Sesiones) — ahí el único miembro real es esa persona.
+// propio modal, TODO lo que depende de "quiénes son" (botones de "¿Quién
+// paga?" y "¿Entre quiénes se divide?") debe reflejar a los miembros de ESA
+// sesión, no de la que tengas activa en el resto de la app — antes ese
+// selector no tenía ni onchange, se quedaba pegado a la sesión activa sin
+// importar cuál eligieras ahí. "Personal-<nombre>" es una sesión sintética
+// (no existe de verdad en la hoja de Sesiones) — ahí el único miembro real
+// es esa persona.
 async function v29ModalSesionCambio(s){
-  if(!s || s===activeSesion){ buildPayerButtons(); return; }
+  if(!s || s===activeSesion){ mModalPeople=null; buildPayerButtons(); v31RenderParticipantes(); return; }
   let miembros;
   if(s.indexOf('Personal-')===0){
     miembros=[s.slice('Personal-'.length)].filter(Boolean);
@@ -1857,7 +1862,9 @@ async function v29ModalSesionCambio(s){
       if(chk.ok) miembros=chk.miembros;
     }
   }
-  buildPayerButtons(miembros);
+  mModalPeople=(miembros&&miembros.length)?miembros:null;
+  buildPayerButtons();
+  v31RenderParticipantes();
 }
 function buildPersonFilters(){
   const c=document.getElementById('personFilters'); if(!c)return;
@@ -2209,6 +2216,14 @@ async function v29UpdateActividadBadge(){
 }
 
 let currentPayer='',currentType='';
+// v29: miembros "efectivos" del gasto que se está capturando — normalmente
+// null (usa la sesión activa real, PEOPLE), pero si reasignas el gasto a
+// OTRA sesión desde el selector "Sesión:" del modal (ver
+// v29ModalSesionCambio), aquí quedan los miembros de ESA sesión mientras el
+// modal siga abierto, sin tocar la sesión activa real del resto de la app.
+// Se resetea a null cada vez que el modal se abre de nuevo (ver resetModal).
+let mModalPeople=null;
+function mGente(){ return (mModalPeople&&mModalPeople.length)?mModalPeople:PEOPLE; }
 let tb64='',tMime='';
 // ── v12: productos ──
 let allProds=[];        // filas de producto del sheet
@@ -4245,14 +4260,19 @@ function openLightbox(src){document.getElementById('lbImg').src=src;document.get
 function closeLightbox(){document.getElementById('lightbox').style.display='none';}
 
 // ── Modal ─────────────────────────────────────────────────
-function openModal(){ buildPayerButtons(); /* v29: reconstruye "¿Quién paga?" con el PEOPLE de la sesión activa AHORA, no con lo que hubiera armado la última vez — si cambiaste de sesión o agregaste un miembro justo antes de abrir +Gasto, los botones ya salen correctos sin depender de que ese otro flujo haya alcanzado a refrescarlos */ resetModal(); document.getElementById('mTitle').textContent='Nuevo gasto'; document.getElementById('editIdx').value=''; document.getElementById('iDate').value=new Date().toISOString().split('T')[0]; document.getElementById('iCaptura').value=localDateTimeValue(new Date()); if(personalMode){ const me=myName(); if(me) setPayer(me); setType('Personal'); }
+function openModal(){ mModalPeople=null; /* v29: nunca hereda la sesión reasignada de un gasto anterior */ buildPayerButtons(); /* reconstruye "¿Quién paga?" con el PEOPLE de la sesión activa AHORA, no con lo que hubiera armado la última vez — si cambiaste de sesión o agregaste un miembro justo antes de abrir +Gasto, los botones ya salen correctos sin depender de que ese otro flujo haya alcanzado a refrescarlos */ resetModal(); document.getElementById('mTitle').textContent='Nuevo gasto'; document.getElementById('editIdx').value=''; document.getElementById('iDate').value=new Date().toISOString().split('T')[0]; document.getElementById('iCaptura').value=localDateTimeValue(new Date()); if(personalMode){ const me=myName(); if(me) setPayer(me); setType('Personal'); }
   // v29: también en +Gasto (no solo al editar) se ve/puede elegir la sesión
   // desde el inicio — antes solo aparecía al editar un gasto ya guardado.
+  // v29: "👤 Personal (yo)" también es una opción aquí, aunque no estés en
+  // modo Personal ahorita — permite mandar ESTE gasto directo a tu sesión
+  // personal sin tener que salirte de la sesión de casa para hacerlo.
   const lbl=document.getElementById('mEditSesionLbl'), sesSel=document.getElementById('mEditSesionSel');
   if(lbl && sesSel){
     const actual=currentSaveSesion();
+    const miPersonal=myName()?personalSesionName():'';
     const opciones=[...new Set([actual, ...(SESIONES||[])])].filter(Boolean);
-    sesSel.innerHTML=opciones.map(s=>'<option value="'+esc(s)+'"'+(s===actual?' selected':'')+'>'+esc(s)+'</option>').join('');
+    sesSel.innerHTML=(miPersonal?'<option value="'+esc(miPersonal)+'"'+(miPersonal===actual?' selected':'')+'>👤 Personal (yo)</option>':'')
+      +opciones.filter(s=>s!==miPersonal).map(s=>'<option value="'+esc(s)+'"'+(s===actual?' selected':'')+'>'+esc(s)+'</option>').join('');
     lbl.style.display='flex';
   }
   const delBtn=document.getElementById('bDeleteExp'); if(delBtn) delBtn.style.display='none';
@@ -4376,16 +4396,17 @@ function v31RenderParticipantes(){
   const lbl=document.getElementById('participantesLbl');
   const hint=document.getElementById('participantesHint');
   if(!field) return;
+  const gente=mGente();
   // Solo tiene sentido con 3+ miembros y un tipo que reparte
-  if(PEOPLE.length<3 || !tipoReparte(currentType) || currentType==='Cotizacion'){
+  if(gente.length<3 || !tipoReparte(currentType) || currentType==='Cotizacion'){
     field.style.display='none'; return;
   }
   field.style.display='block';
   const esComp = currentType==='Compartido';
   // En Préstamo/Devolución NO aparece quien pagó (no se presta a sí mismo)
-  const elegibles = PEOPLE.filter(n=> esComp ? true : n!==currentPayer);
+  const elegibles = gente.filter(n=> esComp ? true : n!==currentPayer);
   // Compartido: quien pagó siempre incluido y bloqueado
-  if(esComp && currentPayer && PEOPLE.includes(currentPayer) && !currentParticipantes.includes(currentPayer)){
+  if(esComp && currentPayer && gente.includes(currentPayer) && !currentParticipantes.includes(currentPayer)){
     currentParticipantes.push(currentPayer);
   }
   // Quita de la selección a quien ya no es elegible
@@ -4977,9 +4998,15 @@ function editExp(rowIndex){
   const sesLbl=document.getElementById('mEditSesionLbl'), sesSel=document.getElementById('mEditSesionSel');
   if(sesLbl && sesSel){
     const actual=e.sesion||activeSesion||'';
+    const miPersonal=myName()?personalSesionName():'';
     const opciones=[...new Set([actual, ...(SESIONES||[])])].filter(Boolean);
-    sesSel.innerHTML=opciones.map(s=>'<option value="'+esc(s)+'"'+(s===actual?' selected':'')+'>'+esc(s)+'</option>').join('');
+    sesSel.innerHTML=(miPersonal?'<option value="'+esc(miPersonal)+'"'+(miPersonal===actual?' selected':'')+'>👤 Personal (yo)</option>':'')
+      +opciones.filter(s=>s!==miPersonal).map(s=>'<option value="'+esc(s)+'"'+(s===actual?' selected':'')+'>'+esc(s)+'</option>').join('');
     sesLbl.style.display='flex';
+    // v29: si este gasto es de una sesión distinta a la que tienes activa
+    // (ej. lo estás viendo desde Personal, o desde otra sesión), "¿Quién
+    // paga?" debe reflejar los miembros de LA SESIÓN DEL GASTO, no la activa.
+    v29ModalSesionCambio(actual);
   }
   const delBtn=document.getElementById('bDeleteExp');
   if(delBtn) delBtn.style.display='inline-block';
@@ -9835,6 +9862,7 @@ async function pEnviarNoIdentificados(estadoId){
 // si se declaraba aquí abajo, tronaba con "Cannot access before
 // initialization" al cargar (TDZ) porque ese código corría antes de
 // llegar a esta línea.
+let misGastosAllLoadedAt=0; // v29: para el atajo rápido de pEnterPersonal — ver ahí
 async function pReloadMisGastos(){
   if(!pOwner) pOwner=myName();
   if(!pOwner) return;
@@ -9843,6 +9871,7 @@ async function pReloadMisGastos(){
     const r=await postGAS({action:'getMisGastos', owner:pOwner, pass:pPass});
     misGastosAll=(r&&r.ok&&Array.isArray(r.gastos))?r.gastos.map(pNormalizarGasto):[];
     misDeudasPorSesion=(r&&r.ok&&r.debtsBySession)?r.debtsBySession:{};
+    misGastosAllLoadedAt=Date.now();
     if(typeof populateViajeSelect==='function') populateViajeSelect();
   }catch(e){ /* v29: sin red — conserva lo que ya había en memoria (posibles cambios offline) en vez de vaciarlo */ }
 }
@@ -9933,29 +9962,35 @@ async function pEnterPersonal(skipGastosSwitch){
   if(!__activeSesionAntesDePersonal) __activeSesionAntesDePersonal=activeSesion;
   activeSesion=personalSesionName(pOwner);
   v27ShopLoaded=false; invSharedLoaded=false; invContenedoresLoaded=false;
-  misGastosAll=[]; // v29: nunca mostrar lo de la sesión anterior mientras carga
-  v29ShowSesionLoading();
   activeF='all';
   document.querySelectorAll('.controls .ftab').forEach(b=>b.classList.remove('on'));
   const allBtn=document.getElementById('fltAll'); if(allBtn) allBtn.classList.add('on');
   const tabSalud=document.getElementById('tabSalud'); if(tabSalud) tabSalud.style.display='';
-  // v29: pLoad (Finanzas/pItems) y pReloadMisGastos (gastos de todas tus
-  // sesiones) son dos pedidos independientes al backend — antes se hacían
-  // uno DESPUÉS del otro (esperando el primero completo antes de ni
-  // siquiera pedir el segundo), lo que se sentía como "carga en partes" y
-  // tardaba el doble de lo necesario. En paralelo, tarda lo que tarde el
-  // más lento de los dos, no la suma de ambos.
-  await Promise.all([
-    pLoad().catch(()=>{}),
-    pReloadMisGastos()
-  ]);
+  // v29: si ya tenías Personal cargado hace poco (menos de 5 min), entrar de
+  // nuevo es de verdad solo cambiar el filtro y poner la pestaña de Gastos
+  // — no hay por qué vaciar lo que ya tienes en memoria ni esperar otro
+  // viaje al backend antes de mostrar algo. Se refresca solo en segundo
+  // plano para no quedarse con datos viejos por mucho tiempo.
+  const fresco = pLoaded && misGastosAllLoadedAt && (Date.now()-misGastosAllLoadedAt<5*60*1000);
+  if(!fresco){ misGastosAll=[]; v29ShowSesionLoading(); } // nunca mostrar lo de la sesión anterior mientras carga de verdad
   pUpdatePersonalBanner();
   if(!skipGastosSwitch){
     const gt=[...document.querySelectorAll('.ptab')].find(b=>/Gastos/.test(b.textContent));
     if(gt) switchPage('gastos', gt);
   }
   renderAll();
-  showToast('👤 Sesión personal — '+misGastosAll.length+' movimientos de todas tus sesiones');
+  if(fresco){
+    showToast('👤 Sesión personal — '+misGastosAll.length+' movimientos');
+    Promise.all([pLoad().catch(()=>{}), pReloadMisGastos()]).then(()=>{ pUpdatePersonalBanner(); renderAll(); });
+  } else {
+    // v29: pLoad (Finanzas/pItems) y pReloadMisGastos (gastos de todas tus
+    // sesiones) son dos pedidos independientes al backend — en paralelo,
+    // tarda lo que tarde el más lento de los dos, no la suma de ambos.
+    await Promise.all([pLoad().catch(()=>{}), pReloadMisGastos()]);
+    pUpdatePersonalBanner();
+    renderAll();
+    showToast('👤 Sesión personal — '+misGastosAll.length+' movimientos de todas tus sesiones');
+  }
 }
 async function pExitPersonal(){
   personalMode=false;
