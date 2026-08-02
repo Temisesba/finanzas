@@ -1756,7 +1756,7 @@ details:not([open]) .chev{transform:rotate(-90deg)}
 // v29: nombre clave de esta entrega — cámbialo cada vez que termines un lote
 // de cambios, así en 👥 → 🛠 Panel dev se puede confirmar que el navegador
 // está cargando la versión más reciente y no una copia en caché.
-const BUILD_VERSION='Alcatraz';
+const BUILD_VERSION='Copihue';
 (function(){ const bv=document.getElementById('devBuildName'); if(bv) bv.textContent='· Versión: '+BUILD_VERSION; })();
 // v29: el sync con el backend es solo para los DATOS — esto es aparte:
 // fuerza que se vuelva a pedir el HTML/JS de la app en sí (el "software"),
@@ -5387,7 +5387,16 @@ let listas=[], inventarios=[];
 // quieres una lista/inventario 100% tuyo, entra con tu sesión personal como
 // sesión ACTIVA (no con el toggle de modo Personal, que es solo para ver tu
 // resumen de Finanzas agregado entre sesiones).
-function v34SesionDe(tipo){ return activeSesion; }
+// v29 (fix): en modo Personal, activeSesion es la pseudo-sesión sintética
+// "Personal-<tú>" (solo para agregar Finanzas entre sesiones) — usarla
+// aquí hacía que Lista/Inventario en Personal fueran una lista APARTE,
+// vacía o distinta de la de tu sesión de casa real, en vez de la misma
+// lista compartida. Lista/Inventario siguen siendo de la sesión de casa
+// real siempre, sin importar si estás viendo Personal o no.
+function v34SesionDe(tipo){
+  if(!personalMode) return activeSesion;
+  return __activeSesionAntesDePersonal || localStorage.getItem('gastos_sesion') || activeSesion;
+}
 async function v34LoadContenedores(tipo){
   try{
     const r=await postGAS({action:'getContenedores', tipo, sesion:v34SesionDe(tipo)});
