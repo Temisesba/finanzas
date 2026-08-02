@@ -1756,7 +1756,7 @@ details:not([open]) .chev{transform:rotate(-90deg)}
 // v29: nombre clave de esta entrega — cámbialo cada vez que termines un lote
 // de cambios, así en 👥 → 🛠 Panel dev se puede confirmar que el navegador
 // está cargando la versión más reciente y no una copia en caché.
-const BUILD_VERSION='Copihue';
+const BUILD_VERSION='Bromelia';
 (function(){ const bv=document.getElementById('devBuildName'); if(bv) bv.textContent='· Versión: '+BUILD_VERSION; })();
 // v29: el sync con el backend es solo para los DATOS — esto es aparte:
 // fuerza que se vuelva a pedir el HTML/JS de la app en sí (el "software"),
@@ -5147,7 +5147,16 @@ if(btnGem){
 }
 
 async function delExp(rowIndex){
-  if(!confirm('¿Eliminar?'))return false;
+  // v29: antes decía solo "¿Eliminar?", sin decir QUÉ — con la lista tardando
+  // en actualizar, era fácil confirmar sin estar seguro de qué gasto era en
+  // realidad. Ahora muestra concepto+monto, y si tiene productos ligados
+  // (🧾) avisa que también se borran esas líneas (mismo comportamiento de
+  // siempre, solo que ahora se dice antes de confirmar, no después).
+  const eDel = allExp.find(x=>x.rowIndex===rowIndex) || (misGastosAll||[]).find(x=>x.rowIndex===rowIndex);
+  const hijosDel = eDel && eDel.gastoId ? prodsDe(eDel.gastoId) : [];
+  const desc = eDel ? ((eDel.concepto||'(sin concepto)')+' · '+pMoney(parseFloat(eDel.costo)||0)+(eDel.fecha?(' · '+fmtDate(eDel.fecha)):'')) : ('fila '+rowIndex);
+  const msg = '¿Eliminar "'+desc+'"?'+(hijosDel.length?(' Esto también borra sus '+hijosDel.length+' producto(s).'):'');
+  if(!confirm(msg))return false;
   try{
     const r=await postGAS({action:'deleteGasto',rowIndex,eliminadoPor:myName()});
     if(!r.ok){ showToast('Error: '+(r.error||'')); return false; }
