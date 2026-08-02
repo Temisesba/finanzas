@@ -1756,7 +1756,7 @@ details:not([open]) .chev{transform:rotate(-90deg)}
 // v29: nombre clave de esta entrega — cámbialo cada vez que termines un lote
 // de cambios, así en 👥 → 🛠 Panel dev se puede confirmar que el navegador
 // está cargando la versión más reciente y no una copia en caché.
-const BUILD_VERSION='Pensamiento';
+const BUILD_VERSION='Retama';
 (function(){ const bv=document.getElementById('devBuildName'); if(bv) bv.textContent='· Versión: '+BUILD_VERSION; })();
 // v29: el sync con el backend es solo para los DATOS — esto es aparte:
 // fuerza que se vuelva a pedir el HTML/JS de la app en sí (el "software"),
@@ -7981,7 +7981,7 @@ function pRenderFijos(){
     // v29: el chip de "Pagado" ahora también dice cuánto, no solo cuándo —
     // antes había que abrir "Ver pagos previos" para saber el monto.
     const montoPagado=pagado?((pagado&&typeof pagado==='object')?(parseFloat(pagado.monto)||0):(parseFloat(f.monto)||0)):0;
-    const pagadoChip=pagado?'<button class="rt-btn" onclick="pToggleFijoPagado(\''+esc(f.id)+'\')">✓ Pagado '+(fechaPagado?fmtDate(fechaPagado):'este mes')+' · '+pMoney(montoPagado)+' (deshacer)</button>':'';
+    const pagadoChip=pagado?'<button class="rt-btn" style="color:var(--shared);border-color:var(--shared-bdr);font-weight:700" onclick="pToggleFijoPagado(\''+esc(f.id)+'\')">✓ Pagado '+(fechaPagado?fmtDate(fechaPagado):'este mes')+' · '+pMoney(montoPagado)+' (deshacer)</button>':'';
     const botones=f.cancelado
       ? '<button class="rt-btn" style="font-weight:600" onclick="pReactivarFijo(\''+esc(f.id)+'\')">↩️ Reactivar</button><button class="rt-btn" onclick="pOpenForm(\'fijo\',\''+esc(f.id)+'\')">✏️</button><button class="shop-del" onclick="pDelItem(\''+esc(f.id)+'\')">🗑</button>'
       : pagadoChip
