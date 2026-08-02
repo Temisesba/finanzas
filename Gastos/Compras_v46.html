@@ -1756,7 +1756,7 @@ details:not([open]) .chev{transform:rotate(-90deg)}
 // v29: nombre clave de esta entrega — cámbialo cada vez que termines un lote
 // de cambios, así en 👥 → 🛠 Panel dev se puede confirmar que el navegador
 // está cargando la versión más reciente y no una copia en caché.
-const BUILD_VERSION='Bromelia';
+const BUILD_VERSION='Cempasuchil';
 (function(){ const bv=document.getElementById('devBuildName'); if(bv) bv.textContent='· Versión: '+BUILD_VERSION; })();
 // v29: el sync con el backend es solo para los DATOS — esto es aparte:
 // fuerza que se vuelva a pedir el HTML/JS de la app en sí (el "software"),
@@ -5346,16 +5346,21 @@ function v29OpenDeptos(){
 async function v29OpenListaGrupos(){
   const mia=activeSesion;
   document.getElementById('listaGruposSesion').textContent=mia;
+  const body=document.getElementById('listaGruposBody');
+  // v29 (fix): el modal se ve YA, con un "Cargando…" — antes se quedaba
+  // sin mostrar NADA (ni modal ni aviso) hasta que el servidor respondía,
+  // lo que se sentía como que la app se congeló aunque el pedido tardara
+  // lo normal. El overlay lo cierra "Cancelar"/clic afuera igual que siempre.
+  body.innerHTML='<div style="color:var(--ink-3);font-size:12px">Cargando…</div>';
+  document.getElementById('listaGruposOverlay').style.display='flex';
   let grupos={};
   try{ const r=await postGAS({action:'getListaGrupos'}); grupos=(r&&r.grupos)||{}; }catch(e){}
   const vinculadas=new Set(grupos[mia]||[]);
   const otras=SESIONES.filter(s=>s!==mia);
-  const body=document.getElementById('listaGruposBody');
   body.innerHTML = otras.length ? otras.map(s=>`<label style="display:flex;align-items:center;gap:8px;font-size:13px">
       <input type="checkbox" value="${esc(s)}" ${vinculadas.has(s)?'checked':''}> ${esc(s)}
     </label>`).join('') : '<div style="color:var(--ink-3);font-size:12px">No hay otras sesiones creadas todavía.</div>';
   document.getElementById('listaGruposOverlay').dataset.grupos=JSON.stringify(grupos);
-  document.getElementById('listaGruposOverlay').style.display='flex';
 }
 async function v29SaveListaGrupos(){
   const mia=activeSesion;
