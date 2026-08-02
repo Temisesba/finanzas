@@ -1756,7 +1756,7 @@ details:not([open]) .chev{transform:rotate(-90deg)}
 // v29: nombre clave de esta entrega — cámbialo cada vez que termines un lote
 // de cambios, así en 👥 → 🛠 Panel dev se puede confirmar que el navegador
 // está cargando la versión más reciente y no una copia en caché.
-const BUILD_VERSION='Nomeolvides';
+const BUILD_VERSION='Pensamiento';
 (function(){ const bv=document.getElementById('devBuildName'); if(bv) bv.textContent='· Versión: '+BUILD_VERSION; })();
 // v29: el sync con el backend es solo para los DATOS — esto es aparte:
 // fuerza que se vuelva a pedir el HTML/JS de la app en sí (el "software"),
@@ -7990,7 +7990,7 @@ function pRenderFijos(){
         +'<button class="rt-btn" onclick="pOpenForm(\'fijo\',\''+esc(f.id)+'\')">✏️</button>'
         +'<button class="rt-btn" onclick="pCancelarFijo(\''+esc(f.id)+'\')">🚫 Cancelar</button>'
         +'<button class="shop-del" onclick="pDelItem(\''+esc(f.id)+'\')">🗑</button>';
-    return `<div id="pfijo-${esc(f.id)}" style="padding:11px;border:1px solid ${pagado?'var(--loan-bdr)':'var(--border)'};border-radius:10px;margin-bottom:8px;background:${f.cancelado?'var(--surface2)':(pagado?'var(--loan-bg)':'var(--surface)')};opacity:${f.cancelado?'.7':'1'}">
+    return `<div id="pfijo-${esc(f.id)}" style="padding:11px;border:1px solid ${pagado?'var(--shared-bdr)':'var(--border)'};border-radius:10px;margin-bottom:8px;background:${f.cancelado?'var(--surface2)':(pagado?'var(--shared-bg)':'var(--surface)')};opacity:${f.cancelado?'.7':'1'}">
       <div style="display:flex;align-items:center;gap:8px">
         <div style="flex:1;min-width:0">
           <div style="font-weight:600;font-size:13px">${esc(f.concepto||'—')} ${alarma}</div>
