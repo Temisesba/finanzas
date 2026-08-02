@@ -1514,7 +1514,7 @@ details:not([open]) .chev{transform:rotate(-90deg)}
   </div>
   <div class="mbody">
     <div id="mEditSesionLbl" style="display:none;font-size:11px;font-weight:600;color:var(--personal);background:var(--surface2);border-radius:6px;padding:5px 9px;margin-bottom:8px;align-items:center;gap:6px">
-      <span>Sesión:</span><select id="mEditSesionSel" style="font-size:11px;font-weight:600;border:1px solid var(--border2);border-radius:6px;padding:3px 6px;background:var(--bg)"></select>
+      <span>Sesión:</span><select id="mEditSesionSel" onchange="v29ModalSesionCambio(this.value)" style="font-size:11px;font-weight:600;border:1px solid var(--border2);border-radius:6px;padding:3px 6px;background:var(--bg)"></select>
     </div>
     <button type="button" id="mVincularFijoBtn" style="display:none;font-size:11px;margin-bottom:8px" class="rt-btn" onclick="pVincularGastoAFijo()">🔁 Vincular a un pago fijo</button>
     <input type="hidden" id="editIdx">
@@ -1756,7 +1756,7 @@ details:not([open]) .chev{transform:rotate(-90deg)}
 // v29: nombre clave de esta entrega — cámbialo cada vez que termines un lote
 // de cambios, así en 👥 → 🛠 Panel dev se puede confirmar que el navegador
 // está cargando la versión más reciente y no una copia en caché.
-const BUILD_VERSION='Alhelí';
+const BUILD_VERSION='Buganvilia';
 (function(){ const bv=document.getElementById('devBuildName'); if(bv) bv.textContent='· Versión: '+BUILD_VERSION; })();
 // v29: el sync con el backend es solo para los DATOS — esto es aparte:
 // fuerza que se vuelva a pedir el HTML/JS de la app en sí (el "software"),
@@ -1828,11 +1828,36 @@ function chipFor(name){
   return '<span class="chip" style="background:'+c.bg+';color:'+c.col+';border:1px solid '+c.bdr+'">'+pEmoji(name)+' '+esc(name)+'</span>';
 }
 function myName(){ const n=localStorage.getItem('gastos_myname')||''; return PEOPLE.includes(n)?n:''; }
-function buildPayerButtons(){
+// v29: acepta una lista opcional distinta de PEOPLE — se usa cuando el
+// gasto se reasigna a OTRA sesión desde el selector "Sesión:" del propio
+// modal (ver v29ModalSesionCambio), sin tener que cambiar la sesión activa
+// de toda la app solo para ver los botones correctos.
+function buildPayerButtons(lista){
   const g=document.getElementById('payerGroup'); if(!g)return;
-  g.innerHTML = PEOPLE.map(n=>'<button class="tbtn" data-payer="'+esc(n)+'" onclick="setPayer(\''+esc(n)+'\')">'+pEmoji(n)+' '+esc(n)+'</button>').join('')
+  const gente=(lista&&lista.length)?lista:PEOPLE;
+  g.innerHTML = gente.map(n=>'<button class="tbtn" data-payer="'+esc(n)+'" onclick="setPayer(\''+esc(n)+'\')">'+pEmoji(n)+' '+esc(n)+'</button>').join('')
     + '<button class="tbtn" data-payer="NA" onclick="setPayer(\'NA\')">— N/A</button>';
-  const wrap=document.getElementById('chkVariosPaganWrap'); if(wrap) wrap.style.display=PEOPLE.length>=2?'flex':'none';
+  const wrap=document.getElementById('chkVariosPaganWrap'); if(wrap) wrap.style.display=gente.length>=2?'flex':'none';
+}
+// v29: al reasignar el gasto a OTRA sesión desde el selector "Sesión:" del
+// propio modal, "¿Quién paga?" debe reflejar a los miembros de ESA sesión,
+// no de la que tengas activa en el resto de la app — antes ese selector no
+// tenía ni onchange, se quedaba pegado a la sesión activa sin importar cuál
+// eligieras ahí. "Personal-<nombre>" es una sesión sintética (no existe de
+// verdad en la hoja de Sesiones) — ahí el único miembro real es esa persona.
+async function v29ModalSesionCambio(s){
+  if(!s || s===activeSesion){ buildPayerButtons(); return; }
+  let miembros;
+  if(s.indexOf('Personal-')===0){
+    miembros=[s.slice('Personal-'.length)].filter(Boolean);
+  } else {
+    miembros=pCacheSesionMiembros(s);
+    if(!miembros){
+      const chk=await v29CheckSesion(s, sesionPass(s));
+      if(chk.ok) miembros=chk.miembros;
+    }
+  }
+  buildPayerButtons(miembros);
 }
 function buildPersonFilters(){
   const c=document.getElementById('personFilters'); if(!c)return;
