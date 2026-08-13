@@ -2246,6 +2246,39 @@ function precioComp(precio,cantidad,unidad){
   if(!p||!c||!unidad||!UNIT_COMP[unidad]) return null;
   return (UNIT_COMP[unidad][0]*p)/c;
 }
+// Compara un precio nuevo contra el promedio de compras PASADAS del mismo
+// producto (por nombre, ya normalizado a precio comparable por unidad vía
+// precioComp) — para avisar "está caro"/"buen precio" en el momento, sin
+// tabla nueva: allProds ya tiene todo el historial cargado en memoria.
+// excluirRowIndex evita que una fila ya guardada se compare contra sí misma.
+function compararPrecioHistorico(concepto,precioInd,cantidad,unidad,excluirRowIndex){
+  const nombreNorm=String(concepto||'').toLowerCase().trim();
+  const nuevo=precioComp(precioInd,cantidad,unidad);
+  if(!nombreNorm||nuevo===null) return null;
+  const previos=allProds
+    .filter(p=>p.rowIndex!==excluirRowIndex && String(p.concepto||'').toLowerCase().trim()===nombreNorm)
+    .map(p=>precioComp(p.precioInd,p.cantidad,p.unidad))
+    .filter(v=>v!==null && v>0);
+  if(!previos.length) return null;
+  const promedio=previos.reduce((s,v)=>s+v,0)/previos.length;
+  let estado='normal';
+  if(nuevo>promedio*1.15) estado='caro';
+  else if(nuevo<promedio*0.85) estado='bueno';
+  return {estado,promedio,nuevo};
+}
+function avisarPrecioHistorico(concepto,precioInd,cantidad,unidad,excluirRowIndex){
+  const r=compararPrecioHistorico(concepto,precioInd,cantidad,unidad,excluirRowIndex);
+  if(!r) return;
+  const txt=r.estado==='caro'?('🔺 Más caro que tu promedio ('+r.promedio.toFixed(2)+'/unidad)')
+    :r.estado==='bueno'?('🔻 Buen precio (promedio '+r.promedio.toFixed(2)+'/unidad)')
+    :('➖ Precio normal (promedio '+r.promedio.toFixed(2)+'/unidad)');
+  showToast(txt);
+}
+function avisarPrecioHistoricoPorFila(rowIndex,nuevoPrecio){
+  const p=allProds.find(x=>x.rowIndex===rowIndex);
+  if(!p) return;
+  avisarPrecioHistorico(p.concepto,nuevoPrecio,p.cantidad,p.unidad,rowIndex);
+}
 function prodsDe(gastoId){ return gastoId ? allProds.filter(p=>p.compraId===gastoId) : []; }
 let currentSort='fecha_desc';
 let currentPeriod='month';
@@ -4683,7 +4716,7 @@ function v30RenderProdDraft(){
       <input type="text" value="${esc(p.piezas)}" placeholder="1" onchange="prodDraft[${i}].piezas=this.value">
       <input type="text" value="${esc(p.cantidad)}" placeholder="500" onchange="prodDraft[${i}].cantidad=this.value">
       <select onchange="prodDraft[${i}].unidad=this.value">${UNIDADES.map(u=>'<option'+(u===p.unidad?' selected':'')+'>'+u+'</option>').join('')}</select>
-      <input type="text" value="${esc(p.precioInd)}" placeholder="¥" onchange="prodDraft[${i}].precioInd=this.value">
+      <input type="text" value="${esc(p.precioInd)}" placeholder="¥" onchange="prodDraft[${i}].precioInd=this.value;avisarPrecioHistorico(prodDraft[${i}].concepto,this.value,prodDraft[${i}].cantidad,prodDraft[${i}].unidad)">
       <button type="button" class="rt-btn" style="font-size:10px;padding:4px 4px;width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" onclick="v29AbrirQuienCompraProducto(${i})" title="¿Quién compra este producto? (la caducidad ahora se edita con el ✏️)">${esc(v29QuienCompraLabel(p.quienCompra))}</button>
       <input type="checkbox" ${p.inventario?'checked':''} onchange="prodDraft[${i}].inventario=this.checked" title="¿Va a inventario? (desmarca para regalos u otros = NA)">
       <span style="display:flex;gap:2px"><button class="shop-del" onclick="v35EditDraft(${i})" title="Editar producto (foto, caducidad, código, catálogo…)">✏️</button><button class="shop-del" onclick="prodDraft.splice(${i},1);v30RenderProdDraft()" title="Quitar línea">🗑</button></span>
@@ -5789,7 +5822,7 @@ ${p.fotoProducto
         <input type="text" class="inv-in" style="width:44px" value="${esc(p.cantidad||'')}" placeholder="500" onchange="v30SaveField(${r},'cantidad',this.value)">
         <select class="inv-in" onchange="v30SaveField(${r},'unidad',this.value)">${UNIDADES.map(u=>'<option'+(u===(p.unidad||'unidad')?' selected':'')+'>'+u+'</option>').join('')}</select>
       </span>
-      <span><input type="text" class="inv-in" style="width:56px" value="${esc(p.precioInd||'')}" placeholder="propio" onchange="v30SaveField(${r},'precioInd',this.value)"></span>
+      <span><input type="text" class="inv-in" style="width:56px" value="${esc(p.precioInd||'')}" placeholder="propio" onchange="v30SaveField(${r},'precioInd',this.value);avisarPrecioHistoricoPorFila(${r},this.value)"></span>
       <span${compCls}>${compTxt}</span>
       <span><input type="date" class="inv-in ${cadCls}" value="${esc(String(p.caducidad||'').substring(0,10))}" onchange="v30SaveField(${r},'caducidad',this.value)"></span>
       <span style="display:flex;gap:3px;align-items:center">
