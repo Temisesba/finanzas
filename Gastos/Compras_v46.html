@@ -2255,8 +2255,12 @@ function compararPrecioHistorico(concepto,precioInd,cantidad,unidad,excluirRowIn
   const nombreNorm=String(concepto||'').toLowerCase().trim();
   const nuevo=precioComp(precioInd,cantidad,unidad);
   if(!nombreNorm||nuevo===null) return null;
+  // Misma familia de unidad nada más (ej. solo otras en kg/g/mg) — mezclar
+  // $/kg con $/pieza en el mismo promedio no es una comparación real,
+  // aunque las dos sean números válidos. Mismo criterio que Comidas.
+  const familiaNueva=UNIT_COMP[unidad][1];
   const previos=allProds
-    .filter(p=>p.rowIndex!==excluirRowIndex && String(p.concepto||'').toLowerCase().trim()===nombreNorm)
+    .filter(p=>p.rowIndex!==excluirRowIndex && String(p.concepto||'').toLowerCase().trim()===nombreNorm && UNIT_COMP[p.unidad] && UNIT_COMP[p.unidad][1]===familiaNueva)
     .map(p=>precioComp(p.precioInd,p.cantidad,p.unidad))
     .filter(v=>v!==null && v>0);
   if(!previos.length) return null;
