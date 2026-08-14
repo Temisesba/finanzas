@@ -2453,8 +2453,13 @@ function v35MostrarRevision(r){
   const html='<h3 style="margin:0 0 8px">🤖 Ordenar con IA ('+esc(r.ia||'')+')</h3>'+
     '<p style="font-size:13px;color:var(--ink-2,#666)">Se guarda en la misma columna que usa Comidas — revisa antes de aplicar, nada se guarda todavía.</p>'+
     '<h4 style="margin:12px 0 4px">📋 Categorías sugeridas ('+catEntries.length+')</h4>'+
-    (catEntries.length ? '<div style="max-height:200px;overflow:auto;font-size:13px">'+catEntries.map(([n,c])=>'<div style="padding:4px 0;border-bottom:1px solid #eee">'+esc(n)+' → <b>'+esc(c)+'</b></div>').join('')+'</div>'+
-      '<button type="button" class="rt-btn" style="margin-top:8px" onclick="v35AplicarCategorias()">✅ Aplicar todas</button>'
+    (catEntries.length ? '<div style="max-height:240px;overflow:auto;font-size:13px">'+catEntries.map(([n,c])=>'<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:4px 0;border-bottom:1px solid #eee">'+
+        '<span>'+esc(n)+'</span>'+
+        '<select data-nombre="'+esc(n)+'" onchange="v35CatCambio(this)" style="font-size:13px">'+
+          '<option value="">— no aplicar —</option>'+
+          V35_CATEGORIAS_COMIDA.map(cv=>'<option value="'+esc(cv)+'" '+(cv===c?'selected':'')+'>'+esc(cv)+'</option>').join('')+
+        '</select></div>').join('')+'</div>'+
+      '<button type="button" class="rt-btn" style="margin-top:8px" onclick="v35AplicarCategorias()">✅ Aplicar categorías</button>'
       : '<p style="font-size:13px;color:var(--ink-2,#666)">Nada nuevo que categorizar.</p>')+
     '<h4 style="margin:14px 0 4px">🔀 Posibles duplicados ('+window._v35dups.length+')</h4>'+
     (window._v35dups.length ? window._v35dups.map(g=>'<div style="font-size:13px;padding:6px 0;border-bottom:1px solid #eee"><b>'+esc(g.canonico)+'</b> = '+(g.variantes||[]).map(esc).join(', ')+'<br><span style="color:var(--ink-2,#666)">Edítalos a mano en la tabla (columna Producto) para dejarlos con el mismo nombre.</span></div>').join('')
@@ -2462,10 +2467,13 @@ function v35MostrarRevision(r){
     '<div style="text-align:right;margin-top:14px"><button type="button" class="rt-btn" onclick="this.closest(\'[data-v35-overlay]\').remove()">Cerrar</button></div>';
   v35Overlay(html);
 }
+function v35CatCambio(sel){
+  window._v35cats[sel.dataset.nombre]=sel.value;
+}
 async function v35AplicarCategorias(){
   const mapa=window._v35cats||{};
-  const nombres=Object.keys(mapa);
-  if(!nombres.length) return;
+  const nombres=Object.keys(mapa).filter(n=>mapa[n]);
+  if(!nombres.length){ showToast('No hay categorías para aplicar'); return; }
   let aplicadas=0;
   for(const p of allProds){
     if(p.tipoFila!=='producto') continue;
