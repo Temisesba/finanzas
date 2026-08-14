@@ -2841,6 +2841,7 @@ function refreshTiendasDatalist(){
   const lugares=[...new Set([...(LUGARES||LUGARES_DEFAULT),...allProds.map(p=>p.ubicacion)].filter(Boolean))].sort();
   const lugDl=document.getElementById('list-inv-lugares'); if(lugDl) lugDl.innerHTML=lugares.map(t=>'<option value="'+esc(t)+'">').join('');
   refreshConceptosDatalist();
+  v34FillProductosDatalist();
 }
 
 function switchPage(page,el){
@@ -4710,7 +4711,7 @@ function v30RenderProdDraft(){
       <span style="display:flex;gap:4px;min-width:0;align-items:flex-start">
         ${(p.fotoBase64||p.fotoUrl)?`<img src="${p.fotoBase64?('data:'+(p.fotoMime||'image/jpeg')+';base64,'+p.fotoBase64):esc(p.fotoUrl)}" style="width:22px;height:22px;object-fit:cover;border-radius:5px;border:1px solid var(--border);cursor:pointer;flex-shrink:0;margin-top:3px" onclick="openLightbox(this.src)" title="Ver foto">`:''}
         <span style="display:flex;flex-direction:column;gap:2px;min-width:0;flex:1">
-        <input type="text" value="${esc(p.concepto)}" placeholder="Producto" onchange="prodDraft[${i}].concepto=this.value">
+        <input type="text" value="${esc(p.concepto)}" placeholder="Producto" list="list-productos" onchange="prodDraft[${i}].concepto=this.value">
         <input type="text" value="${esc(p.marca||'')}" placeholder="marca…" style="font-size:10px;opacity:.85;font-weight:600" onchange="prodDraft[${i}].marca=this.value">
         <input type="text" value="${esc(p.categoria||'')}" placeholder="categoría…" list="list-inv-cats" style="font-size:10px;opacity:.9;font-weight:600;color:var(--personal)" onchange="prodDraft[${i}].categoria=this.value">
         <input type="text" value="${esc(p.ubicacion||'')}" placeholder="lugar…" list="list-inv-lugares" style="font-size:10px;opacity:.9" onchange="prodDraft[${i}].ubicacion=this.value">
@@ -5814,7 +5815,7 @@ ${p.fotoProducto
           :'<button class="star-btn" style="font-size:11px" onclick="v33FotoRow('+r+')" title="Agregar foto">📷</button>'}
         ${p.esCot?'<span class="chip cq" style="font-size:9px;margin-top:3px">💬</span>':''}
         <span style="display:flex;flex-direction:column;gap:1px;flex:1;min-width:0">
-          <input type="text" class="inv-in" value="${esc(p.concepto)}" onchange="v30SaveField(${r},'concepto',this.value)">
+          <input type="text" class="inv-in" value="${esc(p.concepto)}" list="list-productos" onchange="v30SaveField(${r},'concepto',this.value)">
           <input type="text" class="inv-in" style="font-size:10px;opacity:.85;font-weight:600" value="${esc(p.marca||'')}" placeholder="marca…" onchange="v30SaveField(${r},'marca',this.value)">
           <input type="text" class="inv-in" style="font-size:10px;opacity:.75" value="${esc(p.notas||'')}" placeholder="notas…" onchange="v30SaveField(${r},'notas',this.value)">
         </span>
