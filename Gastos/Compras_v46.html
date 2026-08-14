@@ -1202,6 +1202,7 @@ details:not([open]) .chev{transform:rotate(-90deg)}
         <button class="ftab" onclick="v29OpenDeptos()">✏️ Catálogos</button>
         <button class="ftab" onclick="v29OpenListaGrupos()" title="Elegir con qué sesiones se comparten los productos marcados 🔗">🔗 Compartir con…</button>
         <button class="rt-btn" style="padding:7px 14px;font-size:13px" onclick="v31ProdForm({target:'sheet'})">＋ Producto a inventario</button>
+        <button class="rt-btn" style="padding:7px 14px;font-size:13px" onclick="v35OrdenarConIA()">🤖 Ordenar con IA</button>
       </div>
       <div id="invColPanel" style="display:none;gap:8px;flex-wrap:wrap;margin:-2px 0 10px 0;font-size:11px"></div>
       <div id="invResumen" style="display:none;margin-bottom:10px"></div>
@@ -2416,6 +2417,67 @@ function v34Catalogo(){ // por nombre normalizado: el registro más completo de 
     if(!c.codigo && p.codigo) c.codigo=p.codigo;
   });
   return cat;
+}
+// ── v30: "🤖 Ordenar con IA" — mismo botón/idea que ya existe en la app
+// Comidas: sugiere categoría (columna CategoriaComida, compartida con
+// Comidas — NO es la "categoria" de gasto que ya tiene cada producto) y
+// agrupa productos con nombre distinto que probablemente son el mismo. Es
+// sugerencia — se revisa antes de aplicar, nada se guarda solo.
+// Lo que se ordene desde aquí se ve reflejado en Comidas y viceversa,
+// porque las dos apps leen/escriben la MISMA columna del mismo Sheet.
+const V35_CATEGORIAS_COMIDA = ['Lácteos','Verduras y frutas','Carnes y pescado','Granos y cereales','Panadería','Congelados','Bebidas','Condimentos y especias','Limpieza','Otros'];
+function v35Overlay(html){
+  const ov=document.createElement('div');
+  ov.setAttribute('data-v35-overlay','1');
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:99999;display:flex;align-items:center;justify-content:center;padding:16px';
+  ov.innerHTML='<div style="background:var(--surface,#fff);color:var(--ink,#222);border-radius:14px;padding:20px;max-width:480px;width:100%;max-height:85vh;overflow:auto">'+html+'</div>';
+  ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
+  document.body.appendChild(ov);
+  return ov;
+}
+async function v35OrdenarConIA(){
+  const nombres=[...new Set(allProds.filter(p=>p.tipoFila==='producto').map(p=>p.concepto).filter(Boolean))];
+  if(!nombres.length){ showToast('No hay productos para ordenar'); return; }
+  showToast('🤖 Pensando…');
+  let r;
+  try{ r=await postGAS({action:'clasificarProductosIA', nombres, categorias:V35_CATEGORIAS_COMIDA}); }
+  catch(e){ showToast('No se pudo ordenar: '+e.message); return; }
+  if(!r || !r.ok){ showToast('No se pudo ordenar: '+((r&&r.error)||'sin conexión')); return; }
+  v35MostrarRevision(r);
+}
+function v35MostrarRevision(r){
+  window._v35cats={};
+  Object.entries(r.categorias||{}).forEach(([n,c])=>{ if(V35_CATEGORIAS_COMIDA.includes(c)) window._v35cats[n]=c; });
+  window._v35dups=r.duplicados||[];
+  const catEntries=Object.entries(window._v35cats);
+  const html='<h3 style="margin:0 0 8px">🤖 Ordenar con IA ('+esc(r.ia||'')+')</h3>'+
+    '<p style="font-size:13px;color:var(--ink-2,#666)">Se guarda en la misma columna que usa Comidas — revisa antes de aplicar, nada se guarda todavía.</p>'+
+    '<h4 style="margin:12px 0 4px">📋 Categorías sugeridas ('+catEntries.length+')</h4>'+
+    (catEntries.length ? '<div style="max-height:200px;overflow:auto;font-size:13px">'+catEntries.map(([n,c])=>'<div style="padding:4px 0;border-bottom:1px solid #eee">'+esc(n)+' → <b>'+esc(c)+'</b></div>').join('')+'</div>'+
+      '<button type="button" class="rt-btn" style="margin-top:8px" onclick="v35AplicarCategorias()">✅ Aplicar todas</button>'
+      : '<p style="font-size:13px;color:var(--ink-2,#666)">Nada nuevo que categorizar.</p>')+
+    '<h4 style="margin:14px 0 4px">🔀 Posibles duplicados ('+window._v35dups.length+')</h4>'+
+    (window._v35dups.length ? window._v35dups.map(g=>'<div style="font-size:13px;padding:6px 0;border-bottom:1px solid #eee"><b>'+esc(g.canonico)+'</b> = '+(g.variantes||[]).map(esc).join(', ')+'<br><span style="color:var(--ink-2,#666)">Edítalos a mano en la tabla (columna Producto) para dejarlos con el mismo nombre.</span></div>').join('')
+      : '<p style="font-size:13px;color:var(--ink-2,#666)">No se sugirió ningún duplicado.</p>')+
+    '<div style="text-align:right;margin-top:14px"><button type="button" class="rt-btn" onclick="this.closest(\'[data-v35-overlay]\').remove()">Cerrar</button></div>';
+  v35Overlay(html);
+}
+async function v35AplicarCategorias(){
+  const mapa=window._v35cats||{};
+  const nombres=Object.keys(mapa);
+  if(!nombres.length) return;
+  let aplicadas=0;
+  for(const p of allProds){
+    if(p.tipoFila!=='producto') continue;
+    if(p.categoriaComida) continue; // ya tenía una, no se pisa
+    const cat=mapa[p.concepto];
+    if(!cat) continue;
+    await postGAS({action:'updateGasto', rowIndex:p.rowIndex, categoriaComida:cat});
+    aplicadas++;
+  }
+  showToast('✓ '+aplicadas+' producto(s) categorizados');
+  document.querySelectorAll('[data-v35-overlay]').forEach(o=>o.remove());
+  await loadExp(); v30RenderInv();
 }
 function v34FillProductosDatalist(){
   const dl=document.getElementById('list-productos'); if(!dl)return;
