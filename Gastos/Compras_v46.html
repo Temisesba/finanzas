@@ -1757,7 +1757,7 @@ details:not([open]) .chev{transform:rotate(-90deg)}
 // v29: nombre clave de esta entrega — cámbialo cada vez que termines un lote
 // de cambios, así en 👥 → 🛠 Panel dev se puede confirmar que el navegador
 // está cargando la versión más reciente y no una copia en caché.
-const BUILD_VERSION='Wisteria';
+const BUILD_VERSION='Wisteria 2';
 (function(){ const bv=document.getElementById('devBuildName'); if(bv) bv.textContent='· Versión: '+BUILD_VERSION; })();
 // v29: el sync con el backend es solo para los DATOS — esto es aparte:
 // fuerza que se vuelva a pedir el HTML/JS de la app en sí (el "software"),
@@ -4671,7 +4671,7 @@ function setType(t){
 function handleFile(e){const f=e.target.files[0];if(f)processFile(f);}
 function handleDrop(e){e.preventDefault();document.getElementById('uzone').classList.remove('drag');const f=e.dataTransfer.files[0];if(f&&f.type.startsWith('image/'))processFile(f);}
 function processFile(file){
-  const r=new FileReader();r.onload=ev=>{const img=new Image();img.onload=()=>{const canvas=document.createElement('canvas');const MAX=400,scale=MAX/img.width;canvas.width=MAX;canvas.height=img.height*scale;canvas.getContext('2d').drawImage(img,0,0,canvas.width,canvas.height);const dataUrl=canvas.toDataURL('image/jpeg',.6);tMime='image/jpeg';tb64=dataUrl.split(',')[1];document.getElementById('prevImg').src=dataUrl;document.getElementById('prevArea').style.display='block';document.getElementById('uzone').style.display='none';};img.src=ev.target.result;};r.readAsDataURL(file);
+  const r=new FileReader();r.onload=ev=>{const img=new Image();img.onload=()=>{const canvas=document.createElement('canvas');const MAX=400,scale=MAX/img.width;canvas.width=MAX;canvas.height=img.height*scale;canvas.getContext('2d').drawImage(img,0,0,canvas.width,canvas.height);const dataUrl=canvas.toDataURL('image/jpeg',.6);tMime='image/jpeg';tb64=dataUrl.split(',')[1];document.getElementById('prevImg').src=dataUrl;document.getElementById('prevArea').style.display='block';document.getElementById('uzone').style.display='none';v33OpenCrop('ticket');};img.src=ev.target.result;};r.readAsDataURL(file);
 }
 function removeTicket(){tb64='';tMime='';document.getElementById('ticketInput').value='';document.getElementById('storedPhoto').value='';document.getElementById('prevArea').style.display='none';document.getElementById('uzone').style.display='block';}
 
