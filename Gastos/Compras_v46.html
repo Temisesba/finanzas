@@ -10399,6 +10399,15 @@ function pRenderMiLista(){
     <div class="table-wrap"><div class="hrow" style="grid-template-columns:72px minmax(140px,1fr) 94px 1.4fr"><span>Fecha</span><span>Concepto</span><span style="justify-self:end">Monto</span><span>Nota</span></div>${filas}</div>`;
 }
 
+// Deep link desde App Completa: abre directo el formulario de +Gasto.
+// setTimeout le da tiempo al arranque normal (sesión, datos) antes de
+// abrir el modal encima; try/catch para que nunca rompa el arranque normal
+// si algo cambia en openModal() más adelante.
+window.addEventListener('load', () => {
+  if (location.hash === '#nuevo') {
+    setTimeout(() => { try { openModal(); } catch (e) {} }, 400);
+  }
+});
 </script>
 
 <!-- v34: Formulario del módulo Personal -->
