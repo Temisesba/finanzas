@@ -7,7 +7,7 @@
 // en el dispositivo. Ahora: si hay una copia en caché, se sirve de
 // inmediato (la app abre al instante) y, al mismo tiempo, se pide la
 // versión fresca en segundo plano para la PRÓXIMA vez que se abra.
-const CACHE_NAME = 'gastos-shell-v2';
+const CACHE_NAME = 'gastos-shell-v3';
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();

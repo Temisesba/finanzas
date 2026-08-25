@@ -1205,6 +1205,16 @@ details:not([open]) .chev{transform:rotate(-90deg)}
         <button class="rt-btn" style="padding:7px 14px;font-size:13px" onclick="v31ProdForm({target:'sheet'})">＋ Producto a inventario</button>
         <button class="rt-btn" style="padding:7px 14px;font-size:13px" onclick="v35OrdenarConIA()">🤖 Ordenar con IA</button>
       </div>
+      <!-- Inventario unificado: Alacena (lo de siempre, capturado aquí mismo),
+           Ropa (prendas con precio, sincronizadas desde la app Ropa) y
+           General (objetos de casa, sincronizados desde App Completa) —
+           todo vive en las mismas filas de producto, filtrable por Grupo. -->
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin:-4px 0 10px 0">
+        <button class="ftab on" id="invG-todos" onclick="v31SetGrupoFilter('todos',this)">Todo</button>
+        <button class="ftab" id="invG-alacena" onclick="v31SetGrupoFilter('Alacena',this)">🥦 Alacena</button>
+        <button class="ftab" id="invG-ropa" onclick="v31SetGrupoFilter('Ropa',this)">👕 Ropa</button>
+        <button class="ftab" id="invG-general" onclick="v31SetGrupoFilter('General',this)">📦 General</button>
+      </div>
       <div id="invColPanel" style="display:none;gap:8px;flex-wrap:wrap;margin:-2px 0 10px 0;font-size:11px"></div>
       <div id="invResumen" style="display:none;margin-bottom:10px"></div>
       <div style="display:flex;justify-content:flex-end;margin-bottom:2px">
@@ -1758,7 +1768,7 @@ details:not([open]) .chev{transform:rotate(-90deg)}
 // v29: nombre clave de esta entrega — cámbialo cada vez que termines un lote
 // de cambios, así en 👥 → 🛠 Panel dev se puede confirmar que el navegador
 // está cargando la versión más reciente y no una copia en caché.
-const BUILD_VERSION='Begonia2';
+const BUILD_VERSION='Begonia3';
 (function(){ const bv=document.getElementById('devBuildName'); if(bv) bv.textContent='· Versión: '+BUILD_VERSION; })();
 // v29: el sync con el backend es solo para los DATOS — esto es aparte:
 // fuerza que se vuelva a pedir el HTML/JS de la app en sí (el "software"),
@@ -2437,7 +2447,7 @@ function v35Overlay(html){
   return ov;
 }
 async function v35OrdenarConIA(){
-  const nombres=[...new Set(allProds.filter(p=>p.tipoFila==='producto').map(p=>p.concepto).filter(Boolean))];
+  const nombres=[...new Set(allProds.filter(p=>p.tipoFila==='producto' && p.grupo!=='Ropa' && p.grupo!=='General').map(p=>p.concepto).filter(Boolean))];
   if(!nombres.length){ showToast('No hay productos para ordenar'); return; }
   showToast('🤖 Pensando…');
   let r;
@@ -5849,6 +5859,13 @@ async function v28SaveShopping(){
 
 // ══ v12: Pestaña Inventario ══
 let invFilter='inventario';
+let invGrupoFilter='todos'; // v31: Alacena/Ropa/General — inventario unificado
+function v31SetGrupoFilter(g,el){
+  invGrupoFilter=g;
+  ['invG-todos','invG-alacena','invG-ropa','invG-general'].forEach(id=>document.getElementById(id).classList.remove('on'));
+  el.classList.add('on');
+  v30RenderInv();
+}
 let invSort={col:'',dir:1};
 
 function v30SetInvFilter(f,el){
@@ -5885,6 +5902,7 @@ function v30InvData(){
   if(invFilter==='inventario') list=list.filter(p=>!p.esCot && (p.inventario||'SI')!=='NA' && String(p.queda??'')!=='0');
   else if(invFilter==='cotizacion') list=list.filter(p=>p.esCot);
   else if(invFilter==='prioritarios'){ const st=v31StarredNames(); list=list.filter(p=>st.has(normTxt(p.concepto))); }
+  if(invGrupoFilter!=='todos') list=list.filter(p=>(p.grupo||'Alacena')===invGrupoFilter);
   if(q) list=list.filter(p=>{
     // v21: busca en TODAS las columnas del producto
     const pajar=[p.concepto,p.marca,p.notas,p.categoria,p.tienda,p.codigo,p.cantidad,p.unidad,p.precioInd,p.precioComp,p.piezas,String(p.caducidad||'').substring(0,10),p.queda]
@@ -5937,6 +5955,7 @@ ${p.fotoProducto
   ? `<img src="${esc(p.fotoProducto)}" style="width:22px;height:22px;object-fit:cover;border-radius:5px;border:1px solid var(--border);cursor:pointer;flex-shrink:0" onclick="openLightbox('${esc(p.fotoProducto)}')" title="Ver foto en grande">`
           :'<button class="star-btn" style="font-size:11px" onclick="v33FotoRow('+r+')" title="Agregar foto">📷</button>'}
         ${p.esCot?'<span class="chip cq" style="font-size:9px;margin-top:3px">💬</span>':''}
+        ${p.grupo==='Ropa'?'<span title="Ropa" style="font-size:9px;margin-top:3px">👕</span>':(p.grupo==='General'?'<span title="General" style="font-size:9px;margin-top:3px">📦</span>':'')}
         <span style="display:flex;flex-direction:column;gap:1px;flex:1;min-width:0">
           <input type="text" class="inv-in" value="${esc(p.concepto)}" list="list-productos" onchange="v30SaveField(${r},'concepto',this.value)">
           <input type="text" class="inv-in" style="font-size:10px;opacity:.85;font-weight:600" value="${esc(p.marca||'')}" placeholder="marca…" onchange="v30SaveField(${r},'marca',this.value)">
