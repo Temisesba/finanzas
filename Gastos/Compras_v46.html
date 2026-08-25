@@ -1758,7 +1758,7 @@ details:not([open]) .chev{transform:rotate(-90deg)}
 // v29: nombre clave de esta entrega — cámbialo cada vez que termines un lote
 // de cambios, así en 👥 → 🛠 Panel dev se puede confirmar que el navegador
 // está cargando la versión más reciente y no una copia en caché.
-const BUILD_VERSION='Zinnia2';
+const BUILD_VERSION='Anturio';
 (function(){ const bv=document.getElementById('devBuildName'); if(bv) bv.textContent='· Versión: '+BUILD_VERSION; })();
 // v29: el sync con el backend es solo para los DATOS — esto es aparte:
 // fuerza que se vuelva a pedir el HTML/JS de la app en sí (el "software"),
@@ -7757,7 +7757,7 @@ function pIrAlarmas(){
 function pRenderAlarmBadge(){
   // cuenta pagos fijos y cuotas MSI vencidos/próximos no pagados este mes
   let alarmas=0; const mk=pMesKey();
-  pItemsOf('fijo').forEach(f=>{ const pagado=(f.pagos||{})[mk]; const dias=pDiasPara(f.diaLimite);
+  pItemsOf('fijo').forEach(f=>{ const pagado=pFijoPagoInfo(f,mk).pagado; const dias=pDiasPara(f.diaLimite);
     if(!pagado && dias!==null && dias<=5 && pFijoNotifica(f)) alarmas++; });
   pItemsOf('msi').forEach(m=> pMSICuotas(m).forEach(q=>{ if(!q.pagada && q.dias!==null && q.dias<=5) alarmas++; }));
   pItemsOf('tarjeta').forEach(c=>{ if(c.ctipo!=='TDC') return; const e=pEstadoActualDeTarjeta(c); const pagado=e&&e.pagado; const dias=pDiasPara(c.diaLimite);
@@ -8046,7 +8046,7 @@ function pFijoPasaFiltro(f, mk){
   // demás filtros) — solo aparecen si eliges explícitamente "Cancelados".
   if(pFijoFiltro==='cancelados') return !!f.cancelado;
   if(f.cancelado) return false;
-  const pagado=(f.pagos||{})[mk], dias=pDiasPara(f.diaLimite);
+  const pagado=pFijoPagoInfo(f,mk).pagado, dias=pDiasPara(f.diaLimite);
   const cat=normTxt(f.categoria||'');
   switch(pFijoFiltro){
     case 'pendientes': return !pagado;
@@ -8071,6 +8071,22 @@ function pFijoMontoEstimado(f){
     if(m) return m;
   }
   return 0;
+}
+// v29: un pago fijo cargado a una tarjeta (Forma de pago = Tarjeta) se
+// considera pagado tanto si tiene su propio registro en f.pagos[mk] como
+// si ya se pagó el estado de cuenta de ESA tarjeta este mes — no hace
+// falta marcarlo aparte, ya quedó cubierto ahí. "propio" distingue de
+// dónde salió, para no confundir un "cubierto por la tarjeta" con un pago
+// que sí se puede deshacer con su propio botón.
+function pFijoPagoInfo(f, mk){
+  mk = mk || pMesKey();
+  const p=(f.pagos||{})[mk];
+  if(p) return {pagado:true, propio:true, fecha:(p&&typeof p==='object'?p.fecha:''), monto:(p&&typeof p==='object'?(parseFloat(p.monto)||0):(parseFloat(f.monto)||0))};
+  if(f.formaPago==='Tarjeta' && f.tarjeta){
+    const edo=pEstadoDeTarjetaMes(f.tarjeta, mk);
+    if(edo && edo.pagado) return {pagado:true, propio:false, fecha:edo.fechaPago||'', monto:pFijoMontoEstimado(f)};
+  }
+  return {pagado:false, propio:false, fecha:'', monto:0};
 }
 // v29: la categoría de un pago fijo (o de un movimiento de conciliación) es
 // texto libre — no necesariamente calza tal cual con ninguna opción del
@@ -8119,9 +8135,11 @@ function pRenderFijos(){
   const totalFiltro=items.reduce((s,f)=>s+pFijoMontoEstimado(f),0);
   const sumaHtml=items.length?`<div style="font-size:12px;color:var(--ink-3);margin-bottom:10px">Suma de esta vista (<strong>${items.length}</strong>): <strong style="color:var(--ink);font-family:var(--mono)">${pMoney(totalFiltro)}</strong></div>`:'';
   const rows=items.map(f=>{
-    const pagado=(f.pagos||{})[mk]; const dias=pDiasPara(f.diaLimite);
+    // v29: cargado a una tarjeta → se da por pagado en cuanto se paga el
+    // estado de cuenta de ese mes, aunque no tenga su propio registro.
+    const pagoInfo=pFijoPagoInfo(f,mk); const pagado=pagoInfo.pagado; const dias=pDiasPara(f.diaLimite);
     const card=pCardById(f.tarjeta);
-    const fechaPagado=pagado&&typeof pagado==='object'?pagado.fecha:'';
+    const fechaPagado=pagoInfo.fecha;
     // v29: "forma de pago" (tarjeta/efectivo) + clasificación (categoría),
     // uno al lado del otro — el "pagado FECHA" se quitó de aquí porque ya
     // lo dice el chip "✓ Pagado" de arriba, era redundante.
@@ -8163,9 +8181,15 @@ function pRenderFijos(){
     // periodo de la fecha que captures ahí mismo. Así ya no hace falta un
     // botón aparte de "＋ Otro pago".
     // v29: el chip de "Pagado" ahora también dice cuánto, no solo cuándo —
-    // antes había que abrir "Ver pagos previos" para saber el monto.
-    const montoPagado=pagado?((pagado&&typeof pagado==='object')?(parseFloat(pagado.monto)||0):(parseFloat(f.monto)||0)):0;
-    const pagadoChip=pagado?'<button class="rt-btn" style="color:var(--shared);border-color:var(--shared-bdr);font-weight:700" onclick="pToggleFijoPagado(\''+esc(f.id)+'\')">✓ Pagado '+(fechaPagado?fmtDate(fechaPagado):'este mes')+' · '+pMoney(montoPagado)+' (deshacer)</button>':'';
+    // antes había que abrir "Ver pagos previos" para saber el monto. Si el
+    // pagado viene de cascada (cubierto por la tarjeta, no tiene su propio
+    // registro), no se ofrece "deshacer" aquí — eso confundía, porque
+    // borraba un registro que no existía y en realidad terminaba abriendo
+    // el flujo de "marcar pagado" de nuevo.
+    const montoPagado=pagoInfo.monto;
+    const pagadoChip=!pagado?'':(pagoInfo.propio
+      ? '<button class="rt-btn" style="color:var(--shared);border-color:var(--shared-bdr);font-weight:700" onclick="pToggleFijoPagado(\''+esc(f.id)+'\')">✓ Pagado '+(fechaPagado?fmtDate(fechaPagado):'este mes')+' · '+pMoney(montoPagado)+' (deshacer)</button>'
+      : '<span class="chip" style="background:var(--shared-bg);color:var(--shared);border:1px solid var(--shared-bdr);font-weight:700;padding:6px 10px;border-radius:8px;font-size:12px">✓ Cubierto por '+esc(pCardLabel(card))+'</span>');
     const botones=f.cancelado
       ? '<button class="rt-btn" style="font-weight:600" onclick="pReactivarFijo(\''+esc(f.id)+'\')">↩️ Reactivar</button><button class="rt-btn" onclick="pOpenForm(\'fijo\',\''+esc(f.id)+'\')">✏️</button><button class="shop-del" onclick="pDelItem(\''+esc(f.id)+'\')">🗑</button>'
       : pagadoChip
@@ -8215,24 +8239,60 @@ function pRenderHistorialMensual(){
   pItemsOf('fijo').forEach(f=>Object.keys(f.pagos||{}).forEach(k=>months.add(k)));
   const list=[...months].sort().reverse().slice(0,12);
   const mesActual=pMesKey();
-  const fila=(label,dia,pagado,monto,moneda,onclick)=>({
-    dia: isNaN(dia)?999:dia, pagado, monto,
-    html:'<div class="rt-btn" style="cursor:pointer;border:none;padding:3px 0;background:none;text-align:left;display:block" onclick="'+onclick+'">'+label+': '+(pagado
+  const filaHTML=(label,pagado,monto,moneda,onclick,indent)=>
+    '<div class="rt-btn" style="cursor:pointer;border:none;padding:3px 0 3px '+(indent?'18px':'0')+';background:none;text-align:left;display:block'+(indent?';opacity:.85':'')+'" onclick="'+onclick+'">'+(indent?'↳ ':'')+label+': '+(pagado
       ? '<span style="color:var(--shared);font-weight:600">✓ pagado '+pMoney2(monto,moneda)+'</span>'
-      : '<span style="color:var(--ink-3)">pendiente</span>')+'</div>'
-  });
+      : '<span style="color:var(--ink-3)">pendiente</span>')+'</div>';
   return list.map(mk=>{
-    const filas=[];
+    // v29: los pagos fijos cargados a una tarjeta (Youtube, Microsoft, etc.
+    // con "Forma de pago"=Tarjeta) se agrupan aquí debajo de ESA tarjeta,
+    // con sangría — y se dan por pagados en cuanto se paga el estado de
+    // cuenta del mes, sin tener que marcarlos aparte uno por uno (ya
+    // quedaron cubiertos ahí).
+    const fijosDeTarjeta={};
+    const fijosSueltos=[];
     pItemsOf('fijo').forEach(f=>{
+      if(f.formaPago==='Tarjeta' && f.tarjeta) (fijosDeTarjeta[f.tarjeta]=fijosDeTarjeta[f.tarjeta]||[]).push(f);
+      else fijosSueltos.push(f);
+    });
+    const filas=[]; // {dia, monto, pagado, html} — para el total y el orden del mes
+    fijosSueltos.forEach(f=>{
       const p=(f.pagos||{})[mk];
       const pagado=!!p;
       const monto=pagado?((p&&typeof p==='object')?(parseFloat(p.monto)||0):(parseFloat(f.monto)||0)):0;
-      filas.push(fila(esc(f.concepto||'Pago fijo')+(f.diaLimite?(' ('+esc(f.diaLimite)+')'):''), parseInt(f.diaLimite,10), pagado, monto, undefined, "pIrAFijoDesdeHistorial('"+esc(f.id)+"')"));
+      filas.push({dia:parseInt(f.diaLimite,10)||999, monto, pagado,
+        html:filaHTML(esc(f.concepto||'Pago fijo')+(f.diaLimite?(' ('+esc(f.diaLimite)+')'):''), pagado, monto, undefined, "pIrAFijoDesdeHistorial('"+esc(f.id)+"')")});
     });
-    pItemsOf('estado').filter(e=>e.mes===mk).forEach(e=>{
+    const estadosDelMes=pItemsOf('estado').filter(e=>e.mes===mk);
+    const tarjetasConEstado=new Set();
+    estadosDelMes.forEach(e=>{
+      tarjetasConEstado.add(e.tarjeta);
       const c=pCardById(e.tarjeta)||{};
       const pagado=!!e.pagado;
-      filas.push(fila(esc(pCardLabel(c))+(c.diaLimite?(' ('+esc(c.diaLimite)+')'):''), parseInt(c.diaLimite,10), pagado, parseFloat(e.montoPagado)||0, c.moneda, "pIrAEstadoDesdeHistorial('"+esc(e.id)+"')"));
+      let html=filaHTML(esc(pCardLabel(c))+(c.diaLimite?(' ('+esc(c.diaLimite)+')'):''), pagado, parseFloat(e.montoPagado)||0, c.moneda, "pIrAEstadoDesdeHistorial('"+esc(e.id)+"')");
+      (fijosDeTarjeta[e.tarjeta]||[]).forEach(f=>{
+        // v29: pagado propio (si algún día lo marcaste aparte) O pagado
+        // porque ya se pagó el estado de esta tarjeta este mes — lo que
+        // pase primero. No se suma al total del mes (ya viene incluido en
+        // lo que se pagó de la tarjeta) — solo es informativo aquí abajo.
+        const p=(f.pagos||{})[mk];
+        const pagadoFijo=!!p || pagado;
+        const monto=pagadoFijo?((p&&typeof p==='object')?(parseFloat(p.monto)||0):pFijoMontoEstimado(f)):0;
+        html+=filaHTML(esc(f.concepto||'Pago fijo'), pagadoFijo, monto, c.moneda, "pIrAFijoDesdeHistorial('"+esc(f.id)+"')", true);
+      });
+      filas.push({dia:parseInt(c.diaLimite,10)||999, monto:parseFloat(e.montoPagado)||0, pagado, html});
+    });
+    // Tarjetas con fijos ligados pero SIN estado de cuenta capturado este
+    // mes: no hay de dónde "cascada" el pagado, se quedan sueltos como antes.
+    Object.keys(fijosDeTarjeta).forEach(tid=>{
+      if(tarjetasConEstado.has(tid)) return;
+      fijosDeTarjeta[tid].forEach(f=>{
+        const p=(f.pagos||{})[mk];
+        const pagado=!!p;
+        const monto=pagado?((p&&typeof p==='object')?(parseFloat(p.monto)||0):(parseFloat(f.monto)||0)):0;
+        filas.push({dia:parseInt(f.diaLimite,10)||999, monto, pagado,
+          html:filaHTML(esc(f.concepto||'Pago fijo')+(f.diaLimite?(' ('+esc(f.diaLimite)+')'):''), pagado, monto, undefined, "pIrAFijoDesdeHistorial('"+esc(f.id)+"')")});
+      });
     });
     filas.sort((a,b)=>a.dia-b.dia);
     const totalMes=filas.reduce((s,x)=>s+(x.pagado?x.monto:0),0);
