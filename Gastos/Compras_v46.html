@@ -1031,7 +1031,7 @@ details:not([open]) .chev{transform:rotate(-90deg)}
   </div>
 
   <div class="verdict" id="vbox" style="display:none">
-    <span class="vi" id="vico"></span><span id="vtxt"></span>
+    <span class="vi" id="vico"></span><div id="vtxt" style="min-width:0"></div>
   </div>
   <div class="ctx-note" id="ctxNote" style="display:none"></div>
   <div id="cadBanner" style="display:none"></div>
@@ -1768,7 +1768,7 @@ details:not([open]) .chev{transform:rotate(-90deg)}
 // v29: nombre clave de esta entrega — cámbialo cada vez que termines un lote
 // de cambios, así en 👥 → 🛠 Panel dev se puede confirmar que el navegador
 // está cargando la versión más reciente y no una copia en caché.
-const BUILD_VERSION='Begonia3';
+const BUILD_VERSION='Clavelina';
 (function(){ const bv=document.getElementById('devBuildName'); if(bv) bv.textContent='· Versión: '+BUILD_VERSION; })();
 // v29: el sync con el backend es solo para los DATOS — esto es aparte:
 // fuerza que se vuelva a pedir el HTML/JS de la app en sí (el "software"),
@@ -3286,11 +3286,12 @@ function pParteDePersona(e, persona){
 }
 
 // Construye deudas dirigidas: debt[deudor][acreedor] += monto
-function v31Deudas(){
+function v31Deudas(data){
+  data = data || allExp; // v29: opcional — para poder calcular el mismo veredicto acotado a un periodo/filtro, no solo el general
   const debt={}; PEOPLE.forEach(a=>{debt[a]={};});
   const add=(deudor,acreedor,m)=>{ if(!deudor||!acreedor||deudor===acreedor||!(m>0))return;
     if(!debt[deudor]) debt[deudor]={}; debt[deudor][acreedor]=(debt[deudor][acreedor]||0)+m; };
-  allExp.forEach(e=>{
+  data.forEach(e=>{
     if(e.compartido==='Cotizacion'||e.quien_paga==='Cotizacion') return;
     const a=parseFloat(e.costo)||0; if(a<=0) return;
     // v29: "Compartido" con varios pagadores (montos distintos, ej.
@@ -3332,15 +3333,15 @@ function v31Deudas(){
 }
 
 // Neto por persona: (lo que le deben) - (lo que debe)
-function v31Netos(){
-  const debt=v31Deudas(); const net={}; PEOPLE.forEach(n=>net[n]=0);
+function v31Netos(data){
+  const debt=v31Deudas(data); const net={}; PEOPLE.forEach(n=>net[n]=0);
   PEOPLE.forEach(d=>{ Object.keys(debt[d]||{}).forEach(c=>{ const m=debt[d][c]; net[d]-=m; if(net[c]===undefined)net[c]=0; net[c]+=m; }); });
   return net;
 }
 
 // Simplificación greedy → lista mínima de pagos {de, a, monto}
-function v31Simplificar(){
-  const net=v31Netos();
+function v31Simplificar(data){
+  const net=v31Netos(data);
   const deudores=[], acreedores=[];
   Object.keys(net).forEach(n=>{ const v=Math.round(net[n]); if(v<-0.5)deudores.push({n,v}); else if(v>0.5)acreedores.push({n,v}); });
   deudores.sort((a,b)=>a.v-b.v);      // más negativo primero
@@ -3356,6 +3357,28 @@ function v31Simplificar(){
   return pagos;
 }
 
+// v29: describe en texto qué filtro de fecha/categoría/tipo/búsqueda está
+// activo ahorita — para dejar claro a qué corresponde el veredicto de
+// "Periodo seleccionado" en renderVerdict (antes no había forma de saber,
+// con solo ver el número, si incluía todo el historial o solo lo filtrado).
+function pDescribirPeriodoActivo(){
+  const partes=[];
+  const from=(document.getElementById('fFrom')||{}).value, to=(document.getElementById('fTo')||{}).value;
+  if(from && to) partes.push(fmtDate(from)+' – '+fmtDate(to));
+  else if(from) partes.push('Desde '+fmtDate(from));
+  else if(to) partes.push('Hasta '+fmtDate(to));
+  else partes.push('Todo el historial');
+  const cat=(document.getElementById('catSelect')||{}).value; if(cat) partes.push('Categoría: '+cat);
+  const viajeSel=document.getElementById('viajeSelect'); if(viajeSel && viajeSel.value) partes.push('Viaje: '+viajeSel.value);
+  if(typeof activeF!=='undefined' && activeF && activeF!=='all'){
+    const etiquetas={Compartido:'Compartido', Prestamo:'Préstamo/Devolución', Cotizacion:'Cotización', MSI:'MSI'};
+    if(etiquetas[activeF]) partes.push(etiquetas[activeF]);
+    else if(activeF.startsWith('P:')) partes.push('Personal: '+activeF.slice(2));
+    else if(activeF.startsWith('S:')) partes.push('Sesión: '+activeF.slice(2));
+  }
+  const q=((document.getElementById('searchInput')||{}).value||'').trim(); if(q) partes.push('Buscar: "'+q+'"');
+  return partes.join(' · ');
+}
 function renderVerdict(){
   const vbox=document.getElementById('vbox');vbox.style.display='flex';
   // v43: en sesión personal, mostrar SOLO mi balance (sesión + deudas externas)
@@ -3364,17 +3387,19 @@ function renderVerdict(){
     document.getElementById('vtxt').innerHTML = pProximosMiniHTML();
     return;
   }
-  const pagos=v31Simplificar(); // v31: pagos mínimos para saldar todo
-  if(!pagos.length){
-    document.getElementById('vico').textContent='✅';
-    document.getElementById('vtxt').innerHTML='<strong>¡Al día!</strong> Sin deudas.';
-    return;
-  }
-  document.getElementById('vico').textContent = pagos.length===1 ? pEmoji(pagos[0].de) : '⚖️';
-  const html=pagos.map(p=>
-    '<strong>'+esc(p.de)+'</strong> le debe a <strong>'+esc(p.a)+'</strong> '+
-    '<strong style="color:var(--shared)">¥'+p.monto.toLocaleString()+'</strong>'
-  ).join(' &nbsp;·&nbsp; ');
+  // v29: "General" (todo el historial, sin filtrar) SIEMPRE se muestra
+  // primero, y debajo "Periodo seleccionado" con el veredicto acotado a
+  // los filtros que tengas puestos arriba (fecha, categoría, tipo,
+  // búsqueda) — antes solo se veía un número sin decir si era general o
+  // de un recorte, y no había forma de saber a qué periodo correspondía.
+  const htmlPagos=(pagos)=> pagos.length
+    ? pagos.map(p=>'<strong>'+esc(p.de)+'</strong> le debe a <strong>'+esc(p.a)+'</strong> <strong style="color:var(--shared)">¥'+p.monto.toLocaleString()+'</strong>').join(' &nbsp;·&nbsp; ')
+    : '<strong>¡Al día!</strong> Sin deudas.';
+  const pagosGeneral=v31Simplificar(); // v31: pagos mínimos para saldar todo, sin filtrar
+  document.getElementById('vico').textContent = pagosGeneral.length===1 ? pEmoji(pagosGeneral[0].de) : (pagosGeneral.length?'⚖️':'✅');
+  const pagosPeriodo=v31Simplificar(getFiltered());
+  let html='<div><strong style="text-transform:uppercase;font-size:10px;letter-spacing:.06em;color:var(--ink-3);margin-right:4px">General</strong>'+htmlPagos(pagosGeneral)+'</div>';
+  html+='<div style="margin-top:4px;font-size:12px;color:var(--ink-3)">Periodo seleccionado: <strong style="color:var(--ink-2)">'+esc(pDescribirPeriodoActivo())+'</strong> — '+htmlPagos(pagosPeriodo)+'</div>';
   document.getElementById('vtxt').innerHTML=html;
 }
 
