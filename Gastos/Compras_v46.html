@@ -1768,7 +1768,7 @@ details:not([open]) .chev{transform:rotate(-90deg)}
 // v29: nombre clave de esta entrega — cámbialo cada vez que termines un lote
 // de cambios, así en 👥 → 🛠 Panel dev se puede confirmar que el navegador
 // está cargando la versión más reciente y no una copia en caché.
-const BUILD_VERSION='Clavelina';
+const BUILD_VERSION='Dedal de Oro';
 (function(){ const bv=document.getElementById('devBuildName'); if(bv) bv.textContent='· Versión: '+BUILD_VERSION; })();
 // v29: el sync con el backend es solo para los DATOS — esto es aparte:
 // fuerza que se vuelva a pedir el HTML/JS de la app en sí (el "software"),
@@ -4544,6 +4544,7 @@ function setPayer(p){
   });
   if(p === 'Cotizacion') setType('Cotizacion');
   v31RenderParticipantes(); // v31: quien paga cambia el reparto
+  v29ResincronizarQuienCompraProductos(); // v29: y también a quién se le presta/devuelve por default en productos
 }
 
 let currentParticipantes = []; // v31: participantes marcados
@@ -4701,6 +4702,20 @@ function setType(t){
     }
   }
   v31RenderParticipantes(); // v31
+  v29ResincronizarQuienCompraProductos();
+}
+// v29: reaplica el default de "¿Quién?" a los productos que sigan en su
+// valor default "Compartido" (nunca tocados a mano en el popover) — se
+// llama cuando cambia el tipo de gasto o quién paga, que es de lo que
+// depende ese default para Préstamo/Devolución. Antes esos productos se
+// quedaban repartidos parejo aunque arriba ya dijera Préstamo,
+// típicamente porque la IA los llenó ANTES de elegir el tipo/pagador. Un
+// producto que sí cambiaste tú a mano nunca vuelve a tocarse.
+function v29ResincronizarQuienCompraProductos(){
+  if(!(currentType==='Prestamo'||currentType==='Devolucion') || typeof prodDraft==='undefined' || !prodDraft.length) return;
+  let cambio=false;
+  prodDraft.forEach(p=>{ if((p.quienCompra||'Compartido')==='Compartido'){ p.quienCompra=v29QuienCompraDefault(); cambio=true; } });
+  if(cambio && typeof v30RenderProdDraft==='function') v30RenderProdDraft();
 }
 
 // ── File upload ───────────────────────────────────────────
@@ -4874,7 +4889,26 @@ function v30RenderProdDraft(){
 // desde el selector "Sesión:" del modal, este selector seguía ofreciendo
 // a la gente de la sesión activa (o de cualquier otra que hubieras tenido
 // antes), no la de la sesión que de verdad elegiste ahí.
-function v29QuienCompraDefault(){ const g=mGente(); return g.length>1 ? 'Compartido' : (g[0]||myName()||''); }
+// v29 (fix): si el gasto es Préstamo/Devolución, el default de cada
+// producto debe ser a quién se le presta/devuelve (currentParticipantes —
+// ya excluye a quien paga), no "Compartido" — un préstamo no se reparte
+// parejo entre todos, es de quien lo recibe. Antes siempre defaulteaba a
+// "Compartido" sin importar el tipo, así que un ticket escaneado con IA
+// para un préstamo se quedaba repartido 50/50 aunque arriba ya dijera
+// Préstamo.
+function v29QuienCompraDefault(){
+  const g=mGente();
+  if(g.length<=1) return g[0]||myName()||'';
+  if(currentType==='Prestamo'||currentType==='Devolucion'){
+    // v29: con 3+ personas usa lo que hayas marcado en "¿A quién se le
+    // prestó?" (currentParticipantes); con 2 personas ese selector ni
+    // siquiera se muestra (no hace falta elegir, solo hay una posible) —
+    // ahí el deudor implícito es "la otra persona que no es quien paga".
+    const deudores=(Array.isArray(currentParticipantes) && currentParticipantes.length) ? currentParticipantes : g.filter(n=>n!==currentPayer);
+    if(deudores.length) return deudores.join(', ');
+  }
+  return 'Compartido';
+}
 // Expande el texto guardado a la lista real de nombres entre quien se divide.
 function v29ListaQuienCompra(raw){
   const s=(raw||'').toString().trim();
